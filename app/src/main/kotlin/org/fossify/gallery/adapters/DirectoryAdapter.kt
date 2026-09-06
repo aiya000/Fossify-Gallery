@@ -95,6 +95,7 @@ import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
 import org.fossify.gallery.helpers.FOLDER_STYLE_ROUNDED_CORNERS
 import org.fossify.gallery.helpers.FOLDER_STYLE_SQUARE
+import org.fossify.gallery.helpers.GROUP_PATH_PREFIX
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.PATH
@@ -257,8 +258,8 @@ class DirectoryAdapter(
         if (isDragAndDropping) {
             notifyDataSetChanged()
 
-            val reorderedFoldersList = dirs.map { it.path }
-            config.customFoldersOrder = TextUtils.join("|||", reorderedFoldersList)
+            // only the currently opened level got reordered, the other levels must keep their order
+            config.updateCustomFoldersOrder(dirs.map { it.path })
             config.directorySorting = SORT_BY_CUSTOM
         }
 
@@ -695,10 +696,13 @@ class DirectoryAdapter(
     private fun moveToGroup(folderPaths: Collection<String>, groupIds: Collection<Long>, destinationGroupId: Long?) {
         config.setFolderGroupOfPaths(folderPaths, destinationGroupId)
 
-        val failedMoves = groupIds.count { !config.moveFolderGroup(it, destinationGroupId) }
-        if (failedMoves > 0) {
+        val movedGroupIds = groupIds.filter { config.moveFolderGroup(it, destinationGroupId) }
+        if (movedGroupIds.size < groupIds.size) {
             activity.toast(R.string.cannot_move_group_into_itself)
         }
+
+        // the moved items show up at the end of the destination level instead of at some stale position
+        config.updateCustomFoldersOrder(folderPaths.toList() + movedGroupIds.map { "$GROUP_PATH_PREFIX$it" })
 
         finishActMode()
         listener?.refreshGroups()

@@ -399,12 +399,13 @@ class Config(context: Context) : BaseConfig(context) {
         val group = groups.firstOrNull { it.id == id } ?: return
         val parentId = group.parentId
 
-        groups.filter { it.parentId == id }.forEach { it.parentId = parentId }
+        val childGroups = groups.filter { it.parentId == id }
+        childGroups.forEach { it.parentId = parentId }
         groups.remove(group)
         storeFolderGroups(groups)
 
         val members = parseFolderGroupMembers()
-        val affectedPaths = members.filterValues { it == id }.keys
+        val affectedPaths = members.filterValues { it == id }.keys.toList()
         affectedPaths.forEach { path ->
             if (parentId == null) {
                 members.remove(path)
@@ -413,6 +414,9 @@ class Config(context: Context) : BaseConfig(context) {
             }
         }
         storeFolderGroupMembers(members)
+
+        // the moved up content shows up at the end of the parent level instead of at some stale position
+        updateCustomFoldersOrder(affectedPaths + childGroups.map { it.getPseudoPath() })
 
         val pseudoPath = group.getPseudoPath()
         removePinnedFolders(hashSetOf(pseudoPath))
@@ -717,6 +721,18 @@ class Config(context: Context) : BaseConfig(context) {
     var customFoldersOrder: String
         get() = prefs.getString(CUSTOM_FOLDERS_ORDER, "")!!
         set(customFoldersOrder) = prefs.edit().putString(CUSTOM_FOLDERS_ORDER, customFoldersOrder).apply()
+
+    // The custom order is one flat list shared by every level of the folder list (the top level, opened groups and
+    // opened subfolders), only the relative order of the paths shown together matters. So it must never be replaced
+    // with the paths of a single level: the given paths take the given order and get moved behind everything else,
+    // all the other paths keep their relative order.
+    fun updateCustomFoldersOrder(paths: List<String>) {
+        val updatedPaths = paths.toHashSet()
+        val keptPaths = customFoldersOrder
+            .split(CUSTOM_FOLDERS_ORDER_SEPARATOR)
+            .filter { it.isNotEmpty() && !updatedPaths.contains(it) }
+        customFoldersOrder = (keptPaths + paths).joinToString(CUSTOM_FOLDERS_ORDER_SEPARATOR)
+    }
 
     var avoidShowingAllFilesPrompt: Boolean
         get() = prefs.getBoolean(AVOID_SHOWING_ALL_FILES_PROMPT, false)

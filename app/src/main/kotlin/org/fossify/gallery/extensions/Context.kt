@@ -80,6 +80,7 @@ import org.fossify.commons.views.MySquareImageView
 import org.fossify.gallery.R
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databases.GalleryDatabase
+import org.fossify.gallery.helpers.CUSTOM_FOLDERS_ORDER_SEPARATOR
 import org.fossify.gallery.helpers.Config
 import org.fossify.gallery.helpers.GROUP_BY_DATE_TAKEN_DAILY
 import org.fossify.gallery.helpers.GROUP_BY_DATE_TAKEN_MONTHLY
@@ -187,7 +188,7 @@ fun Context.getSortedDirectories(source: ArrayList<Directory>): ArrayList<Direct
         return movePinnedDirectoriesToFront(dirs)
     } else if (sorting and SORT_BY_CUSTOM != 0) {
         val newDirsOrdered = ArrayList<Directory>()
-        config.customFoldersOrder.split("|||").forEach { path ->
+        config.customFoldersOrder.split(CUSTOM_FOLDERS_ORDER_SEPARATOR).forEach { path ->
             val index = dirs.indexOfFirst { it.path == path }
             if (index != -1) {
                 val dir = dirs.removeAt(index)
