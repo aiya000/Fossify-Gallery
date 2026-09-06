@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/folder_group_name_holder"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingLeft="@dimen/activity_margin"
+    android:paddingTop="@dimen/activity_margin"
+    android:paddingRight="@dimen/activity_margin">
+
+    <org.fossify.commons.views.MyTextInputLayout
+        android:id="@+id/folder_group_name_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/activity_margin"
+        android:hint="@string/group_name">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/folder_group_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textCapSentences"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:textCursorDrawable="@null"
+            android:textSize="@dimen/bigger_text_size" />
+
+    </org.fossify.commons.views.MyTextInputLayout>
+</RelativeLayout>

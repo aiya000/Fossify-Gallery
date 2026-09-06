@@ -21,11 +21,17 @@ interface DirectoryItemBinding {
     val dirLocation: ImageView
     val dirDragHandle: ImageView
     val dirDragHandleWrapper: ViewGroup?
+
+    // 2x2 thumbnail collage shown instead of dirThumbnail for virtual folder groups
+    val dirGroupCollage: ViewGroup
+    val dirGroupThumbnails: List<MySquareImageView>
 }
 
 class ListDirectoryItemBinding(val binding: DirectoryItemListBinding) : DirectoryItemBinding {
     override val root: ViewGroup = binding.root
     override val dirThumbnail: MySquareImageView = binding.dirThumbnail
+    override val dirGroupCollage: ViewGroup = binding.dirGroupCollage
+    override val dirGroupThumbnails: List<MySquareImageView> = listOf(binding.dirGroupTmb1, binding.dirGroupTmb2, binding.dirGroupTmb3, binding.dirGroupTmb4)
     override val dirPath: TextView = binding.dirPath
     override val dirCheck: ImageView = binding.dirCheck
     override val dirHolder: ViewGroup = binding.dirHolder
@@ -43,6 +49,8 @@ fun DirectoryItemListBinding.toItemBinding() = ListDirectoryItemBinding(this)
 class GridDirectoryItemSquareBinding(val binding: DirectoryItemGridSquareBinding) : DirectoryItemBinding {
     override val root: ViewGroup = binding.root
     override val dirThumbnail: MySquareImageView = binding.dirThumbnail
+    override val dirGroupCollage: ViewGroup = binding.dirGroupCollage
+    override val dirGroupThumbnails: List<MySquareImageView> = listOf(binding.dirGroupTmb1, binding.dirGroupTmb2, binding.dirGroupTmb3, binding.dirGroupTmb4)
     override val dirPath: TextView? = null
     override val dirCheck: ImageView = binding.dirCheck
     override val dirHolder: ViewGroup = binding.dirHolder
@@ -60,6 +68,8 @@ fun DirectoryItemGridSquareBinding.toItemBinding() = GridDirectoryItemSquareBind
 class GridDirectoryItemRoundedCornersBinding(val binding: DirectoryItemGridRoundedCornersBinding) : DirectoryItemBinding {
     override val root: ViewGroup = binding.root
     override val dirThumbnail: MySquareImageView = binding.dirThumbnail
+    override val dirGroupCollage: ViewGroup = binding.dirGroupCollage
+    override val dirGroupThumbnails: List<MySquareImageView> = listOf(binding.dirGroupTmb1, binding.dirGroupTmb2, binding.dirGroupTmb3, binding.dirGroupTmb4)
     override val dirPath: TextView? = null
     override val dirCheck: ImageView = binding.dirCheck
     override val dirHolder: ViewGroup = binding.dirHolder

@@ -66,6 +66,11 @@
         android:title="@string/move_to"
         app:showAsAction="never" />
     <item
+        android:id="@+id/cab_ungroup"
+        android:showAsAction="never"
+        android:title="@string/ungroup"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/cab_create_shortcut"
         android:showAsAction="never"
         android:title="@string/create_shortcut"

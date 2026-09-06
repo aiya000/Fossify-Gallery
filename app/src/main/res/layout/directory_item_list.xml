@@ -16,6 +16,64 @@
         android:id="@+id/dir_thumbnail"
         android:layout_width="@dimen/list_view_folder_thumbnail_size"
         android:layout_height="@dimen/list_view_folder_thumbnail_size" />
+    <!-- 2x2 thumbnail collage of a virtual folder group, laid over dir_thumbnail -->
+    <LinearLayout
+        android:id="@+id/dir_group_collage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_alignStart="@+id/dir_thumbnail"
+        android:layout_alignTop="@+id/dir_thumbnail"
+        android:layout_alignEnd="@+id/dir_thumbnail"
+        android:layout_alignBottom="@+id/dir_thumbnail"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+
+            <org.fossify.commons.views.MySquareImageView
+                android:id="@+id/dir_group_tmb_1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1dp"
+                android:layout_weight="1" />
+
+            <org.fossify.commons.views.MySquareImageView
+                android:id="@+id/dir_group_tmb_2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1dp"
+                android:layout_weight="1" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+
+            <org.fossify.commons.views.MySquareImageView
+                android:id="@+id/dir_group_tmb_3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1dp"
+                android:layout_weight="1" />
+
+            <org.fossify.commons.views.MySquareImageView
+                android:id="@+id/dir_group_tmb_4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1dp"
+                android:layout_weight="1" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
 
     <ImageView
         android:id="@+id/dir_lock"

@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.bumptech.glide.Glide
+import com.bumptech.glide.signature.ObjectKey
 import com.google.gson.Gson
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
@@ -70,10 +71,13 @@ import org.fossify.gallery.databinding.DirectoryItemGridSquareBinding
 import org.fossify.gallery.databinding.DirectoryItemListBinding
 import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.ExcludeFolderDialog
+import org.fossify.gallery.dialogs.FolderGroupNameDialog
+import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
 import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
@@ -106,6 +110,8 @@ import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
 import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
+import org.fossify.gallery.models.isFolderGroupPath
+import org.fossify.gallery.models.toFolderGroupId
 import java.io.File
 import java.util.Collections
 
@@ -174,12 +180,17 @@ class DirectoryAdapter(
         }
 
         val isOneItemSelected = isOneItemSelected()
+        val realPaths = getSelectedRealPaths()
+        val isAnyGroupSelected = realPaths.size != selectedPaths.size
+        val areOnlyGroupsSelected = realPaths.isEmpty()
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
-            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN)
-            findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected
+            // virtual groups can be renamed one at a time only
+            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) &&
+                (!isAnyGroupSelected || isOneItemSelected)
+            findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
             findItem(R.id.cab_unlock).isVisible = selectedPaths.any { config.isFolderProtected(it) }
@@ -187,9 +198,16 @@ class DirectoryAdapter(
             findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
-            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected
+            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected
 
-            checkHideBtnVisibility(this, selectedPaths)
+            // filesystem operations make no sense for virtual groups
+            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected
+            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected
+            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected
+            findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
+
+            checkHideBtnVisibility(this, realPaths)
             checkPinBtnVisibility(this, selectedPaths)
         }
     }
@@ -218,6 +236,7 @@ class DirectoryAdapter(
             R.id.cab_move_to -> moveFilesTo()
             R.id.cab_select_all -> selectAll()
             R.id.cab_create_shortcut -> tryCreateShortcut()
+            R.id.cab_ungroup -> askConfirmUngroup()
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_select_photo -> tryChangeAlbumCover(false)
             R.id.cab_use_default -> tryChangeAlbumCover(true)
@@ -249,8 +268,25 @@ class DirectoryAdapter(
     override fun onViewRecycled(holder: ViewHolder) {
         super.onViewRecycled(holder)
         if (!activity.isDestroyed) {
-            Glide.with(activity).clear(bindItem(holder.itemView).dirThumbnail)
+            val item = bindItem(holder.itemView)
+            Glide.with(activity).clear(item.dirThumbnail)
+            clearGroupCollage(item)
         }
+    }
+
+    private fun clearGroupCollage(item: DirectoryItemBinding) {
+        item.dirGroupThumbnails.forEach {
+            Glide.with(activity).clear(it)
+            it.setImageDrawable(null)
+        }
+    }
+
+    private fun getThumbnailType(path: String) = when {
+        path.isVideoFast() -> TYPE_VIDEOS
+        path.isGif() -> TYPE_GIFS
+        path.isRawFast() -> TYPE_RAWS
+        path.isSvg() -> TYPE_SVGS
+        else -> TYPE_IMAGES
     }
 
     private fun checkHideBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
@@ -292,7 +328,7 @@ class DirectoryAdapter(
     private fun showProperties() {
         if (selectedKeys.size <= 1) {
             val path = getFirstSelectedItemPath() ?: return
-            if (path != FAVORITES && path != RECYCLE_BIN) {
+            if (path != FAVORITES && path != RECYCLE_BIN && !path.isFolderGroupPath()) {
                 activity.handleLockedFolderOpening(path) { success ->
                     if (success) {
                         PropertiesDialog(activity, path, config.shouldShowHidden)
@@ -300,7 +336,7 @@ class DirectoryAdapter(
                 }
             }
         } else {
-            PropertiesDialog(activity, getSelectedPaths().filter {
+            PropertiesDialog(activity, getSelectedRealPaths().filter {
                 it != FAVORITES && it != RECYCLE_BIN && !config.isFolderProtected(it)
             }.toMutableList(), config.shouldShowHidden)
         }
@@ -310,6 +346,11 @@ class DirectoryAdapter(
         if (selectedKeys.size == 1) {
             val firstDir = getFirstSelectedItem() ?: return
             val sourcePath = firstDir.path
+            if (firstDir.isGroup()) {
+                renameGroup(firstDir)
+                return
+            }
+
             val dir = File(sourcePath)
             if (activity.isAStorageRootFolder(dir.absolutePath)) {
                 activity.toast(org.fossify.commons.R.string.rename_folder_root)
@@ -325,6 +366,8 @@ class DirectoryAdapter(
                                 name = it.getFilenameFromPath()
                                 tmb = File(it, tmb.getFilenameFromPath()).absolutePath
                             }
+                            // keep the folder in its virtual group
+                            config.updateFolderGroupMemberPath(sourcePath, it)
                             updateDirs(dirs)
                             ensureBackgroundThread {
                                 try {
@@ -339,15 +382,44 @@ class DirectoryAdapter(
                 }
             }
         } else {
-            val paths = getSelectedPaths().filter { !activity.isAStorageRootFolder(it) && !config.isFolderProtected(it) } as ArrayList<String>
+            val paths = getSelectedRealPaths().filter { !activity.isAStorageRootFolder(it) && !config.isFolderProtected(it) } as ArrayList<String>
             RenameItemsDialog(activity, paths) {
                 listener?.refreshItems()
             }
         }
     }
 
+    private fun renameGroup(group: Directory) {
+        val groupId = group.getGroupId() ?: return
+        activity.handleLockedFolderOpening(group.path) { success ->
+            if (success) {
+                FolderGroupNameDialog(activity, group.name, org.fossify.commons.R.string.rename) { newName ->
+                    config.renameFolderGroup(groupId, newName)
+                    finishActMode()
+                    listener?.refreshGroups()
+                }
+            }
+        }
+    }
+
+    private fun askConfirmUngroup() {
+        val groupIds = getSelectedItems().mapNotNull { it.getGroupId() }
+        if (groupIds.isEmpty()) {
+            return
+        }
+
+        ConfirmationDialog(activity, activity.getString(R.string.ungroup_confirmation)) {
+            groupIds.forEach {
+                config.dissolveFolderGroup(it)
+            }
+
+            finishActMode()
+            listener?.refreshGroups()
+        }
+    }
+
     private fun toggleFoldersVisibility(hide: Boolean) {
-        val selectedPaths = getSelectedPaths()
+        val selectedPaths = getSelectedRealPaths()
         if (hide && selectedPaths.contains(RECYCLE_BIN)) {
             config.showRecycleBinAtFolders = false
             if (selectedPaths.size == 1) {
@@ -438,7 +510,7 @@ class DirectoryAdapter(
     private fun updateFolderNames() {
         val includedFolders = config.includedFolders
         val hidden = activity.getString(R.string.hidden)
-        dirs.forEach {
+        dirs.filter { !it.isGroup() }.forEach {
             it.name = activity.checkAppendingHidden(it.path, hidden, includedFolders, ArrayList())
         }
         listener?.updateDirectories(dirs.toMutableList() as ArrayList)
@@ -478,7 +550,7 @@ class DirectoryAdapter(
     }
 
     private fun tryExcludeFolder() {
-        val selectedPaths = getSelectedPaths()
+        val selectedPaths = getSelectedRealPaths()
         val paths = selectedPaths.filter { it != PATH && it != RECYCLE_BIN && it != FAVORITES }.toSet()
         if (selectedPaths.contains(RECYCLE_BIN)) {
             config.showRecycleBinAtFolders = false
@@ -573,23 +645,70 @@ class DirectoryAdapter(
     }
 
     private fun copyFilesTo() {
-        handleLockedFolderOpeningForFolders(getSelectedPaths()) {
-            copyMoveTo(it, true)
-        }
-    }
-
-    private fun moveFilesTo() {
-        activity.handleDeletePasswordProtection {
-            handleLockedFolderOpeningForFolders(getSelectedPaths()) {
-                copyMoveTo(it, false)
+        handleLockedFolderOpeningForFolders(getSelectedRealPaths()) {
+            val fileDirItems = getMediaFileDirItems(it)
+            activity.tryCopyMoveFilesTo(fileDirItems, true) { destinationPath ->
+                onFilesCopiedMoved(fileDirItems, destinationPath)
             }
         }
     }
 
-    private fun copyMoveTo(selectedPaths: Collection<String>, isCopyOperation: Boolean) {
+    // "Move to" handles both real folders and virtual groups: the destination can be a real folder
+    // (the media files get moved there) or a group (the selected folders and groups get assigned to it)
+    private fun moveFilesTo() {
+        activity.handleDeletePasswordProtection {
+            handleLockedFolderOpeningForFolders(getSelectedPaths()) { paths ->
+                val groupIds = paths.mapNotNull { it.toFolderGroupId() }
+                val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN }
+                if (groupIds.isEmpty() && folderPaths.isEmpty()) {
+                    return@handleLockedFolderOpeningForFolders
+                }
+
+                val fileDirItems = getMediaFileDirItems(folderPaths)
+                val source = folderPaths.firstOrNull() ?: ""
+                PickDirectoryDialog(
+                    activity = activity,
+                    sourcePath = source,
+                    showOtherFolderButton = groupIds.isEmpty(),
+                    showFavoritesBin = false,
+                    isPickingCopyMoveDestination = true,
+                    isPickingFolderForWidget = false,
+                    excludedGroupIds = groupIds,
+                    allowFolderDestination = groupIds.isEmpty(),
+                    groupCallback = { destinationGroupId ->
+                        moveToGroup(folderPaths, groupIds, destinationGroupId)
+                    }
+                ) { destinationPath ->
+                    if (fileDirItems.isEmpty()) {
+                        activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                        return@PickDirectoryDialog
+                    }
+
+                    activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
+                        onFilesCopiedMoved(fileDirItems, it)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun moveToGroup(folderPaths: Collection<String>, groupIds: Collection<Long>, destinationGroupId: Long?) {
+        config.setFolderGroupOfPaths(folderPaths, destinationGroupId)
+
+        val failedMoves = groupIds.count { !config.moveFolderGroup(it, destinationGroupId) }
+        if (failedMoves > 0) {
+            activity.toast(R.string.cannot_move_group_into_itself)
+        }
+
+        finishActMode()
+        listener?.refreshGroups()
+    }
+
+    // the media files directly inside the given folders, respecting the current filter
+    private fun getMediaFileDirItems(folderPaths: Collection<String>): ArrayList<FileDirItem> {
         val paths = ArrayList<String>()
         val showHidden = config.shouldShowHidden
-        selectedPaths.forEach {
+        folderPaths.forEach {
             val filter = config.filterMedia
             File(it).listFiles()?.filter {
                 !File(it.absolutePath).isDirectory &&
@@ -602,18 +721,18 @@ class DirectoryAdapter(
             }?.mapTo(paths) { it.absolutePath }
         }
 
-        val fileDirItems = paths.map { FileDirItem(it, it.getFilenameFromPath()) } as ArrayList<FileDirItem>
-        activity.tryCopyMoveFilesTo(fileDirItems, isCopyOperation) {
-            val destinationPath = it
-            val newPaths = fileDirItems.map { "$destinationPath/${it.name}" }.toMutableList() as ArrayList<String>
-            activity.rescanPaths(newPaths) {
-                activity.fixDateTaken(newPaths, false)
-            }
+        return paths.map { FileDirItem(it, it.getFilenameFromPath()) } as ArrayList<FileDirItem>
+    }
 
-            config.tempFolderPath = ""
-            listener?.refreshItems()
-            finishActMode()
+    private fun onFilesCopiedMoved(fileDirItems: ArrayList<FileDirItem>, destinationPath: String) {
+        val newPaths = fileDirItems.map { "$destinationPath/${it.name}" }.toMutableList() as ArrayList<String>
+        activity.rescanPaths(newPaths) {
+            activity.fixDateTaken(newPaths, false)
         }
+
+        config.tempFolderPath = ""
+        listener?.refreshItems()
+        finishActMode()
     }
 
     private fun tryCreateShortcut() {
@@ -712,7 +831,10 @@ class DirectoryAdapter(
 
                 var foldersToDelete = ArrayList<File>(selectedKeys.size)
                 selectedDirs.forEach {
-                    if (it.areFavorites() || it.isRecycleBin()) {
+                    if (it.isGroup()) {
+                        // virtual groups are removed with "Ungroup", never deleted from the filesystem
+                        return@forEach
+                    } else if (it.areFavorites() || it.isRecycleBin()) {
                         if (it.isRecycleBin()) {
                             tryEmptyRecycleBin(false)
                         } else {
@@ -798,6 +920,9 @@ class DirectoryAdapter(
 
     private fun getSelectedPaths() = getSelectedItems().map { it.path } as ArrayList<String>
 
+    // selected paths without virtual folder groups
+    private fun getSelectedRealPaths() = getSelectedItems().filter { !it.isGroup() }.map { it.path } as ArrayList<String>
+
     private fun getFirstSelectedItem() = getItemWithKey(selectedKeys.first())
 
     private fun getFirstSelectedItemPath() = getFirstSelectedItem()?.path
@@ -835,14 +960,12 @@ class DirectoryAdapter(
     private fun setupView(view: View, directory: Directory, holder: ViewHolder) {
         val isSelected = selectedKeys.contains(directory.path.hashCode())
         bindItem(view).apply {
-            dirPath?.text = "${directory.path.substringBeforeLast("/")}/"
-            val thumbnailType = when {
-                directory.tmb.isVideoFast() -> TYPE_VIDEOS
-                directory.tmb.isGif() -> TYPE_GIFS
-                directory.tmb.isRawFast() -> TYPE_RAWS
-                directory.tmb.isSvg() -> TYPE_SVGS
-                else -> TYPE_IMAGES
+            dirPath?.text = if (directory.isGroup()) {
+                activity.getString(R.string.folder_group)
+            } else {
+                "${directory.path.substringBeforeLast("/")}/"
             }
+            val thumbnailType = getThumbnailType(directory.tmb)
 
             dirCheck.beVisibleIf(isSelected)
             if (isSelected) {
@@ -872,6 +995,12 @@ class DirectoryAdapter(
                 }
             }
 
+            val showGroupCollage = directory.isGroup() && directory.groupThumbnails.isNotEmpty() && !lockedFolderPaths.contains(directory.path)
+            dirGroupCollage.beVisibleIf(showGroupCollage)
+            if (!showGroupCollage) {
+                clearGroupCollage(this)
+            }
+
             if (lockedFolderPaths.contains(directory.path)) {
                 dirLock.beVisible()
                 dirLock.background = ColorDrawable(root.context.getProperBackgroundColor())
@@ -884,34 +1013,76 @@ class DirectoryAdapter(
                     else -> ROUNDED_CORNERS_BIG
                 }
 
-                dirThumbnail.setBackgroundResource(
-                    when (roundedCorners) {
-                        ROUNDED_CORNERS_SMALL -> R.drawable.placeholder_rounded_small
-                        ROUNDED_CORNERS_BIG -> R.drawable.placeholder_rounded_big
-                        else -> R.drawable.placeholder_square
-                    }
-                )
+                val placeholder = when (roundedCorners) {
+                    ROUNDED_CORNERS_SMALL -> R.drawable.placeholder_rounded_small
+                    ROUNDED_CORNERS_BIG -> R.drawable.placeholder_rounded_big
+                    else -> R.drawable.placeholder_square
+                }
+                dirThumbnail.setBackgroundResource(placeholder)
 
-                activity.loadImage(
-                    type = thumbnailType,
-                    path = directory.tmb,
-                    target = dirThumbnail,
-                    horizontalScroll = scrollHorizontally,
-                    animateGifs = animateGifs,
-                    cropThumbnails = cropThumbnails,
-                    roundCorners = roundedCorners,
-                    signature = directory.getKey(),
-                    onError = {
-                        dirThumbnail.scaleType = ImageView.ScaleType.CENTER
-                        dirThumbnail.setImageDrawable(AppCompatResources.getDrawable(activity, R.drawable.ic_vector_warning_colored))
+                if (showGroupCollage) {
+                    // a 2x2 collage of the first images inside the group, clipped to the same corners as a normal thumbnail
+                    Glide.with(activity).clear(dirThumbnail)
+                    dirThumbnail.setImageDrawable(null)
+                    dirGroupCollage.setBackgroundResource(placeholder)
+                    dirGroupCollage.clipToOutline = true
+                    dirGroupThumbnails.forEachIndexed { index, cell ->
+                        val tmb = directory.groupThumbnails.getOrNull(index)
+                        if (tmb == null) {
+                            Glide.with(activity).clear(cell)
+                            cell.setImageDrawable(null)
+                        } else {
+                            activity.loadImage(
+                                type = getThumbnailType(tmb),
+                                path = tmb,
+                                target = cell,
+                                horizontalScroll = false,
+                                animateGifs = false,
+                                cropThumbnails = true,
+                                roundCorners = ROUNDED_CORNERS_NONE,
+                                signature = ObjectKey(tmb),
+                                onError = {
+                                    cell.setImageDrawable(null)
+                                }
+                            )
+                        }
                     }
-                )
+                } else if (directory.isGroup() && directory.tmb.isEmpty()) {
+                    // an empty group has no thumbnail to borrow, show a folder icon instead
+                    Glide.with(activity).clear(dirThumbnail)
+                    dirThumbnail.scaleType = ImageView.ScaleType.CENTER
+                    dirThumbnail.setImageDrawable(AppCompatResources.getDrawable(activity, org.fossify.commons.R.drawable.ic_folder_vector))
+                    dirThumbnail.applyColorFilter(textColor)
+                } else {
+                    dirThumbnail.colorFilter = null
+                    activity.loadImage(
+                        type = thumbnailType,
+                        path = directory.tmb,
+                        target = dirThumbnail,
+                        horizontalScroll = scrollHorizontally,
+                        animateGifs = animateGifs,
+                        cropThumbnails = cropThumbnails,
+                        roundCorners = roundedCorners,
+                        signature = directory.getKey(),
+                        onError = {
+                            dirThumbnail.scaleType = ImageView.ScaleType.CENTER
+                            dirThumbnail.setImageDrawable(AppCompatResources.getDrawable(activity, R.drawable.ic_vector_warning_colored))
+                        }
+                    )
+                }
             }
 
             dirPin.beVisibleIf(pinnedFolders.contains(directory.path))
-            dirLocation.beVisibleIf(directory.location != LOCATION_INTERNAL)
+            dirLocation.beVisibleIf(directory.location != LOCATION_INTERNAL || directory.isGroup())
             if (dirLocation.isVisible()) {
-                dirLocation.setImageResource(if (directory.location == LOCATION_SD) org.fossify.commons.R.drawable.ic_sd_card_vector else org.fossify.commons.R.drawable.ic_usb_vector)
+                dirLocation.setImageResource(
+                    when {
+                        // mark virtual groups with a folders icon where the SD card / USB icon would be
+                        directory.isGroup() -> R.drawable.ic_folders_vector
+                        directory.location == LOCATION_SD -> org.fossify.commons.R.drawable.ic_sd_card_vector
+                        else -> org.fossify.commons.R.drawable.ic_usb_vector
+                    }
+                )
             }
 
             photoCnt.text = directory.subfoldersMediaCount.toString()

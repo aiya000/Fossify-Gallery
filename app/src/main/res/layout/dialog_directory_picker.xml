@@ -18,11 +18,50 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="@dimen/medium_margin" />
 
+        <!-- shown while picking a destination that can be a virtual group, replaces the "Other folder" dialog button -->
+        <LinearLayout
+            android:id="@+id/directories_group_actions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@+id/folder_search_view"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/directories_other_folder"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_horizontal"
+                android:paddingStart="@dimen/medium_margin"
+                android:paddingTop="@dimen/medium_margin"
+                android:paddingEnd="@dimen/medium_margin"
+                android:paddingBottom="@dimen/medium_margin"
+                android:text="@string/other_folder"
+                android:textSize="@dimen/bigger_text_size" />
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/directories_create_group"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center_horizontal"
+                android:paddingStart="@dimen/medium_margin"
+                android:paddingTop="@dimen/medium_margin"
+                android:paddingEnd="@dimen/medium_margin"
+                android:paddingBottom="@dimen/medium_margin"
+                android:text="@string/create_new_group"
+                android:textSize="@dimen/bigger_text_size" />
+
+        </LinearLayout>
+
         <org.fossify.commons.views.MyTextView
             android:id="@+id/directories_empty_placeholder"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_below="@+id/folder_search_view"
+            android:layout_below="@+id/directories_group_actions"
             android:alpha="0.8"
             android:gravity="center_horizontal"
             android:paddingStart="@dimen/activity_margin"

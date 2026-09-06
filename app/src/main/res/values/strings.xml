@@ -12,6 +12,18 @@
     <string name="all_folders">All folders</string>
     <string name="folder_view">Switch to folder view</string>
     <string name="other_folder">Other folder</string>
+    <!-- Folder groups -->
+    <string name="create_new_group">Create new group</string>
+    <string name="folder_group">Group</string>
+    <string name="group_name">Group name</string>
+    <string name="group_name_empty">Please enter a group name</string>
+    <string name="ungroup">Ungroup</string>
+    <string name="ungroup_confirmation">Remove the selected groups? The folders and groups inside them will be kept and moved one level up.</string>
+    <string name="cannot_move_group_into_itself">A group cannot be moved into itself or into one of its subgroups</string>
+    <string name="pick_a_group">Select a group as the destination, or press OK to use the current level</string>
+    <string name="move_into_group_hint">Press OK to move into \"%s\"</string>
+    <string name="move_to_top_level_hint">Press OK to move to the top level</string>
+    <string name="group_is_empty">This group is empty</string>
     <string name="show_on_map">Show on map</string>
     <string name="unknown_location">Unknown location</string>
     <string name="volume">Volume</string>

@@ -316,11 +316,21 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(fileDirItems: ArrayList<FileDirItem>, 
 
     val source = fileDirItems[0].getParentPath()
     PickDirectoryDialog(this, source, true, false, true, false) {
-        val destination = it
-        handleSAFDialog(source) {
-            if (it) {
-                copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopyOperation, true, config.shouldShowHidden, callback)
-            }
+        copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, callback)
+    }
+}
+
+// copies or moves the files to an already picked real folder, asking for SAF access if needed
+fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
+    fileDirItems: ArrayList<FileDirItem>,
+    source: String,
+    destination: String,
+    isCopyOperation: Boolean,
+    callback: (destinationPath: String) -> Unit
+) {
+    handleSAFDialog(source) {
+        if (it) {
+            copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopyOperation, true, config.shouldShowHidden, callback)
         }
     }
 }

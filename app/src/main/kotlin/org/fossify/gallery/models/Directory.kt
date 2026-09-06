@@ -25,7 +25,10 @@ data class Directory(
     // used with "Group direct subfolders" enabled
     @Ignore var subfoldersCount: Int = 0,
     @Ignore var subfoldersMediaCount: Int = 0,
-    @Ignore var containsMediaFilesDirectly: Boolean = true
+    @Ignore var containsMediaFilesDirectly: Boolean = true,
+
+    // used by virtual folder groups: up to 4 thumbnails of the first items inside, shown as a 2x2 collage
+    @Ignore var groupThumbnails: ArrayList<String> = ArrayList()
 ) {
 
     constructor() : this(null, "", "", "", 0, 0L, 0L, 0L, 0, 0, "", 0, 0)
@@ -42,6 +45,10 @@ data class Directory(
     fun areFavorites() = path == FAVORITES
 
     fun isRecycleBin() = path == RECYCLE_BIN
+
+    fun isGroup() = path.isFolderGroupPath()
+
+    fun getGroupId() = path.toFolderGroupId()
 
     fun getKey() = ObjectKey("$path-$modified")
 }

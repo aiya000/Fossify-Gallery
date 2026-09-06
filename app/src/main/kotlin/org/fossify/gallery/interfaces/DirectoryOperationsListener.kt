@@ -11,4 +11,7 @@ interface DirectoryOperationsListener {
     fun recheckPinnedFolders()
 
     fun updateDirectories(directories: ArrayList<Directory>)
+
+    // called after virtual folder groups changed, no filesystem rescan is needed
+    fun refreshGroups()
 }

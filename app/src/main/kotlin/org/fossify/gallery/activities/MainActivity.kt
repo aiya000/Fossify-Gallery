@@ -84,6 +84,7 @@ import org.fossify.gallery.databinding.ActivityMainBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
+import org.fossify.gallery.dialogs.FolderGroupNameDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
@@ -95,6 +96,7 @@ import org.fossify.gallery.extensions.getDirectorySortingValue
 import org.fossify.gallery.extensions.getDirsToShow
 import org.fossify.gallery.extensions.getDistinctPath
 import org.fossify.gallery.extensions.getFavoritePaths
+import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getNoMediaFoldersSync
 import org.fossify.gallery.extensions.getOTGFolderChildrenNames
 import org.fossify.gallery.extensions.getSortedDirectories
@@ -108,6 +110,7 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.movePinnedDirectoriesToFront
 import org.fossify.gallery.extensions.openRecycleBin
+import org.fossify.gallery.extensions.pruneFolderGroupMembers
 import org.fossify.gallery.extensions.removeInvalidDBDirectories
 import org.fossify.gallery.extensions.storeDirectoryItems
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
@@ -180,6 +183,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // used at "Group direct subfolders" for navigating Up with the back button
     private var mOpenedSubfolders = arrayListOf("")
+
+    // the virtual folder group currently opened, null at the top level
+    private var mCurrentGroupId: Long? = null
+
+    // used for navigating Up through virtual folder groups with the back button
+    private var mOpenedGroups = arrayListOf<Long?>(null)
 
     private var mDateFormat = ""
     private var mTimeFormat = ""
@@ -396,19 +405,36 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         return if (binding.mainMenu.isSearchOpen) {
             binding.mainMenu.closeSearch()
             true
-        } else if (config.groupDirectSubfolders) {
-            if (mCurrentPathPrefix.isEmpty()) {
-                appLockManager.lock()
-                false
-            } else {
-                mOpenedSubfolders.removeAt(mOpenedSubfolders.lastIndex)
-                mCurrentPathPrefix = mOpenedSubfolders.last()
-                setupAdapter(mDirs)
-                true
-            }
+        } else if (config.groupDirectSubfolders && mCurrentPathPrefix.isNotEmpty()) {
+            mOpenedSubfolders.removeAt(mOpenedSubfolders.lastIndex)
+            mCurrentPathPrefix = mOpenedSubfolders.last()
+            setupAdapter(mDirs)
+            true
+        } else if (mCurrentGroupId != null) {
+            mOpenedGroups.removeAt(mOpenedGroups.lastIndex)
+            mCurrentGroupId = mOpenedGroups.last()
+            setupAdapter(mDirs)
+            true
         } else {
             appLockManager.lock()
             false
+        }
+    }
+
+    private fun openGroup(groupId: Long?) {
+        mCurrentGroupId = groupId
+        mOpenedGroups.add(groupId)
+
+        // subfolder navigation is relative to the opened group, start it over
+        mCurrentPathPrefix = ""
+        mOpenedSubfolders = arrayListOf("")
+        setupAdapter(mDirs, "")
+    }
+
+    private fun createNewGroup() {
+        FolderGroupNameDialog(this) { name ->
+            config.addFolderGroup(name, mCurrentGroupId)
+            setupAdapter(mDirs)
         }
     }
 
@@ -505,6 +531,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.temporarily_show_excluded -> tryToggleTemporarilyShowExcluded()
                 R.id.stop_showing_excluded -> tryToggleTemporarilyShowExcluded()
                 R.id.create_new_folder -> createNewFolder()
+                R.id.create_new_group -> createNewGroup()
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.column_count -> changeColumnCount()
                 R.id.set_as_default_folder -> setAsDefaultFolder()
@@ -692,7 +719,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             refreshMenuItems()
             setupLayoutManager()
             binding.directoriesGrid.adapter = null
-            setupAdapter(getRecyclerAdapter()?.dirs ?: mDirs)
+            setupAdapter(mDirs)
         }
     }
 
@@ -1109,9 +1136,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         val dirs = getSortedDirectories(newDirs)
-        if (config.groupDirectSubfolders) {
-            mDirs = dirs.clone() as ArrayList<Directory>
-        }
+
+        // keep the full folder list available for navigating subfolders and virtual groups while the folders are being rechecked
+        mDirs = dirs.clone() as ArrayList<Directory>
 
         var isPlaceholderVisible = dirs.isEmpty()
 
@@ -1408,6 +1435,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mDirs = dirs.clone() as ArrayList<Directory>
+        pruneFolderGroupMembers()
     }
 
     private fun setAsDefaultFolder() {
@@ -1440,6 +1468,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (binding.mainMenu.isSearchOpen) {
             binding.directoriesEmptyPlaceholder.text =
                 getString(org.fossify.commons.R.string.no_items_found)
+            binding.directoriesEmptyPlaceholder2.beGone()
+        } else if (mCurrentGroupId != null) {
+            binding.directoriesEmptyPlaceholder.text = getString(R.string.group_is_empty)
             binding.directoriesEmptyPlaceholder2.beGone()
         } else if (dirs.isEmpty() && config.filterMedia == getDefaultFileFilter()) {
             if (isRPlus() && !isExternalStorageManager()) {
@@ -1481,11 +1512,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             .toMutableList() as ArrayList<Directory>
 
         val sortedDirs = getSortedDirectories(distinctDirs)
-        var dirsToShow = getDirsToShow(
-            dirs = sortedDirs,
-            allDirs = mDirs,
-            currentPathPrefix = mCurrentPathPrefix
-        ).clone() as ArrayList<Directory>
+        var dirsToShow = if (textToSearch.isEmpty()) {
+            getDirsToShowWithGroups(sortedDirs)
+        } else {
+            // searching looks through all real folders, ignoring the virtual group structure
+            getDirsToShow(
+                dirs = sortedDirs,
+                allDirs = mDirs,
+                currentPathPrefix = mCurrentPathPrefix
+            ).clone() as ArrayList<Directory>
+        }
 
         if (currAdapter == null || forceRecreate) {
             mDirsIgnoringSearch = dirs
@@ -1500,7 +1536,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             ) {
                 val clickedDir = it as Directory
                 val path = clickedDir.path
-                if (clickedDir.subfoldersCount == 1 || !config.groupDirectSubfolders) {
+                if (clickedDir.isGroup()) {
+                    handleLockedFolderOpening(path) { success ->
+                        if (success) {
+                            openGroup(clickedDir.getGroupId())
+                        }
+                    }
+                } else if (clickedDir.subfoldersCount == 1 || !config.groupDirectSubfolders) {
                     if (path != config.tempFolderPath) {
                         itemClicked(path)
                     }
@@ -1538,6 +1580,23 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         binding.directoriesGrid.postDelayed({
             binding.directoriesGrid.scrollBy(0, 0)
         }, 500)
+    }
+
+    // applies the virtual folder groups on top of the "Group direct subfolders" logic for the currently opened group level
+    private fun getDirsToShowWithGroups(sortedDirs: ArrayList<Directory>): ArrayList<Directory> {
+        val grouped = getGroupedDirectories(sortedDirs, mCurrentGroupId)
+        val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
+        val realDirsToShow = getDirsToShow(
+            dirs = ArrayList(realDirs),
+            allDirs = mDirs,
+            currentPathPrefix = mCurrentPathPrefix
+        )
+
+        return if (mCurrentPathPrefix.isEmpty()) {
+            getSortedDirectories(ArrayList(realDirsToShow + groupDirs))
+        } else {
+            realDirsToShow.clone() as ArrayList<Directory>
+        }
     }
 
     private fun setupScrollDirection() {
@@ -1603,7 +1662,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    private fun getCurrentlyDisplayedDirs() = getRecyclerAdapter()?.dirs ?: ArrayList()
+    // the full list of real folders backing the current view. While a group or a subfolder is opened the adapter
+    // holds only a subset (and virtual group items), so the last full list is used instead
+    private fun getCurrentlyDisplayedDirs(): ArrayList<Directory> {
+        val isShowingSubset = mCurrentGroupId != null || mCurrentPathPrefix.isNotEmpty() || config.parseFolderGroups().isNotEmpty()
+        return if (isShowingSubset && mDirs.isNotEmpty()) {
+            mDirs.clone() as ArrayList<Directory>
+        } else {
+            (getRecyclerAdapter()?.dirs ?: ArrayList()).filter { !it.isGroup() }.toMutableList() as ArrayList<Directory>
+        }
+    }
 
     private fun setupLatestMediaId() {
         ensureBackgroundThread {
@@ -1738,8 +1806,22 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun updateDirectories(directories: ArrayList<Directory>) {
         ensureBackgroundThread {
-            storeDirectoryItems(directories)
+            val realDirectories = directories.filter { !it.isGroup() }.toMutableList() as ArrayList<Directory>
+            storeDirectoryItems(realDirectories)
             removeInvalidDBDirectories()
+        }
+    }
+
+    override fun refreshGroups() {
+        // groups no longer existing cannot stay opened
+        val groups = config.parseFolderGroups()
+        while (mCurrentGroupId != null && groups.none { it.id == mCurrentGroupId }) {
+            mOpenedGroups.removeAt(mOpenedGroups.lastIndex)
+            mCurrentGroupId = mOpenedGroups.last()
+        }
+
+        runOnUiThread {
+            setupAdapter(mDirs)
         }
     }
 

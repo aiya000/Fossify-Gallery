@@ -12,6 +12,7 @@ import org.fossify.commons.helpers.SORT_DESCENDING
 import org.fossify.commons.helpers.VIEW_TYPE_GRID
 import org.fossify.gallery.R
 import org.fossify.gallery.models.AlbumCover
+import org.fossify.gallery.models.FolderGroup
 import java.util.Arrays
 import java.util.Locale
 
@@ -311,6 +312,136 @@ class Config(context: Context) : BaseConfig(context) {
     fun parseAlbumCovers(): ArrayList<AlbumCover> {
         val listType = object : TypeToken<List<AlbumCover>>() {}.type
         return Gson().fromJson<ArrayList<AlbumCover>>(albumCovers, listType) ?: ArrayList(1)
+    }
+
+    // virtual folder groups, stored as JSON. Groups are keyed by id, folders are assigned to groups by path
+    var folderGroups: String
+        get() = prefs.getString(FOLDER_GROUPS, "")!!
+        set(folderGroups) = prefs.edit().putString(FOLDER_GROUPS, folderGroups).apply()
+
+    // maps a real folder path to the id of the group it belongs to
+    var folderGroupMembers: String
+        get() = prefs.getString(FOLDER_GROUP_MEMBERS, "")!!
+        set(folderGroupMembers) = prefs.edit().putString(FOLDER_GROUP_MEMBERS, folderGroupMembers).apply()
+
+    fun parseFolderGroups(): ArrayList<FolderGroup> {
+        val listType = object : TypeToken<List<FolderGroup>>() {}.type
+        return try {
+            Gson().fromJson<ArrayList<FolderGroup>>(folderGroups, listType) ?: ArrayList()
+        } catch (ignored: Exception) {
+            ArrayList()
+        }
+    }
+
+    fun storeFolderGroups(groups: List<FolderGroup>) {
+        folderGroups = Gson().toJson(groups)
+    }
+
+    fun parseFolderGroupMembers(): HashMap<String, Long> {
+        val mapType = object : TypeToken<HashMap<String, Long>>() {}.type
+        return try {
+            Gson().fromJson<HashMap<String, Long>>(folderGroupMembers, mapType) ?: HashMap()
+        } catch (ignored: Exception) {
+            HashMap()
+        }
+    }
+
+    fun storeFolderGroupMembers(members: Map<String, Long>) {
+        folderGroupMembers = Gson().toJson(members)
+    }
+
+    fun getFolderGroup(id: Long): FolderGroup? = parseFolderGroups().firstOrNull { it.id == id }
+
+    fun addFolderGroup(name: String, parentId: Long?): FolderGroup {
+        val groups = parseFolderGroups()
+        val newId = (groups.maxOfOrNull { it.id } ?: 0L) + 1
+        val group = FolderGroup(newId, name, parentId)
+        groups.add(group)
+        storeFolderGroups(groups)
+        return group
+    }
+
+    fun renameFolderGroup(id: Long, newName: String) {
+        val groups = parseFolderGroups()
+        groups.firstOrNull { it.id == id }?.name = newName
+        storeFolderGroups(groups)
+    }
+
+    // returns true when the group is a descendant of (or equal to) the given ancestor
+    fun isFolderGroupDescendantOrSelf(groupId: Long?, ancestorId: Long, groups: List<FolderGroup> = parseFolderGroups()): Boolean {
+        val visited = HashSet<Long>()
+        var current = groupId
+        while (current != null && visited.add(current)) {
+            if (current == ancestorId) {
+                return true
+            }
+            current = groups.firstOrNull { it.id == current }?.parentId
+        }
+        return false
+    }
+
+    // moves a group under another group (or to the top level when newParentId is null),
+    // returns false if that would create a cycle
+    fun moveFolderGroup(id: Long, newParentId: Long?): Boolean {
+        val groups = parseFolderGroups()
+        if (newParentId != null && isFolderGroupDescendantOrSelf(newParentId, id, groups)) {
+            return false
+        }
+
+        groups.firstOrNull { it.id == id }?.parentId = newParentId
+        storeFolderGroups(groups)
+        return true
+    }
+
+    // removes the group only, its folders and subgroups are moved to the parent level
+    fun dissolveFolderGroup(id: Long) {
+        val groups = parseFolderGroups()
+        val group = groups.firstOrNull { it.id == id } ?: return
+        val parentId = group.parentId
+
+        groups.filter { it.parentId == id }.forEach { it.parentId = parentId }
+        groups.remove(group)
+        storeFolderGroups(groups)
+
+        val members = parseFolderGroupMembers()
+        val affectedPaths = members.filterValues { it == id }.keys
+        affectedPaths.forEach { path ->
+            if (parentId == null) {
+                members.remove(path)
+            } else {
+                members[path] = parentId
+            }
+        }
+        storeFolderGroupMembers(members)
+
+        val pseudoPath = group.getPseudoPath()
+        removePinnedFolders(hashSetOf(pseudoPath))
+        removeFolderProtection(pseudoPath)
+    }
+
+    fun getFolderGroupOfPath(path: String): Long? = parseFolderGroupMembers()[path]
+
+    fun setFolderGroupOfPath(path: String, groupId: Long?) {
+        setFolderGroupOfPaths(listOf(path), groupId)
+    }
+
+    fun setFolderGroupOfPaths(paths: Collection<String>, groupId: Long?) {
+        val members = parseFolderGroupMembers()
+        paths.forEach { path ->
+            if (groupId == null) {
+                members.remove(path)
+            } else {
+                members[path] = groupId
+            }
+        }
+        storeFolderGroupMembers(members)
+    }
+
+    fun updateFolderGroupMemberPath(oldPath: String, newPath: String) {
+        val members = parseFolderGroupMembers()
+        val groupId = members.remove(oldPath) ?: return
+        members[newPath] = groupId
+        storeFolderGroupMembers(members)
     }
 
     var hideSystemUI: Boolean
