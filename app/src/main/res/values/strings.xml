@@ -24,6 +24,7 @@
     <string name="move_into_group_hint">Press OK to move into \"%s\"</string>
     <string name="move_to_top_level_hint">Press OK to move to the top level</string>
     <string name="group_is_empty">This group is empty</string>
+    <string name="inside_group">Inside \"%s\"</string>
     <string name="show_on_map">Show on map</string>
     <string name="unknown_location">Unknown location</string>
     <string name="volume">Volume</string>

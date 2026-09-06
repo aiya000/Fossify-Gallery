@@ -10,7 +10,6 @@ import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beInvisible
-import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getDefaultCopyDestinationPath
@@ -40,10 +39,12 @@ import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.models.Directory
 
 /**
- * Lets the user pick a folder. When [groupCallback] is given, virtual folder groups are shown too:
- * tapping a group navigates into it and the OK button confirms the currently opened group
- * (or the top level) as the destination. Groups listed in [excludedGroupIds], and their subgroups,
- * are not offered. Set [allowFolderDestination] to false to accept only groups.
+ * Lets the user pick a folder. Virtual folder groups are shown as soon as [navigateGroups] is set or
+ * [groupCallback] is given: tapping a group navigates into it, so grouped folders are found where they
+ * live instead of being listed flat. With [groupCallback] a group itself is a valid destination too and
+ * the OK button confirms the currently opened group (or the top level). Groups listed in
+ * [excludedGroupIds], and their subgroups, are not offered. Set [allowFolderDestination] to false to
+ * accept only groups.
  */
 class PickDirectoryDialog(
     val activity: BaseSimpleActivity,
@@ -54,6 +55,7 @@ class PickDirectoryDialog(
     val isPickingFolderForWidget: Boolean,
     val excludedGroupIds: Collection<Long> = emptyList(),
     val allowFolderDestination: Boolean = true,
+    navigateGroups: Boolean = false,
     val groupCallback: ((groupId: Long?) -> Unit)? = null,
     val callback: (path: String) -> Unit
 ) {
@@ -71,7 +73,8 @@ class PickDirectoryDialog(
     private val searchView = binding.folderSearchView
     private val searchEditText = searchView.binding.topToolbarSearch
     private val searchBarContainer = searchView.binding.searchBarContainer
-    private val showGroups = groupCallback != null
+    private val isPickingGroup = groupCallback != null
+    private val showGroups = isPickingGroup || navigateGroups
 
     init {
         (binding.directoriesGrid.layoutManager as MyGridLayoutManager).apply {
@@ -106,17 +109,20 @@ class PickDirectoryDialog(
 
                 if (showGroups) {
                     updateGroupHint()
-                    alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        groupCallback?.invoke(currentGroupId)
-                        alertDialog.dismiss()
+                    if (isPickingGroup) {
+                        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                            groupCallback?.invoke(currentGroupId)
+                            alertDialog.dismiss()
+                        }
                     }
 
                     val primaryColor = activity.getProperPrimaryColor()
-                    binding.directoriesGroupActions.beVisible()
+                    val showOtherFolderAction = showOtherFolderButton && allowFolderDestination
+                    binding.directoriesGroupActions.beVisibleIf(showOtherFolderAction || isPickingGroup)
 
                     // picking a real folder outside of the list, same as the "Other folder" dialog button
                     binding.directoriesOtherFolder.apply {
-                        beVisibleIf(showOtherFolderButton && allowFolderDestination)
+                        beVisibleIf(showOtherFolderAction)
                         setTextColor(primaryColor)
                         underlineText()
                         setOnClickListener {
@@ -125,8 +131,10 @@ class PickDirectoryDialog(
                         }
                     }
 
-                    // like "Other folder" for real folders: create a new group at the opened level and move there right away
+                    // like "Other folder" for real folders: create a new group at the opened level and move there right away.
+                    // Only a group destination can take a new group, files always end up in a real folder
                     binding.directoriesCreateGroup.apply {
+                        beVisibleIf(isPickingGroup)
                         setTextColor(primaryColor)
                         underlineText()
                         setOnClickListener {
@@ -202,22 +210,25 @@ class PickDirectoryDialog(
         }
     }
 
-    // tells the user what the OK button will do while picking a group destination
+    // tells the user what the OK button will do while picking a group destination,
+    // or which group is opened while groups are only walked through
     private fun updateGroupHint() {
         if (!showGroups) {
             return
         }
 
         val groupId = currentGroupId
-        val hint = if (groupId == null) {
-            activity.getString(R.string.move_to_top_level_hint)
-        } else {
-            val groupName = config.getFolderGroup(groupId)?.name ?: ""
-            activity.getString(R.string.move_into_group_hint, groupName)
+        val hint = when {
+            isPickingGroup && groupId == null -> activity.getString(R.string.move_to_top_level_hint)
+            isPickingGroup -> activity.getString(R.string.move_into_group_hint, groupName(groupId!!))
+            groupId == null -> activity.getString(org.fossify.commons.R.string.search_folders)
+            else -> activity.getString(R.string.inside_group, groupName(groupId))
         }
 
         searchView.updateHintText(hint)
     }
+
+    private fun groupName(groupId: Long) = config.getFolderGroup(groupId)?.name ?: ""
 
     private fun filterFolderListBySearchQuery(query: String) {
         val adapter = binding.directoriesGrid.adapter as? DirectoryAdapter

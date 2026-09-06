@@ -162,7 +162,15 @@ class WidgetConfigureActivity : SimpleActivity() {
     }
 
     private fun changeSelectedFolder() {
-        PickDirectoryDialog(this, "", false, true, false, true) {
+        PickDirectoryDialog(
+            activity = this,
+            sourcePath = "",
+            showOtherFolderButton = false,
+            showFavoritesBin = true,
+            isPickingCopyMoveDestination = false,
+            isPickingFolderForWidget = true,
+            navigateGroups = true
+        ) {
             updateFolderImage(it)
         }
     }

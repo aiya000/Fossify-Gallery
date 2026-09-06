@@ -24,6 +24,7 @@
     <string name="move_into_group_hint">OK を押すと「%s」に移動します</string>
     <string name="move_to_top_level_hint">OK を押すとトップレベルに移動します</string>
     <string name="group_is_empty">このグループは空です</string>
+    <string name="inside_group">「%s」の中</string>
     <string name="show_on_map">地図上で表示</string>
     <string name="unknown_location">位置情報がありません</string>
     <string name="volume">音量</string>

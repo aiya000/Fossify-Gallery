@@ -61,7 +61,15 @@ class PickMediumDialog(val activity: BaseSimpleActivity, val path: String, val c
     }
 
     private fun showOtherFolder() {
-        PickDirectoryDialog(activity, path, true, true, false, false) {
+        PickDirectoryDialog(
+            activity = activity,
+            sourcePath = path,
+            showOtherFolderButton = true,
+            showFavoritesBin = true,
+            isPickingCopyMoveDestination = false,
+            isPickingFolderForWidget = false,
+            navigateGroups = true
+        ) {
             callback(it)
             dialog?.dismiss()
         }

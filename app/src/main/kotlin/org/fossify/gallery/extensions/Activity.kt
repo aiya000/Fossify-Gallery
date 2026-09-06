@@ -315,7 +315,15 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(fileDirItems: ArrayList<FileDirItem>, 
     }
 
     val source = fileDirItems[0].getParentPath()
-    PickDirectoryDialog(this, source, true, false, true, false) {
+    PickDirectoryDialog(
+        activity = this,
+        sourcePath = source,
+        showOtherFolderButton = true,
+        showFavoritesBin = false,
+        isPickingCopyMoveDestination = true,
+        isPickingFolderForWidget = false,
+        navigateGroups = true
+    ) {
         copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, callback)
     }
 }
