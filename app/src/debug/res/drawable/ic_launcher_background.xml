@@ -1,0 +1,5 @@
+<!-- Debug builds get an orange launcher icon so they are easy to tell apart from the release build.
+     Same tone as `ic_launcher_orange` (`md_orange_700`) from the app icon color setting. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="512" android:viewportHeight="512">
+    <path android:fillColor="#F57C00" android:pathData="M0 0h512v512H0z"/>
+</vector>
