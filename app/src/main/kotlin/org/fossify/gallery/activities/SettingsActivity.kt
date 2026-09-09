@@ -71,6 +71,7 @@ class SettingsActivity : SimpleActivity() {
         setupUltraHdrRendering()
         setupCropThumbnails()
         setupAnimateGifs()
+        setupDisplayFileNames()
         setupDarkBackground()
         setupScrollHorizontally()
         setupScreenRotation()
@@ -356,6 +357,14 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsAnimateGifsHolder.setOnClickListener {
             binding.settingsAnimateGifs.toggle()
             config.animateGifs = binding.settingsAnimateGifs.isChecked
+        }
+    }
+
+    private fun setupDisplayFileNames() {
+        binding.settingsDisplayFileNames.isChecked = config.displayFileNames
+        binding.settingsDisplayFileNamesHolder.setOnClickListener {
+            binding.settingsDisplayFileNames.toggle()
+            config.displayFileNames = binding.settingsDisplayFileNames.isChecked
         }
     }
 

@@ -146,6 +146,7 @@
     <string name="remember_last_video_position">動画の最後の再生位置を記憶する</string>
     <string name="loop_videos">動画を繰り返し再生</string>
     <string name="animate_gifs">アニメーションGIFを動かす</string>
+    <string name="display_file_names">サムネイルにファイル名を表示</string>
     <string name="max_brightness">メディアの表示時に明るさを最大化</string>
     <string name="crop_thumbnails">サムネイルを正方形に切り取る</string>
     <string name="show_thumbnail_video_duration">動画の長さを表示</string>

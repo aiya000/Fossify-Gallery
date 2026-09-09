@@ -188,6 +188,7 @@
     <string name="remember_last_video_position">Remember last video playback position</string>
     <string name="loop_videos">Loop videos</string>
     <string name="animate_gifs">Animate GIFs at thumbnails</string>
+    <string name="display_file_names">Show file names at thumbnails</string>
     <string name="max_brightness">Max brightness when viewing fullscreen media</string>
     <string name="render_ultra_hdr_photos">Show Ultra HDR photos in HDR</string>
     <string name="crop_thumbnails">Crop thumbnails into squares</string>

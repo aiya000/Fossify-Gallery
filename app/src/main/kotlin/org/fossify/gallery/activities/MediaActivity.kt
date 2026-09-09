@@ -140,6 +140,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mStoredCropThumbnails = true
     private var mStoredScrollHorizontally = true
     private var mStoredShowFileTypes = true
+    private var mStoredDisplayFileNames = false
     private var mStoredRoundedCorners = false
     private var mStoredMarkFavoriteItems = true
     private var mStoredTextColor = 0
@@ -215,6 +216,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
         if (mStoredShowFileTypes != config.showThumbnailFileTypes) {
             getMediaAdapter()?.updateShowFileTypes(config.showThumbnailFileTypes)
+        }
+
+        if (mStoredDisplayFileNames != config.displayFileNames) {
+            getMediaAdapter()?.updateDisplayFilenames(config.displayFileNames)
         }
 
         if (mStoredTextColor != getProperTextColor()) {
@@ -424,6 +429,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             mStoredCropThumbnails = cropThumbnails
             mStoredScrollHorizontally = scrollHorizontally
             mStoredShowFileTypes = showThumbnailFileTypes
+            mStoredDisplayFileNames = displayFileNames
             mStoredMarkFavoriteItems = markFavoriteItems
             mStoredThumbnailSpacing = thumbnailSpacing
             mStoredRoundedCorners = fileRoundedCorners

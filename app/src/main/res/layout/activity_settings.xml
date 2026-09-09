@@ -377,6 +377,21 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_display_file_names_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_display_file_names"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/display_file_names" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_file_thumbnail_style_holder"
                 style="@style/SettingsHolderTextViewOneLinerStyle"
                 android:layout_width="match_parent"
