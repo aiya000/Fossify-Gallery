@@ -8,6 +8,7 @@ import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.allViews
@@ -123,10 +124,10 @@ class MediaAdapter(
     private var displayFilenames = config.displayFileNames
     private var showFileTypes = config.showThumbnailFileTypes
 
-    // tapping a thumbnail while selecting toggles the selection, so grid items get their own
-    // button to open the item fullscreen. Picker and wallpaper intents are left out, there a tap
+    // tapping an item while selecting toggles the selection, so items get their own button to
+    // open the medium fullscreen. Picker and wallpaper intents are left out, there a tap
     // confirms the pick instead of opening anything
-    private val canPreviewWhileSelecting = !isListViewType && !isAGetIntent &&
+    private val canPreviewWhileSelecting = !isAGetIntent &&
         !activity.intent.getBooleanExtra(SET_WALLPAPER_INTENT, false)
 
     var sorting = config.getFolderSorting(if (config.showAll) SHOW_ALL else path)
@@ -735,8 +736,8 @@ class MediaAdapter(
             }
 
             val showPreview = canPreviewWhileSelecting && actModeCallback.isSelectable
-            mediumPreview?.beVisibleIf(showPreview)
-            mediumPreview?.setOnClickListener(if (showPreview) View.OnClickListener { itemClick(medium) } else null)
+            mediumPreview.beVisibleIf(showPreview)
+            mediumPreview.setOnClickListener(if (showPreview) View.OnClickListener { itemClick(medium) } else null)
 
             if (isListViewType) {
                 mediaItemHolder.isSelected = isSelected
@@ -780,6 +781,8 @@ class MediaAdapter(
             if (isListViewType) {
                 mediumName.setTextColor(textColor)
                 playPortraitOutline?.applyColorFilter(textColor)
+                (mediumPreview as? TextView)?.setTextColor(textColor)
+                mediumPreview.background?.applyColorFilter(textColor)
             }
         }
     }
