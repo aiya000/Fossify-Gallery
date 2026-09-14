@@ -2,6 +2,7 @@
 <resources>
     <string name="app_launcher_name">Gallery</string>
     <string name="edit">Edit</string>
+    <string name="preview">Preview</string>
     <string name="open_camera">Open camera</string>
     <string name="hidden">(hidden)</string>
     <string name="excluded">(excluded)</string>

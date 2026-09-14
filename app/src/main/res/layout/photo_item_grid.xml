@@ -50,6 +50,18 @@
         android:gravity="end">
 
         <ImageView
+            android:id="@+id/medium_preview"
+            android:layout_width="@dimen/selection_check_size"
+            android:layout_height="@dimen/selection_check_size"
+            android:layout_margin="@dimen/smaller_margin"
+            android:background="@drawable/circle_black_background"
+            android:contentDescription="@string/preview"
+            android:padding="@dimen/small_margin"
+            android:src="@drawable/ic_maximize_vector"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <ImageView
             android:id="@+id/favorite"
             android:layout_width="@dimen/selection_check_size"
             android:layout_height="@dimen/selection_check_size"

@@ -18,6 +18,7 @@ interface MediaItemBinding {
     val mediumName: TextView
     val videoDuration: TextView?
     val mediumCheck: ImageView
+    val mediumPreview: ImageView?
     val mediumThumbnail: MySquareImageView
 }
 
@@ -30,6 +31,7 @@ class PhotoListMediaItemBinding(val binding: PhotoItemListBinding) : MediaItemBi
     override val mediumName: TextView = binding.mediumName
     override val videoDuration: TextView? = null
     override val mediumCheck: ImageView = binding.mediumCheck
+    override val mediumPreview: ImageView? = null
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
 }
 
@@ -44,6 +46,7 @@ class PhotoGridMediaItemBinding(val binding: PhotoItemGridBinding) : MediaItemBi
     override val mediumName: TextView = binding.mediumName
     override val videoDuration: TextView? = null
     override val mediumCheck: ImageView = binding.mediumCheck
+    override val mediumPreview: ImageView = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
 }
 
@@ -58,6 +61,7 @@ class VideoListMediaItemBinding(val binding: VideoItemListBinding) : MediaItemBi
     override val mediumName: TextView = binding.mediumName
     override val videoDuration: TextView = binding.videoDuration
     override val mediumCheck: ImageView = binding.mediumCheck
+    override val mediumPreview: ImageView? = null
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
 }
 
@@ -72,6 +76,7 @@ class VideoGridMediaItemBinding(val binding: VideoItemGridBinding) : MediaItemBi
     override val mediumName: TextView = binding.mediumName
     override val videoDuration: TextView = binding.videoDuration
     override val mediumCheck: ImageView = binding.mediumCheck
+    override val mediumPreview: ImageView = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
 }
 

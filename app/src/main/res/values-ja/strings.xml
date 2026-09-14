@@ -2,6 +2,7 @@
 <resources>
     <string name="app_launcher_name">ギャラリー</string>
     <string name="edit">編集</string>
+    <string name="preview">プレビュー</string>
     <string name="open_camera">カメラを開く</string>
     <string name="hidden">(非表示)</string>
     <string name="excluded">(除外)</string>

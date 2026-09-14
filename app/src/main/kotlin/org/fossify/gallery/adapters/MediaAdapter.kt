@@ -83,6 +83,7 @@ import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
+import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_RECYCLE_BIN
@@ -121,6 +122,12 @@ class MediaAdapter(
     private var cropThumbnails = config.cropThumbnails
     private var displayFilenames = config.displayFileNames
     private var showFileTypes = config.showThumbnailFileTypes
+
+    // tapping a thumbnail while selecting toggles the selection, so grid items get their own
+    // button to open the item fullscreen. Picker and wallpaper intents are left out, there a tap
+    // confirms the pick instead of opening anything
+    private val canPreviewWhileSelecting = !isListViewType && !isAGetIntent &&
+        !activity.intent.getBooleanExtra(SET_WALLPAPER_INTENT, false)
 
     var sorting = config.getFolderSorting(if (config.showAll) SHOW_ALL else path)
     var dateFormat = config.dateFormat
@@ -243,9 +250,21 @@ class MediaAdapter(
 
     override fun getItemKeyPosition(key: Int) = media.indexOfFirst { (it as? Medium)?.path?.hashCode() == key }
 
-    override fun onActionModeCreated() {}
+    override fun onActionModeCreated() {
+        refreshPreviewButtons()
+    }
 
-    override fun onActionModeDestroyed() {}
+    override fun onActionModeDestroyed() {
+        refreshPreviewButtons()
+    }
+
+    // the preview buttons only show up while selecting, so every visible item has to be
+    // rebound when the selection mode starts or ends
+    private fun refreshPreviewButtons() {
+        if (canPreviewWhileSelecting) {
+            recyclerView.post { notifyDataSetChanged() }
+        }
+    }
 
     override fun onViewRecycled(holder: ViewHolder) {
         super.onViewRecycled(holder)
@@ -714,6 +733,10 @@ class MediaAdapter(
                 mediumCheck.background?.applyColorFilter(properPrimaryColor)
                 mediumCheck.applyColorFilter(contrastColor)
             }
+
+            val showPreview = canPreviewWhileSelecting && actModeCallback.isSelectable
+            mediumPreview?.beVisibleIf(showPreview)
+            mediumPreview?.setOnClickListener(if (showPreview) View.OnClickListener { itemClick(medium) } else null)
 
             if (isListViewType) {
                 mediaItemHolder.isSelected = isSelected
