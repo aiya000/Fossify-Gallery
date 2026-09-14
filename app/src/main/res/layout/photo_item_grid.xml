@@ -51,9 +51,10 @@
 
         <ImageView
             android:id="@+id/medium_preview"
-            android:layout_width="@dimen/selection_check_size"
-            android:layout_height="@dimen/selection_check_size"
+            android:layout_width="@dimen/preview_button_size"
+            android:layout_height="@dimen/preview_button_size"
             android:layout_margin="@dimen/smaller_margin"
+            android:alpha="0.7"
             android:background="@drawable/circle_black_background"
             android:contentDescription="@string/preview"
             android:padding="@dimen/small_margin"
