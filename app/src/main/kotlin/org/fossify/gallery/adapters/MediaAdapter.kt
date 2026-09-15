@@ -103,6 +103,7 @@ import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
 import java.util.Collections
+import kotlin.math.min
 
 class MediaAdapter(
     activity: BaseSimpleActivity,
@@ -756,8 +757,33 @@ class MediaAdapter(
             currentMediaHash = thumbnailItems.hashCode()
             media = thumbnailItems
             notifyDataSetChanged()
-            finishActMode()
+            dropSelectedItemsThatAreGone()
         }
+    }
+
+    // the list is rebuilt whenever anything about it changed, for example after deleting an item
+    // from the fullscreen view. Everything that is still there stays selected, instead of the
+    // whole selection being thrown away because one item went missing
+    private fun dropSelectedItemsThatAreGone() {
+        if (actMode == null) {
+            return
+        }
+
+        val existingKeys = media.mapNotNull { (it as? Medium)?.path?.hashCode() }.toHashSet()
+        selectedKeys.removeAll { !existingKeys.contains(it) }
+        if (selectedKeys.isEmpty()) {
+            finishActMode()
+        } else {
+            updateActModeTitle()
+        }
+    }
+
+    // MyRecyclerViewAdapter keeps its own title updating private, so the same "x / y" has to be
+    // written here whenever the selection is changed without going through toggleItemSelection()
+    private fun updateActModeTitle() {
+        val selectableItemCount = getSelectableItemCount()
+        actMode?.title = "${min(selectedKeys.size, selectableItemCount)} / $selectableItemCount"
+        actMode?.invalidate()
     }
 
     fun updateDisplayFilenames(displayFilenames: Boolean) {
