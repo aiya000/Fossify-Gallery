@@ -41,4 +41,18 @@
             app:navigationIcon="@drawable/ic_arrow_left_vector" />
 
     </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- only shown when the viewer was opened out of a selection, placed like the check mark of a
+         thumbnail so the two read as the same thing -->
+    <ImageView
+        android:id="@+id/medium_selection_toggle"
+        android:layout_width="@dimen/viewer_selection_check_size"
+        android:layout_height="@dimen/viewer_selection_check_size"
+        android:layout_below="@id/medium_viewer_appbar"
+        android:layout_alignParentEnd="true"
+        android:layout_margin="@dimen/activity_margin"
+        android:background="@drawable/circle_white_outline_background"
+        android:contentDescription="@string/add_to_selection"
+        android:padding="@dimen/small_margin"
+        android:visibility="gone" />
 </RelativeLayout>

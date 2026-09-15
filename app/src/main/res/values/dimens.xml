@@ -6,6 +6,8 @@
     <dimen name="play_outline_icon_size">22dp</dimen>
     <dimen name="favorite_list_icon_size">17dp</dimen>
     <dimen name="selection_check_size">26dp</dimen>
+    <dimen name="selection_check_stroke">3dp</dimen>
+    <dimen name="viewer_selection_check_size">36dp</dimen>
     <dimen name="preview_button_size">24dp</dimen>
     <dimen name="drag_handle_size">34dp</dimen>
     <dimen name="play_outline_size_big">96dp</dimen>

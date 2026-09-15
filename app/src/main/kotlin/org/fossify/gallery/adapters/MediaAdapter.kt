@@ -778,6 +778,42 @@ class MediaAdapter(
         }
     }
 
+    // the fullscreen view can be opened out of a selection and toggle items while it is up, so
+    // what it hands back on the way out becomes the selection of the grid
+    fun applySelection(paths: Collection<String>) {
+        if (actMode == null) {
+            return
+        }
+
+        val wantedPaths = paths.toHashSet()
+
+        // selecting comes first: dropping what was the last selected item would end the action
+        // mode before the newly selected ones are in
+        media.forEachIndexed { position, item ->
+            val itemPath = (item as? Medium)?.path ?: return@forEachIndexed
+            if (wantedPaths.contains(itemPath)) {
+                toggleItemSelection(true, position, false)
+            }
+        }
+
+        media.forEachIndexed { position, item ->
+            val itemPath = (item as? Medium)?.path ?: return@forEachIndexed
+            if (!wantedPaths.contains(itemPath)) {
+                toggleItemSelection(false, position, false)
+            }
+        }
+
+        if (selectedKeys.isEmpty()) {
+            finishActMode()
+        } else {
+            updateActModeTitle()
+        }
+    }
+
+    fun getSelectedMediaPaths() = getSelectedPaths()
+
+    fun isSelecting() = actMode != null && selectedKeys.isNotEmpty()
+
     // MyRecyclerViewAdapter keeps its own title updating private, so the same "x / y" has to be
     // written here whenever the selection is changed without going through toggleItemSelection()
     private fun updateActModeTitle() {

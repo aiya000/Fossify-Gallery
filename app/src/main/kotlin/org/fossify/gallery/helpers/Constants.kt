@@ -107,6 +107,9 @@ const val CUSTOM_FOLDERS_ORDER_SEPARATOR = "|||"
 const val CUSTOM_MEDIA_ORDER_PREFIX = "custom_media_order_"
 const val CUSTOM_MEDIA_ORDER_SEPARATOR = "|||"
 
+// the paths selected in the media grid, handed to the fullscreen view and back again
+const val SELECTED_PATHS = "selected_paths"
+
 const val FOLDER_GROUPS = "folder_groups"
 const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 

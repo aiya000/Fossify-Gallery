@@ -48,6 +48,7 @@ import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.convertToBitmap
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getColoredDrawableWithColor
+import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getDataColumn
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getDuration
@@ -57,6 +58,7 @@ import org.fossify.commons.extensions.getImageResolution
 import org.fossify.commons.extensions.getIsPathDirectory
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getProperBackgroundColor
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getResolution
 import org.fossify.commons.extensions.getUriMimeType
 import org.fossify.commons.extensions.handleDeletePasswordProtection
@@ -158,6 +160,7 @@ import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROTATE_BY_ASPECT_RATIO
 import org.fossify.gallery.helpers.ROTATE_BY_DEVICE_ROTATION
 import org.fossify.gallery.helpers.ROTATE_BY_SYSTEM_SETTING
+import org.fossify.gallery.helpers.SELECTED_PATHS
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_NEXT_ITEM
@@ -188,6 +191,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     companion object {
         private const val REQUEST_VIEW_VIDEO = 1
         private const val SAVED_PATH = "current_path"
+        private const val SAVED_SELECTED_PATHS = "selected_paths"
     }
 
     private var mPath = ""
@@ -208,6 +212,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private var mIsOrientationLocked = false
 
     private var mMediaFiles = ArrayList<Medium>()
+
+    // null while the viewer was not opened from a selection in the media grid, which is what the
+    // selection toggle in the toolbar hangs off
+    private var mSelectedPaths: ArrayList<String>? = null
+
     private var mFavoritePaths = ArrayList<String>()
     private var mIgnoredPaths = ArrayList<String>()
     private var mOriginalBrightness: Float? = null
@@ -226,6 +235,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         setupEdgeToEdge(
             padBottomSystem = listOf(binding.bottomActions.bottomActionsWrapper),
         )
+
+        mSelectedPaths = savedInstanceState?.getStringArrayList(SAVED_SELECTED_PATHS)
+            ?: intent.getStringArrayListExtra(SELECTED_PATHS)
 
         setupOptionsMenu()
         refreshMenuItems()
@@ -327,10 +339,72 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 )
             }
 
+            refreshSelectionToggle()
             if (visibleBottomActions != 0) {
                 updateBottomActionIcons(currentMedium)
             }
         }
+    }
+
+    // the grid opened this view out of an active selection, so the item on screen can be taken
+    // into that selection or dropped from it without going back first
+    private fun toggleCurrentSelection() {
+        val selectedPaths = mSelectedPaths ?: return
+        val path = getCurrentPath()
+        if (path.isEmpty()) {
+            return
+        }
+
+        if (!selectedPaths.remove(path)) {
+            selectedPaths.add(path)
+        }
+
+        publishSelection()
+        refreshSelectionToggle()
+    }
+
+    // an empty white ring while the item is not selected and the same filled check a thumbnail
+    // gets once it is, so both views say "selected" the same way
+    private fun refreshSelectionToggle() {
+        val selectedPaths = mSelectedPaths
+        val path = getCurrentPath()
+        binding.mediumSelectionToggle.apply {
+            beVisibleIf(selectedPaths != null && path.isNotEmpty() && !mIsFullScreen)
+            if (selectedPaths == null) {
+                return@apply
+            }
+
+            val isSelected = selectedPaths.contains(path)
+            contentDescription = getString(
+                if (isSelected) R.string.remove_from_selection else R.string.add_to_selection
+            )
+
+            if (isSelected) {
+                val primaryColor = getProperPrimaryColor()
+                setBackgroundResource(org.fossify.commons.R.drawable.circle_background)
+                background.applyColorFilter(primaryColor)
+                setImageResource(org.fossify.commons.R.drawable.ic_check_vector)
+                applyColorFilter(primaryColor.getContrastColor())
+            } else {
+                setBackgroundResource(R.drawable.circle_white_outline_background)
+                setImageDrawable(null)
+            }
+        }
+    }
+
+    private fun dropFromSelection(path: String) {
+        if (mSelectedPaths?.remove(path) == true) {
+            publishSelection()
+        }
+    }
+
+    // set after every change, so the grid gets the selection no matter how this view is left
+    private fun publishSelection() {
+        val selectedPaths = mSelectedPaths ?: return
+        setResult(
+            Activity.RESULT_OK,
+            Intent().putStringArrayListExtra(SELECTED_PATHS, ArrayList(selectedPaths))
+        )
     }
 
     private fun setupOptionsMenu() {
@@ -384,6 +458,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         binding.mediumViewerToolbar.setNavigationOnClickListener {
             finish()
         }
+
+        binding.mediumSelectionToggle.setOnClickListener {
+            toggleCurrentSelection()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
@@ -411,6 +489,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(SAVED_PATH, getCurrentPath())
+        outState.putStringArrayList(SAVED_SELECTED_PATHS, mSelectedPaths)
     }
 
     private fun initViewPager(savedPath: String) {
@@ -1220,6 +1299,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 }
 
                 mIgnoredPaths.add(fileDirItem.path)
+                dropFromSelection(fileDirItem.path)
                 val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
                 if (media.isNotEmpty()) {
                     runOnUiThread {
@@ -1257,6 +1337,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
 
             mIgnoredPaths.add(fileDirItem.path)
+            dropFromSelection(fileDirItem.path)
             val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
             if (media.isNotEmpty()) {
                 runOnUiThread {
@@ -1496,6 +1577,14 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }.withEndAction {
                 binding.mediumViewerAppbar.beVisibleIf(newAlpha == 1f)
             }.start()
+
+            if (mSelectedPaths != null) {
+                binding.mediumSelectionToggle.animate().alpha(newAlpha).withStartAction {
+                    binding.mediumSelectionToggle.beVisible()
+                }.withEndAction {
+                    binding.mediumSelectionToggle.beVisibleIf(newAlpha == 1f)
+                }.start()
+            }
         }
     }
 

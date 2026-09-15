@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.view.ViewGroup
 import android.widget.RelativeLayout
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.core.net.toUri
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -97,6 +98,7 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.SELECTED_PATHS
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
@@ -135,6 +137,13 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mTempShowHiddenHandler = Handler()
     private var mCurrAsyncTask: GetMediaAsynctask? = null
     private var mZoomListener: MyRecyclerView.MyZoomListener? = null
+
+    private val mViewPagerLauncher = registerForActivityResult(StartActivityForResult()) { result ->
+        val paths = result.data?.getStringArrayListExtra(SELECTED_PATHS)
+        if (paths != null) {
+            getMediaAdapter()?.applySelection(paths)
+        }
+    }
 
     private var mStoredAnimateGifs = true
     private var mStoredCropThumbnails = true
@@ -988,6 +997,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun openInViewPager(path: String) {
+        val selectedPaths = getMediaAdapter()?.takeIf { it.isSelecting() }?.getSelectedMediaPaths()
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(SKIP_AUTHENTICATION, shouldSkipAuthentication())
             putExtra(PATH, path)
@@ -995,7 +1005,15 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             putExtra(SHOW_FAVORITES, mPath == FAVORITES)
             putExtra(SHOW_RECYCLE_BIN, mPath == RECYCLE_BIN)
             putExtra(IS_FROM_GALLERY, true)
-            startActivity(this)
+
+            // the fullscreen view can toggle the selection it was opened from, so it is started
+            // for a result whenever there is a selection to hand over
+            if (selectedPaths != null) {
+                putStringArrayListExtra(SELECTED_PATHS, selectedPaths)
+                mViewPagerLauncher.launch(this)
+            } else {
+                startActivity(this)
+            }
         }
     }
 
