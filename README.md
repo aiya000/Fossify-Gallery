@@ -63,9 +63,14 @@ Everything above describes the upstream app. This fork adds the following on top
 - The order belongs to one folder, so "Use for this folder only" is turned on and locked while that option is selected
 - The dragging itself starts from the selection menu, which also offers "Move to top" and "Move to bottom", the same way the folder list already worked
 
-### Thumbnails
+### Selecting media
 
 - While the selection mode is active, each item carries a "Preview" button that opens it fullscreen without touching the selection
+- A fullscreen view opened that way carries a check button over the top right of the image, so the item on screen can be taken into the selection or dropped from it without going back to the grid first
+- Deleting an item only takes that one item out of the selection, instead of clearing the whole selection
+
+### Thumbnails
+
 - "Show file names at thumbnails" is a switch in the Thumbnails section of the settings, next to the other thumbnail options, instead of an overflow menu item only
 
 ### Builds
