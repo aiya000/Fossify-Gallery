@@ -30,7 +30,12 @@ class ChangeSortingDialog(
     val callback: () -> Unit
 ) :
     DialogInterface.OnClickListener {
+    companion object {
+        private const val DISABLED_ALPHA = 0.4f
+    }
+
     private var currSorting = 0
+    private var wasUseForThisFolderChecked = false
     private var config = activity.config
     private var pathToUse = if (!isDirectorySorting && path.isEmpty()) SHOW_ALL else path
     private val binding: DialogChangeSortingBinding
@@ -59,7 +64,12 @@ class ChangeSortingDialog(
             sortingDialogUseForThisFolder.beVisibleIf(showFolderCheckbox)
             sortingDialogUseForThisFolder.isChecked = config.hasCustomSorting(pathToUse)
             sortingDialogBottomNote.beVisibleIf(!isDirectorySorting)
-            sortingDialogRadioCustom.beVisibleIf(isDirectorySorting)
+
+            // the folder list calls its drag and drop order "custom", for the media of a single
+            // folder the shorter name would not say what it reorders
+            if (!isDirectorySorting) {
+                sortingDialogRadioCustom.setText(R.string.reorder_media_by_dragging)
+            }
         }
 
         activity.getAlertDialogBuilder()
@@ -92,6 +102,8 @@ class ChangeSortingDialog(
 
             binding.sortingDialogRadioOrder.beGoneIf(hideSortOrder)
             binding.sortingDialogSortingDivider.beGoneIf(hideSortOrder)
+
+            updateUseForThisFolder(isCustomSorting = checkedId == binding.sortingDialogRadioCustom.id)
         }
 
         val sortBtn = when {
@@ -105,6 +117,36 @@ class ChangeSortingDialog(
             else -> binding.sortingDialogRadioName
         }
         sortBtn.isChecked = true
+    }
+
+    // a custom order is kept per folder, so it only ever makes sense together with
+    // "use for this folder" - the checkbox gets turned on and locked instead of being left
+    // for the user to get wrong
+    private fun updateUseForThisFolder(isCustomSorting: Boolean) {
+        if (isDirectorySorting || !showFolderCheckbox) {
+            return
+        }
+
+        binding.sortingDialogUseForThisFolder.apply {
+            if (isCustomSorting) {
+                if (isEnabled) {
+                    wasUseForThisFolderChecked = isChecked
+                }
+
+                isChecked = true
+                isEnabled = false
+                alpha = DISABLED_ALPHA
+            } else {
+                if (!isEnabled) {
+                    isChecked = wasUseForThisFolderChecked
+                }
+
+                isEnabled = true
+                alpha = 1f
+            }
+        }
+
+        binding.sortingDialogUseForThisFolderNote.beVisibleIf(isCustomSorting)
     }
 
     private fun setupOrderRadio() {

@@ -77,7 +77,7 @@ class MediaFetcher(val context: Context) {
             }
         }
 
-        sortMedia(curMedia, context.config.getFolderSorting(curPath))
+        sortMedia(curMedia, context.config.getFolderSorting(curPath), curPath)
         return curMedia
     }
 
@@ -761,9 +761,14 @@ class MediaFetcher(val context: Context) {
         return sizes
     }
 
-    fun sortMedia(media: ArrayList<Medium>, sorting: Int) {
+    fun sortMedia(media: ArrayList<Medium>, sorting: Int, path: String = SHOW_ALL) {
         if (sorting and SORT_BY_RANDOM != 0) {
             media.shuffle()
+            return
+        }
+
+        if (sorting and SORT_BY_CUSTOM != 0) {
+            sortMediaByCustomOrder(media, path)
             return
         }
 
@@ -797,6 +802,22 @@ class MediaFetcher(val context: Context) {
             }
             result
         }
+    }
+
+    // the stored order only knows the media of the moment it was saved, everything that showed up
+    // since keeps its relative order and goes behind the known ones
+    private fun sortMediaByCustomOrder(media: ArrayList<Medium>, path: String) {
+        val positions = context.config.getCustomMediaOrder(path)
+            .withIndex()
+            .associate { (index, storedPath) -> storedPath to index }
+
+        if (positions.isEmpty()) {
+            return
+        }
+
+        val sorted = media.sortedBy { positions[it.path] ?: positions.size }
+        media.clear()
+        media.addAll(sorted)
     }
 
     fun groupMedia(media: ArrayList<Medium>, path: String): ArrayList<ThumbnailItem> {

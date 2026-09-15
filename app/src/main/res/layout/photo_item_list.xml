@@ -102,4 +102,27 @@
 
     </LinearLayout>
 
+    <!-- only shown while reordering by dragging, laid over the thumbnail -->
+    <RelativeLayout
+        android:id="@+id/medium_drag_handle_wrapper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_alignStart="@id/medium_thumbnail"
+        android:layout_alignTop="@id/medium_thumbnail"
+        android:layout_alignEnd="@id/medium_thumbnail"
+        android:layout_alignBottom="@id/medium_thumbnail"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/medium_drag_handle"
+            android:layout_width="@dimen/drag_handle_size"
+            android:layout_height="@dimen/drag_handle_size"
+            android:layout_centerInParent="true"
+            android:background="@drawable/circle_black_background"
+            android:contentDescription="@string/reorder_media_by_dragging"
+            android:padding="@dimen/small_margin"
+            android:src="@drawable/ic_drag_handle_vector" />
+
+    </RelativeLayout>
+
 </RelativeLayout>

@@ -21,6 +21,8 @@ interface MediaItemBinding {
     val mediumCheck: ImageView
     val mediumPreview: View
     val mediumThumbnail: MySquareImageView
+    val mediumDragHandleWrapper: ViewGroup
+    val mediumDragHandle: ImageView
 }
 
 class PhotoListMediaItemBinding(val binding: PhotoItemListBinding) : MediaItemBinding {
@@ -34,6 +36,8 @@ class PhotoListMediaItemBinding(val binding: PhotoItemListBinding) : MediaItemBi
     override val mediumCheck: ImageView = binding.mediumCheck
     override val mediumPreview: View = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
+    override val mediumDragHandleWrapper: ViewGroup = binding.mediumDragHandleWrapper
+    override val mediumDragHandle: ImageView = binding.mediumDragHandle
 }
 
 fun PhotoItemListBinding.toMediaItemBinding() = PhotoListMediaItemBinding(this)
@@ -49,6 +53,8 @@ class PhotoGridMediaItemBinding(val binding: PhotoItemGridBinding) : MediaItemBi
     override val mediumCheck: ImageView = binding.mediumCheck
     override val mediumPreview: View = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
+    override val mediumDragHandleWrapper: ViewGroup = binding.mediumDragHandleWrapper
+    override val mediumDragHandle: ImageView = binding.mediumDragHandle
 }
 
 fun PhotoItemGridBinding.toMediaItemBinding() = PhotoGridMediaItemBinding(this)
@@ -64,6 +70,8 @@ class VideoListMediaItemBinding(val binding: VideoItemListBinding) : MediaItemBi
     override val mediumCheck: ImageView = binding.mediumCheck
     override val mediumPreview: View = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
+    override val mediumDragHandleWrapper: ViewGroup = binding.mediumDragHandleWrapper
+    override val mediumDragHandle: ImageView = binding.mediumDragHandle
 }
 
 fun VideoItemListBinding.toMediaItemBinding() = VideoListMediaItemBinding(this)
@@ -79,6 +87,8 @@ class VideoGridMediaItemBinding(val binding: VideoItemGridBinding) : MediaItemBi
     override val mediumCheck: ImageView = binding.mediumCheck
     override val mediumPreview: View = binding.mediumPreview
     override val mediumThumbnail: MySquareImageView = binding.mediumThumbnail
+    override val mediumDragHandleWrapper: ViewGroup = binding.mediumDragHandleWrapper
+    override val mediumDragHandle: ImageView = binding.mediumDragHandle
 }
 
 fun VideoItemGridBinding.toMediaItemBinding() = VideoGridMediaItemBinding(this)

@@ -982,7 +982,7 @@ fun Context.getCachedMedia(
         }) as ArrayList<Medium>
 
         val pathToUse = path.ifEmpty { SHOW_ALL }
-        mediaFetcher.sortMedia(media, config.getFolderSorting(pathToUse))
+        mediaFetcher.sortMedia(media, config.getFolderSorting(pathToUse), pathToUse)
         val grouped = mediaFetcher.groupMedia(media, pathToUse)
         callback(grouped.clone() as ArrayList<ThumbnailItem>)
         val OTGPath = config.OTGPath

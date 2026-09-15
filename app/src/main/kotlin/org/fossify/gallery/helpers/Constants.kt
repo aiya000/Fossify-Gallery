@@ -102,6 +102,11 @@ const val THUMBNAIL_SPACING = "thumbnail_spacing"
 const val FILE_ROUNDED_CORNERS = "file_rounded_corners"
 const val CUSTOM_FOLDERS_ORDER = "custom_folders_order"
 const val CUSTOM_FOLDERS_ORDER_SEPARATOR = "|||"
+
+// the custom media order is kept per folder, so the folder path is appended to the prefix
+const val CUSTOM_MEDIA_ORDER_PREFIX = "custom_media_order_"
+const val CUSTOM_MEDIA_ORDER_SEPARATOR = "|||"
+
 const val FOLDER_GROUPS = "folder_groups"
 const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 

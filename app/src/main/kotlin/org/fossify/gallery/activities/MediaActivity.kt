@@ -515,7 +515,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 isAGetIntent = mIsGetImageIntent || mIsGetVideoIntent || mIsGetAnyIntent,
                 allowMultiplePicks = mAllowPickingMultiple,
                 path = mPath,
-                recyclerView = binding.mediaGrid
+                recyclerView = binding.mediaGrid,
+                swipeRefreshLayout = binding.mediaRefreshLayout,
+                allowReordering = true
             ) {
                 if (it is Medium && !isFinishing) {
                     itemClicked(it.path)

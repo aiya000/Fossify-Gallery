@@ -5,6 +5,7 @@ import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.view.Menu
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -12,6 +13,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.allViews
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.bumptech.glide.Glide
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
@@ -44,10 +48,14 @@ import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.FAVORITES
+import org.fossify.commons.helpers.SORT_BY_CUSTOM
 import org.fossify.commons.helpers.VIEW_TYPE_LIST
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.helpers.sumByLong
+import org.fossify.commons.interfaces.ItemMoveCallback
+import org.fossify.commons.interfaces.ItemTouchHelperContract
+import org.fossify.commons.interfaces.StartReorderDragListener
 import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.gallery.R
@@ -94,6 +102,7 @@ import org.fossify.gallery.interfaces.MediaOperationsListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
+import java.util.Collections
 
 class MediaAdapter(
     activity: BaseSimpleActivity,
@@ -103,8 +112,12 @@ class MediaAdapter(
     val allowMultiplePicks: Boolean,
     val path: String,
     recyclerView: MyRecyclerView,
+    val swipeRefreshLayout: SwipeRefreshLayout? = null,
+    // only the media of a single folder have an order of their own to drag around, search
+    // results and picker dialogs are built from whatever matches instead
+    val allowReordering: Boolean = false,
     itemClick: (Any) -> Unit
-) : MyRecyclerViewAdapter(activity, recyclerView, itemClick),
+) : MyRecyclerViewAdapter(activity, recyclerView, itemClick), ItemTouchHelperContract,
     RecyclerViewFastScroller.OnPopupTextUpdate {
 
     private val ITEM_SECTION = 0
@@ -130,7 +143,13 @@ class MediaAdapter(
     private val canPreviewWhileSelecting = !isAGetIntent &&
         !activity.intent.getBooleanExtra(SET_WALLPAPER_INTENT, false)
 
-    var sorting = config.getFolderSorting(if (config.showAll) SHOW_ALL else path)
+    private var isDragAndDropping = false
+    private var startReorderDragListener: StartReorderDragListener? = null
+
+    // the folder the sorting and the custom order of these items belong to
+    private val sortingPath = if (config.showAll) SHOW_ALL else path
+
+    var sorting = config.getFolderSorting(sortingPath)
     var dateFormat = config.dateFormat
     var timeFormat = activity.getTimeFormat()
 
@@ -166,7 +185,7 @@ class MediaAdapter(
         val allowLongPress = (!isAGetIntent || allowMultiplePicks) && tmbItem is Medium
         holder.bindView(tmbItem, tmbItem is Medium, allowLongPress) { itemView, adapterPosition ->
             if (tmbItem is Medium) {
-                setupThumbnail(itemView, tmbItem)
+                setupThumbnail(itemView, tmbItem, holder)
             } else {
                 setupSection(itemView, tmbItem as ThumbnailSection)
             }
@@ -195,6 +214,10 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
         menu.apply {
+            findItem(R.id.cab_change_order).isVisible = canReorder()
+            findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
+            findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
+
             findItem(R.id.cab_rename).isVisible = !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
             findItem(R.id.cab_fix_date_taken).isVisible = !isInRecycleBin
@@ -218,6 +241,9 @@ class MediaAdapter(
         }
 
         when (id) {
+            R.id.cab_change_order -> changeOrder()
+            R.id.cab_move_to_top -> moveSelectedItemsToTop()
+            R.id.cab_move_to_bottom -> moveSelectedItemsToBottom()
             R.id.cab_confirm_selection -> confirmSelection()
             R.id.cab_properties -> showProperties()
             R.id.cab_rename -> checkMediaManagementAndRename()
@@ -256,7 +282,86 @@ class MediaAdapter(
     }
 
     override fun onActionModeDestroyed() {
+        if (isDragAndDropping) {
+            isDragAndDropping = false
+            config.saveCustomMediaOrder(sortingPath, media.mapNotNull { (it as? Medium)?.path })
+            config.saveCustomSorting(sortingPath, SORT_BY_CUSTOM)
+            sorting = SORT_BY_CUSTOM
+            notifyDataSetChanged()
+            listener?.refreshItems()
+        }
+
         refreshPreviewButtons()
+    }
+
+    // grouping splits the items up with section titles that must not be dragged around, so a
+    // custom order can only be built while the thumbnails are one plain list
+    private fun canReorder() =
+        allowReordering && !isAGetIntent && media.none { it is ThumbnailSection }
+
+    private fun changeOrder() {
+        isDragAndDropping = true
+        notifyDataSetChanged()
+        actMode?.invalidate()
+
+        if (startReorderDragListener == null) {
+            val touchHelper = ItemTouchHelper(ItemMoveCallback(this, true))
+            touchHelper.attachToRecyclerView(recyclerView)
+
+            startReorderDragListener = object : StartReorderDragListener {
+                override fun requestDrag(viewHolder: RecyclerView.ViewHolder) {
+                    touchHelper.startDrag(viewHolder)
+                }
+            }
+        }
+    }
+
+    private fun moveSelectedItemsToTop() {
+        selectedKeys.toMutableList().reversed().forEach { key ->
+            val position = media.indexOfFirst { (it as? Medium)?.path?.hashCode() == key }
+            if (position != -1) {
+                val tempItem = media[position]
+                media.removeAt(position)
+                media.add(0, tempItem)
+            }
+        }
+
+        notifyDataSetChanged()
+    }
+
+    private fun moveSelectedItemsToBottom() {
+        selectedKeys.forEach { key ->
+            val position = media.indexOfFirst { (it as? Medium)?.path?.hashCode() == key }
+            if (position != -1) {
+                val tempItem = media[position]
+                media.removeAt(position)
+                media.add(media.size, tempItem)
+            }
+        }
+
+        notifyDataSetChanged()
+    }
+
+    override fun onRowMoved(fromPosition: Int, toPosition: Int) {
+        if (fromPosition < toPosition) {
+            for (i in fromPosition until toPosition) {
+                Collections.swap(media, i, i + 1)
+            }
+        } else {
+            for (i in fromPosition downTo toPosition + 1) {
+                Collections.swap(media, i, i - 1)
+            }
+        }
+
+        notifyItemMoved(fromPosition, toPosition)
+    }
+
+    override fun onRowSelected(myViewHolder: ViewHolder?) {
+        swipeRefreshLayout?.isEnabled = false
+    }
+
+    override fun onRowClear(myViewHolder: ViewHolder?) {
+        swipeRefreshLayout?.isEnabled = activity.config.enablePullToRefresh
     }
 
     // the preview buttons only show up while selecting, so every visible item has to be
@@ -675,7 +780,11 @@ class MediaAdapter(
         notifyDataSetChanged()
     }
 
-    private fun setupThumbnail(view: View, medium: Medium) {
+    private fun setupThumbnail(
+        view: View,
+        medium: Medium,
+        holder: MyRecyclerViewAdapter.ViewHolder
+    ) {
         val isSelected = selectedKeys.contains(medium.path.hashCode())
         bindItem(view, medium).apply {
             val padding = if (config.thumbnailSpacing <= 1) {
@@ -735,9 +844,20 @@ class MediaAdapter(
                 mediumCheck.applyColorFilter(contrastColor)
             }
 
-            val showPreview = canPreviewWhileSelecting && actModeCallback.isSelectable
+            val showPreview = canPreviewWhileSelecting && actModeCallback.isSelectable && !isDragAndDropping
             mediumPreview.beVisibleIf(showPreview)
             mediumPreview.setOnClickListener(if (showPreview) View.OnClickListener { itemClick(medium) } else null)
+
+            mediumDragHandleWrapper.beVisibleIf(isDragAndDropping)
+            if (isDragAndDropping) {
+                mediumDragHandle.setOnTouchListener { _, event ->
+                    if (event.action == MotionEvent.ACTION_DOWN) {
+                        startReorderDragListener?.requestDrag(holder)
+                    }
+
+                    false
+                }
+            }
 
             if (isListViewType) {
                 mediaItemHolder.isSelected = isSelected

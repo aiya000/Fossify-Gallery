@@ -48,7 +48,7 @@ class GetMediaAsynctask(
                 media.addAll(newMedia)
             }
 
-            mediaFetcher.sortMedia(media, context.config.getFolderSorting(SHOW_ALL))
+            mediaFetcher.sortMedia(media, context.config.getFolderSorting(SHOW_ALL), SHOW_ALL)
             media
         } else {
             mediaFetcher.getFilesFrom(

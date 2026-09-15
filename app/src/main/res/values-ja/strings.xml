@@ -46,6 +46,8 @@
     <string name="unset_as_default_folder">既定のフォルダーとして設定しない</string>
     <string name="reorder_by_dragging">ドラッグによるフォルダーの並べ替え</string>
     <string name="reorder_by_dragging_pro">ドラッグによるフォルダーの並べ替え (Pro)</string>
+    <string name="reorder_media_by_dragging">ドラッグによる画像の並べ替え</string>
+    <string name="reorder_by_dragging_is_folder_specific">ドラッグによる並べ替えの場合、このチェックは強制的にオンになります</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

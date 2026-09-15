@@ -734,6 +734,24 @@ class Config(context: Context) : BaseConfig(context) {
         customFoldersOrder = (keptPaths + paths).joinToString(CUSTOM_FOLDERS_ORDER_SEPARATOR)
     }
 
+    // Unlike the folder order, which is one flat list shared by every level of the folder list, the
+    // media order belongs to the folder it was dragged in - a custom media order and "use this
+    // sorting for this folder only" therefore always come together.
+    fun getCustomMediaOrder(path: String): List<String> {
+        return prefs.getString(CUSTOM_MEDIA_ORDER_PREFIX + path.lowercase(Locale.getDefault()), "")!!
+            .split(CUSTOM_MEDIA_ORDER_SEPARATOR)
+            .filter { it.isNotEmpty() }
+    }
+
+    fun saveCustomMediaOrder(path: String, paths: List<String>) {
+        prefs.edit()
+            .putString(
+                CUSTOM_MEDIA_ORDER_PREFIX + path.lowercase(Locale.getDefault()),
+                paths.joinToString(CUSTOM_MEDIA_ORDER_SEPARATOR)
+            )
+            .apply()
+    }
+
     var avoidShowingAllFilesPrompt: Boolean
         get() = prefs.getBoolean(AVOID_SHOWING_ALL_FILES_PROMPT, false)
         set(avoidShowingAllFilesPrompt) = prefs.edit().putBoolean(AVOID_SHOWING_ALL_FILES_PROMPT, avoidShowingAllFilesPrompt).apply()
