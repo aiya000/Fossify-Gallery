@@ -260,8 +260,21 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getString(PCLOUD_ACCOUNT_EMAIL, "")!!
         set(pCloudAccountEmail) = prefs.edit().putString(PCLOUD_ACCOUNT_EMAIL, pCloudAccountEmail).apply()
 
+    var pCloudOAuthState: String
+        get() = prefs.getString(PCLOUD_OAUTH_STATE, "")!!
+        set(pCloudOAuthState) = prefs.edit().putString(PCLOUD_OAUTH_STATE, pCloudOAuthState).apply()
+
     val isPCloudLoggedIn: Boolean
         get() = pCloudAccessToken.isNotEmpty() && pCloudApiHost.isNotEmpty()
+
+    fun clearPCloudAccount() {
+        prefs.edit()
+            .remove(PCLOUD_ACCESS_TOKEN)
+            .remove(PCLOUD_API_HOST)
+            .remove(PCLOUD_ACCOUNT_EMAIL)
+            .remove(PCLOUD_OAUTH_STATE)
+            .apply()
+    }
 
     var dirColumnCnt: Int
         get() = prefs.getInt(getDirectoryColumnsField(), getDefaultDirectoryColumnCount())

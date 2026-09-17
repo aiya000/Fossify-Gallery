@@ -129,6 +129,19 @@ const val PCLOUD_PATH_PREFIX = "pcloud:/"
 const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
 const val PCLOUD_API_HOST = "pcloud_api_host"
 const val PCLOUD_ACCOUNT_EMAIL = "pcloud_account_email"
+
+// the "state" handed to pCloud when the browser is opened, compared against the one that comes
+// back so a redirect fired by anything but our own login attempt is ignored
+const val PCLOUD_OAUTH_STATE = "pcloud_oauth_state"
+
+// pCloud hands the token back through this scheme, see PCloudAuthActivity and the manifest
+const val PCLOUD_OAUTH_SCHEME = "pcloud-oauth"
+const val PCLOUD_AUTHORIZE_URL = "https://my.pcloud.com/oauth2/authorize"
+
+// every pCloud response carries a "result", 0 means success. These two mean the token is no
+// longer good, there is no other notice that it expired
+const val PCLOUD_RESULT_LOG_IN_FAILED = 1000
+const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
 const val STORAGE_FILTER = "storage_filter"
 
 const val AVOID_SHOWING_ALL_FILES_PROMPT = "avoid_showing_all_files_prompt"
