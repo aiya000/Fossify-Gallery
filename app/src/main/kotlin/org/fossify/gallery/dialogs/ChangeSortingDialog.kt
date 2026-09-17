@@ -54,15 +54,15 @@ class ChangeSortingDialog(
             // a folder list has no file names to group by
             sortingDialogRadioFileNameGroupDateTaken.beVisibleIf(!isDirectorySorting)
             sortingDialogRadioFileNameGroupLastModified.beVisibleIf(!isDirectorySorting)
-            sortingDialogOrderDivider.beVisibleIf(
-                beVisible = showFolderCheckbox
-                        || (currSorting and SORT_BY_NAME != 0 || currSorting and SORT_BY_PATH != 0)
-            )
-
             sortingDialogNumericSorting.beVisibleIf(
                 beVisible = showFolderCheckbox
                         && (currSorting and SORT_BY_NAME != 0 || currSorting and SORT_BY_PATH != 0)
             )
+
+            // the divider only has to separate the order from the numeric switch now, the folder
+            // switch moved above the sortings and brought its own divider
+            sortingDialogOrderDivider.beVisibleIf(sortingDialogNumericSorting.isVisible())
+            sortingDialogFolderDivider.beVisibleIf(showFolderCheckbox)
 
             sortingDialogNumericSorting.isChecked = currSorting and SORT_USE_NUMERIC_VALUE != 0
 
@@ -98,7 +98,6 @@ class ChangeSortingDialog(
             binding.sortingDialogNumericSorting.beVisibleIf(isSortingByNameOrPath)
             binding.sortingDialogOrderDivider.beVisibleIf(
                 binding.sortingDialogNumericSorting.isVisible()
-                        || binding.sortingDialogUseForThisFolder.isVisible()
             )
 
             val hideSortOrder =
