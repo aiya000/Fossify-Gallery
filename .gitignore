@@ -13,3 +13,6 @@ keystore.properties
 fastlane/fastlane.json
 fastlane/report.xml
 .kotlin/
+
+# Claude Code personal overrides
+.claude/settings.local.json
