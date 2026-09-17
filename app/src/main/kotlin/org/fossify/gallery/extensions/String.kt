@@ -4,9 +4,16 @@ import android.os.Environment
 import org.fossify.commons.extensions.isExternalStorageManager
 import org.fossify.commons.helpers.NOMEDIA
 import org.fossify.commons.helpers.isRPlus
+import org.fossify.gallery.helpers.PCLOUD_PATH_PREFIX
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+
+// pCloud media carries a pseudo path instead of a filesystem one, see PCLOUD_PATH_PREFIX
+fun String.isPCloudPath() = startsWith(PCLOUD_PATH_PREFIX)
+
+// "pcloud:/Camera/IMG_0001.jpg" -> "/Camera/IMG_0001.jpg", the path the pCloud API expects
+fun String.toPCloudRemotePath() = if (isPCloudPath()) "/${removePrefix(PCLOUD_PATH_PREFIX)}" else this
 
 fun String.isThisOrParentIncluded(includedPaths: MutableSet<String>) =
     includedPaths.any { equals(it, true) } || includedPaths.any { "$this/".startsWith("$it/", true) }

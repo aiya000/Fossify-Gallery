@@ -82,6 +82,13 @@ Everything above describes the upstream app. This fork adds the following on top
 
 - "Show file names at thumbnails" is a switch in the Thumbnails section of the settings, next to the other thumbnail options, instead of an overflow menu item only
 
+### pCloud, and what it means for "FOSS"
+
+- This fork is growing pCloud support, so unlike the upstream app it declares `INTERNET` and `ACCESS_NETWORK_STATE`
+- The app stays free software. It is still GPL-3.0, and the only dependency the network code pulls in is [OkHttp](https://square.github.io/okhttp/) (Apache-2.0); no proprietary SDK or binary blob is linked in, and the pCloud API is spoken to over plain HTTP requests written in this repository
+- What is not free is the service on the other end. pCloud is a hosted, proprietary service, so in F-Droid's vocabulary a build of this fork carries the [`NonFreeNet`](https://f-droid.org/en/docs/Anti-Features/) antifeature: a feature that depends on a network service that is not free software
+- Nothing about it is forced on anyone. Local folders keep working exactly as they did, and the pCloud side stays asleep until it is signed in to
+
 ### Builds
 
 - This fork builds under the application id `io.github.aiya000.fossify.gallery`, so it installs next to the official Fossify Gallery instead of replacing it

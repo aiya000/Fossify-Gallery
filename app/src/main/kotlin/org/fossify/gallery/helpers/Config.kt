@@ -241,6 +241,28 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(FILTER_MEDIA, getDefaultFileFilter())
         set(filterMedia) = prefs.edit().putInt(FILTER_MEDIA, filterMedia).apply()
 
+    // which storage the folder list is showing, one of the STORAGE_FILTER_* values
+    var storageFilter: Int
+        get() = prefs.getInt(STORAGE_FILTER, STORAGE_FILTER_LOCAL)
+        set(storageFilter) = prefs.edit().putInt(STORAGE_FILTER, storageFilter).apply()
+
+    var pCloudAccessToken: String
+        get() = prefs.getString(PCLOUD_ACCESS_TOKEN, "")!!
+        set(pCloudAccessToken) = prefs.edit().putString(PCLOUD_ACCESS_TOKEN, pCloudAccessToken).apply()
+
+    // api.pcloud.com for the US region, eapi.pcloud.com for the european one. It comes with the
+    // token at login time, calling the wrong one fails every request
+    var pCloudApiHost: String
+        get() = prefs.getString(PCLOUD_API_HOST, "")!!
+        set(pCloudApiHost) = prefs.edit().putString(PCLOUD_API_HOST, pCloudApiHost).apply()
+
+    var pCloudAccountEmail: String
+        get() = prefs.getString(PCLOUD_ACCOUNT_EMAIL, "")!!
+        set(pCloudAccountEmail) = prefs.edit().putString(PCLOUD_ACCOUNT_EMAIL, pCloudAccountEmail).apply()
+
+    val isPCloudLoggedIn: Boolean
+        get() = pCloudAccessToken.isNotEmpty() && pCloudApiHost.isNotEmpty()
+
     var dirColumnCnt: Int
         get() = prefs.getInt(getDirectoryColumnsField(), getDefaultDirectoryColumnCount())
         set(dirColumnCnt) = prefs.edit().putInt(getDirectoryColumnsField(), dirColumnCnt).apply()
