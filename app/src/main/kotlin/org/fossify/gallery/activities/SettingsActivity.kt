@@ -1153,6 +1153,12 @@ class SettingsActivity : SimpleActivity() {
                 put(THUMBNAIL_SPACING, config.thumbnailSpacing)
                 put(FILE_ROUNDED_CORNERS, config.fileRoundedCorners)
                 put(SEARCH_ALL_FILES_BY_DEFAULT, config.searchAllFilesByDefault)
+                put(INCLUDE_SORTING_IN_SETTINGS_EXPORT, config.includeSortingInSettingsExport)
+
+                // the groups and their members are structure rather than an order, so they are
+                // written out even when the sorting is left out
+                put(FOLDER_GROUPS, config.folderGroups)
+                put(FOLDER_GROUP_MEMBERS, config.folderGroupMembers)
 
                 if (config.includeSortingInSettingsExport) {
                     putAll(config.getSortingPreferences())
@@ -1342,6 +1348,12 @@ class SettingsActivity : SimpleActivity() {
                 THUMBNAIL_SPACING -> config.thumbnailSpacing = value.toInt()
                 FILE_ROUNDED_CORNERS -> config.fileRoundedCorners = value.toBoolean()
                 SEARCH_ALL_FILES_BY_DEFAULT -> config.searchAllFilesByDefault = value.toBoolean()
+                INCLUDE_SORTING_IN_SETTINGS_EXPORT -> config.includeSortingInSettingsExport = value.toBoolean()
+                // Groups are referred to by id from the pinned folders, the custom folder order and
+                // the per folder sorting keys, so they are taken over as a whole. Merging them into
+                // the groups already on the device would need every one of those ids rewritten.
+                FOLDER_GROUPS -> config.folderGroups = value.toString()
+                FOLDER_GROUP_MEMBERS -> config.folderGroupMembers = value.toString()
                 ALBUM_COVERS -> {
                     val existingCovers = config.parseAlbumCovers()
                     val existingCoverPaths = existingCovers.map { it.path }.toMutableList() as ArrayList<String>
