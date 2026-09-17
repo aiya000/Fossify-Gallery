@@ -31,9 +31,14 @@ class SettingsActivity : SimpleActivity() {
         private const val SELECT_IMPORT_FAVORITES_FILE_INTENT = 3
         private const val SELECT_EXPORT_SORTING_FILE_INTENT = 4
         private const val SELECT_IMPORT_SORTING_FILE_INTENT = 5
+
+        // the commons exportSettings() names the file itself, so the export is driven from here
+        // instead, with a request code of its own
+        private const val SELECT_EXPORT_SETTINGS_FILE = 6
     }
 
     private var mRecycleBinContentSize = 0L
+    private var mSettingsItemsToExport = LinkedHashMap<String, Any>()
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -153,6 +158,9 @@ class SettingsActivity : SimpleActivity() {
         } else if (requestCode == SELECT_IMPORT_SORTING_FILE_INTENT && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
             val inputStream = contentResolver.openInputStream(resultData.data!!)
             importSorting(inputStream)
+        } else if (requestCode == SELECT_EXPORT_SETTINGS_FILE && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
+            val outputStream = contentResolver.openOutputStream(resultData.data!!)
+            exportConfigItemsTo(outputStream, mSettingsItemsToExport)
         }
     }
 
@@ -970,15 +978,18 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun exportSortingTo(outputStream: OutputStream?) {
+        exportConfigItemsTo(outputStream, config.getSortingPreferences())
+    }
+
+    private fun exportConfigItemsTo(outputStream: OutputStream?, configItems: Map<String, Any>) {
         if (outputStream == null) {
             toast(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
         ensureBackgroundThread {
-            val sortingItems = config.getSortingPreferences()
             outputStream.bufferedWriter().use { out ->
-                for ((key, value) in sortingItems) {
+                for ((key, value) in configItems) {
                     out.writeLn("$key=$value")
                 }
             }
@@ -1148,8 +1159,48 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
 
-            exportSettings(configItems)
+            exportSettingsToFile(configItems)
         }
+    }
+
+    private fun exportSettingsToFile(configItems: LinkedHashMap<String, Any>) {
+        mSettingsItemsToExport = configItems
+        if (isQPlus()) {
+            ExportSettingsDialog(this, getExportSettingsFilename(), true) { path, filename ->
+                Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TITLE, filename)
+                    addCategory(Intent.CATEGORY_OPENABLE)
+
+                    try {
+                        startActivityForResult(this, SELECT_EXPORT_SETTINGS_FILE)
+                    } catch (e: ActivityNotFoundException) {
+                        toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                    } catch (e: Exception) {
+                        showErrorToast(e)
+                    }
+                }
+            }
+        } else {
+            handlePermission(PERMISSION_WRITE_STORAGE) {
+                if (it) {
+                    ExportSettingsDialog(this, getExportSettingsFilename(), false) { path, filename ->
+                        val file = File(path)
+                        getFileOutputStream(file.toFileDirItem(this), true) { outputStream ->
+                            exportConfigItemsTo(outputStream, configItems)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // a file written without the sorting says so in its name, so the two kinds of export cannot be
+    // mixed up later
+    private fun getExportSettingsFilename(): String {
+        val appName = baseConfig.appId.removeSuffix(".debug").removeSuffix(".pro").removePrefix("org.fossify.")
+        val suffix = if (config.includeSortingInSettingsExport) "" else "_excluding_orders"
+        return "$appName-settings_${getCurrentFormattedDateTime()}$suffix"
     }
 
     private fun setupImportSettings() {
