@@ -35,9 +35,10 @@ Install the signed `foss` release APK on the device connected via adb.
 
 ## Notes
 
-- The release build uses the application id `org.fossify.gallery`, the same as the official Fossify Gallery.
-  If the official app (F-Droid, etc.) is installed, the install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
-  because the signatures differ; the user has to uninstall the official app first (its settings are lost)
+- The release build uses the application id `io.github.aiya000.fossify.gallery`, which is this fork's own id.
+  The official Fossify Gallery (`org.fossify.gallery`) is a separate app and can stay installed next to it
+- An app built from this repository before the id change is also a separate app now. It keeps its own settings,
+  so anything worth carrying over has to be exported from it and imported into the new one
 - Updating an earlier personal release build works only when it was signed with the same key
   (the Android debug keystore, see `release-build`)
-- The debug build (`org.fossify.gallery.debug`) is a separate app and is not affected
+- The debug build (`io.github.aiya000.fossify.gallery.debug`) is a separate app and is not affected

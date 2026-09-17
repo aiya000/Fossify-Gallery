@@ -112,7 +112,9 @@ android {
         )
     }
 
-    namespace = project.property("APP_ID").toString()
+    // The sources live in `org.fossify.gallery`, so `R` and `BuildConfig` stay there
+    // even though `applicationId` (APP_ID) has moved to our own namespace.
+    namespace = "org.fossify.gallery"
 
     lint {
         checkReleaseBuilds = false
