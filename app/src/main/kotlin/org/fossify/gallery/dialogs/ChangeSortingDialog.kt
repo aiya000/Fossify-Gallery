@@ -21,6 +21,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogChangeSortingBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.helpers.SORT_GROUP_BY_FILENAME
 
 class ChangeSortingDialog(
     val activity: BaseSimpleActivity,
@@ -49,6 +50,10 @@ class ChangeSortingDialog(
 
         binding = DialogChangeSortingBinding.inflate(activity.layoutInflater).apply {
             sortingDialogRadioNumberOfItems.beVisibleIf(isDirectorySorting)
+
+            // a folder list has no file names to group by
+            sortingDialogRadioFileNameGroupDateTaken.beVisibleIf(!isDirectorySorting)
+            sortingDialogRadioFileNameGroupLastModified.beVisibleIf(!isDirectorySorting)
             sortingDialogOrderDivider.beVisibleIf(
                 beVisible = showFolderCheckbox
                         || (currSorting and SORT_BY_NAME != 0 || currSorting and SORT_BY_PATH != 0)
@@ -107,6 +112,15 @@ class ChangeSortingDialog(
         }
 
         val sortBtn = when {
+            // the grouping flag is combined with a date flag, so it has to be looked at first
+            currSorting and SORT_GROUP_BY_FILENAME != 0 -> {
+                if (currSorting and SORT_BY_DATE_MODIFIED != 0) {
+                    binding.sortingDialogRadioFileNameGroupLastModified
+                } else {
+                    binding.sortingDialogRadioFileNameGroupDateTaken
+                }
+            }
+
             currSorting and SORT_BY_PATH != 0 -> binding.sortingDialogRadioPath
             currSorting and SORT_BY_SIZE != 0 -> binding.sortingDialogRadioSize
             currSorting and SORT_BY_COUNT != 0 -> binding.sortingDialogRadioNumberOfItems
@@ -166,6 +180,12 @@ class ChangeSortingDialog(
             R.id.sorting_dialog_radio_size -> SORT_BY_SIZE
             R.id.sorting_dialog_radio_number_of_items -> SORT_BY_COUNT
             R.id.sorting_dialog_radio_last_modified -> SORT_BY_DATE_MODIFIED
+            R.id.sorting_dialog_radio_file_name_group_date_taken ->
+                SORT_GROUP_BY_FILENAME or SORT_BY_DATE_TAKEN
+
+            R.id.sorting_dialog_radio_file_name_group_last_modified ->
+                SORT_GROUP_BY_FILENAME or SORT_BY_DATE_MODIFIED
+
             R.id.sorting_dialog_radio_random -> SORT_BY_RANDOM
             R.id.sorting_dialog_radio_custom -> SORT_BY_CUSTOM
             else -> SORT_BY_DATE_TAKEN

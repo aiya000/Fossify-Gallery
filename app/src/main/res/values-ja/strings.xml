@@ -50,6 +50,8 @@
     <string name="reorder_by_dragging_is_folder_specific">ドラッグによる並べ替えの場合、このチェックは強制的にオンになります</string>
     <string name="add_to_selection">選択に追加</string>
     <string name="remove_from_selection">選択から外す</string>
+    <string name="grouped_by_file_name_date_taken">ファイル名ごとにグループ化して撮影日時</string>
+    <string name="grouped_by_file_name_last_modified">ファイル名ごとにグループ化して最終更新日時</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

@@ -110,6 +110,10 @@ const val CUSTOM_MEDIA_ORDER_SEPARATOR = "|||"
 // the paths selected in the media grid, handed to the fullscreen view and back again
 const val SELECTED_PATHS = "selected_paths"
 
+// not a sorting criterion of its own, it is combined with SORT_BY_DATE_TAKEN or
+// SORT_BY_DATE_MODIFIED. The commons SORT_BY_* flags end at SORT_BY_COUNT (524288)
+const val SORT_GROUP_BY_FILENAME = 1048576
+
 const val FOLDER_GROUPS = "folder_groups"
 const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 

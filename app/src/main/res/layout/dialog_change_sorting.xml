@@ -56,6 +56,18 @@
                 android:text="@string/date_taken" />
 
             <org.fossify.commons.views.MyCompatRadioButton
+                android:id="@+id/sorting_dialog_radio_file_name_group_date_taken"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/grouped_by_file_name_date_taken" />
+
+            <org.fossify.commons.views.MyCompatRadioButton
+                android:id="@+id/sorting_dialog_radio_file_name_group_last_modified"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/grouped_by_file_name_last_modified" />
+
+            <org.fossify.commons.views.MyCompatRadioButton
                 android:id="@+id/sorting_dialog_radio_random"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

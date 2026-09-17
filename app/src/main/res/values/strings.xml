@@ -51,6 +51,8 @@
     <string name="reorder_by_dragging_is_folder_specific">When reordering by dragging, this option is always turned on</string>
     <string name="add_to_selection">Add to selection</string>
     <string name="remove_from_selection">Remove from selection</string>
+    <string name="grouped_by_file_name_date_taken">Grouped by file name, then date taken</string>
+    <string name="grouped_by_file_name_last_modified">Grouped by file name, then last modified</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

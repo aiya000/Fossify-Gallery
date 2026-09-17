@@ -772,6 +772,11 @@ class MediaFetcher(val context: Context) {
             return
         }
 
+        if (sorting and SORT_GROUP_BY_FILENAME != 0) {
+            sortMediaByFilenameGroup(media, sorting)
+            return
+        }
+
         media.sortWith { o1, o2 ->
             o1 as Medium
             o2 as Medium
@@ -802,6 +807,49 @@ class MediaFetcher(val context: Context) {
             }
             result
         }
+    }
+
+    // Files that belong together are named alike up to their first separator, the way a batch of
+    // 20260910221609_1 and _2 is. They stay together in file name order and the whole group is
+    // dated by its first file, so the timestamps inside a group can never tear it apart.
+    private fun sortMediaByFilenameGroup(media: ArrayList<Medium>, sorting: Int) {
+        val nameComparator = AlphanumericComparator()
+        val byName = media.sortedWith { o1, o2 ->
+            nameComparator.compare(
+                o1.name.normalizeString().lowercase(Locale.getDefault()),
+                o2.name.normalizeString().lowercase(Locale.getDefault())
+            )
+        }
+
+        val groups = LinkedHashMap<String, ArrayList<Medium>>()
+        byName.forEach {
+            groups.getOrPut(getFilenameGroupKey(it.name)) { ArrayList() }.add(it)
+        }
+
+        val useDateTaken = sorting and SORT_BY_DATE_TAKEN != 0
+        val datedGroups = groups.values.map { group ->
+            val first = group.first()
+            (if (useDateTaken) first.taken else first.modified) to group
+        }
+
+        val sortedGroups = if (sorting and SORT_DESCENDING != 0) {
+            datedGroups.sortedByDescending { it.first }
+        } else {
+            datedGroups.sortedBy { it.first }
+        }
+
+        media.clear()
+        sortedGroups.forEach { media.addAll(it.second) }
+    }
+
+    // only the first separator counts, so "a_b_1.png" and "a_c_2.png" are one "a" group
+    private fun getFilenameGroupKey(name: String): String {
+        val separatorIndex = name.indexOfFirst {
+            it == '-' || it == '_' || it == '.' || it == '+'
+        }
+
+        val key = if (separatorIndex == -1) name else name.substring(0, separatorIndex)
+        return key.lowercase(Locale.getDefault())
     }
 
     // the stored order only knows the media of the moment it was saved, everything that showed up
