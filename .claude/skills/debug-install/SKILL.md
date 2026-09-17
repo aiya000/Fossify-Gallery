@@ -42,6 +42,6 @@ Install the `foss` debug APK on the device connected via adb.
 
 ## Notes
 
-- The debug build is `org.fossify.gallery.debug`, a separate app from the release build, with its own settings
+- The debug build is `io.github.aiya000.fossify.gallery.debug`, a separate app from the release build, with its own settings
   (folder groups, pins, etc. are not shared)
 - Never install while the user has asked to wait ("インストールは待って") — build only

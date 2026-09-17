@@ -33,6 +33,8 @@
         tools:node="remove" />
 
     <queries>
+        <package android:name="io.github.aiya000.fossify.gallery.debug" />
+        <package android:name="io.github.aiya000.fossify.gallery" />
         <package android:name="org.fossify.gallery.debug" />
         <package android:name="org.fossify.gallery" />
     </queries>
