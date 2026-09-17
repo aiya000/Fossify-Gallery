@@ -15,6 +15,13 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// holds the pCloud OAuth client id, it is not checked in
+val localPropertiesFile: File = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
 fun hasSigningVars(): Boolean {
     return providers.environmentVariable("SIGNING_KEY_ALIAS").orNull != null
             && providers.environmentVariable("SIGNING_KEY_PASSWORD").orNull != null
@@ -36,6 +43,9 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
+
+        val pCloudClientId = localProperties.getProperty("PCLOUD_CLIENT_ID") ?: ""
+        buildConfigField("String", "PCLOUD_CLIENT_ID", "\"$pCloudClientId\"")
     }
 
     signingConfigs {
@@ -167,7 +177,8 @@ dependencies {
     implementation(libs.picasso) {
         exclude(group = "com.squareup.okhttp3", module = "okhttp")
     }
-    compileOnly(libs.okhttp)
+    // picasso keeps using its own downloader, the pCloud client is what needs okhttp at runtime
+    implementation(libs.okhttp)
 
     ksp(libs.glide.compiler)
     implementation(libs.zjupure.webpdecoder)

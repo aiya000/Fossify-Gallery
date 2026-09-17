@@ -121,6 +121,16 @@ const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 
 // virtual folder groups are displayed as Directory items with this pseudo path prefix, e.g. "group://12"
 const val GROUP_PATH_PREFIX = "group://"
+
+// pCloud media is displayed with this pseudo path prefix, e.g. "pcloud:/Camera/IMG_0001.jpg".
+// It mirrors the pCloud path, so getParentPath() and the rest of the path handling keep working
+const val PCLOUD_PATH_PREFIX = "pcloud:/"
+
+const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
+const val PCLOUD_API_HOST = "pcloud_api_host"
+const val PCLOUD_ACCOUNT_EMAIL = "pcloud_account_email"
+const val STORAGE_FILTER = "storage_filter"
+
 const val AVOID_SHOWING_ALL_FILES_PROMPT = "avoid_showing_all_files_prompt"
 const val SEARCH_ALL_FILES_BY_DEFAULT = "search_all_files_by_default"
 const val LAST_EXPORTED_FAVORITES_FOLDER = "last_exported_favorites_folder"
@@ -225,6 +235,12 @@ fun getDefaultFileFilter() = TYPE_IMAGES or TYPE_VIDEOS or TYPE_GIFS or TYPE_RAW
 const val LOCATION_INTERNAL = 1
 const val LOCATION_SD = 2
 const val LOCATION_OTG = 3
+const val LOCATION_PCLOUD = 4
+
+// which storage the folder list is showing
+const val STORAGE_FILTER_LOCAL = 1
+const val STORAGE_FILTER_PCLOUD = 2
+const val STORAGE_FILTER_ALL = 3
 
 const val GROUP_BY_NONE = 1
 const val GROUP_BY_LAST_MODIFIED_DAILY = 2
