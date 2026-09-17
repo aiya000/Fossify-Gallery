@@ -114,6 +114,8 @@ const val SELECTED_PATHS = "selected_paths"
 // SORT_BY_DATE_MODIFIED. The commons SORT_BY_* flags end at SORT_BY_COUNT (524288)
 const val SORT_GROUP_BY_FILENAME = 1048576
 
+const val INCLUDE_SORTING_IN_SETTINGS_EXPORT = "include_sorting_in_settings_export"
+
 const val FOLDER_GROUPS = "folder_groups"
 const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 

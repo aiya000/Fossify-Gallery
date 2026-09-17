@@ -29,6 +29,8 @@ class SettingsActivity : SimpleActivity() {
         private const val PICK_IMPORT_SOURCE_INTENT = 1
         private const val SELECT_EXPORT_FAVORITES_FILE_INTENT = 2
         private const val SELECT_IMPORT_FAVORITES_FILE_INTENT = 3
+        private const val SELECT_EXPORT_SORTING_FILE_INTENT = 4
+        private const val SELECT_IMPORT_SORTING_FILE_INTENT = 5
     }
 
     private var mRecycleBinContentSize = 0L
@@ -109,6 +111,9 @@ class SettingsActivity : SimpleActivity() {
         setupClearCache()
         setupExportFavorites()
         setupImportFavorites()
+        setupExportSorting()
+        setupImportSorting()
+        setupIncludeSortingInExport()
         setupExportSettings()
         setupImportSettings()
 
@@ -142,6 +147,12 @@ class SettingsActivity : SimpleActivity() {
         } else if (requestCode == SELECT_IMPORT_FAVORITES_FILE_INTENT && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
             val inputStream = contentResolver.openInputStream(resultData.data!!)
             importFavorites(inputStream)
+        } else if (requestCode == SELECT_EXPORT_SORTING_FILE_INTENT && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
+            val outputStream = contentResolver.openOutputStream(resultData.data!!)
+            exportSortingTo(outputStream)
+        } else if (requestCode == SELECT_IMPORT_SORTING_FILE_INTENT && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
+            val inputStream = contentResolver.openInputStream(resultData.data!!)
+            importSorting(inputStream)
         }
     }
 
@@ -907,6 +918,140 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
+    private fun setupIncludeSortingInExport() {
+        binding.settingsIncludeSortingInExport.isChecked = config.includeSortingInSettingsExport
+        binding.settingsIncludeSortingInExportHolder.setOnClickListener {
+            binding.settingsIncludeSortingInExport.toggle()
+            config.includeSortingInSettingsExport = binding.settingsIncludeSortingInExport.isChecked
+        }
+    }
+
+    private fun setupExportSorting() {
+        binding.settingsExportSortingHolder.setOnClickListener {
+            if (isQPlus()) {
+                ExportFavoritesDialog(
+                    activity = this,
+                    defaultFilename = getExportSortingFilename(),
+                    hidePath = true,
+                    titleId = R.string.export_sorting
+                ) { path, filename ->
+                    Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TITLE, filename)
+                        addCategory(Intent.CATEGORY_OPENABLE)
+
+                        try {
+                            startActivityForResult(this, SELECT_EXPORT_SORTING_FILE_INTENT)
+                        } catch (e: ActivityNotFoundException) {
+                            toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                        } catch (e: Exception) {
+                            showErrorToast(e)
+                        }
+                    }
+                }
+            } else {
+                handlePermission(PERMISSION_WRITE_STORAGE) {
+                    if (it) {
+                        ExportFavoritesDialog(
+                            activity = this,
+                            defaultFilename = getExportSortingFilename(),
+                            hidePath = false,
+                            titleId = R.string.export_sorting
+                        ) { path, filename ->
+                            val file = File(path)
+                            getFileOutputStream(file.toFileDirItem(this), true) { outputStream ->
+                                exportSortingTo(outputStream)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun exportSortingTo(outputStream: OutputStream?) {
+        if (outputStream == null) {
+            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            return
+        }
+
+        ensureBackgroundThread {
+            val sortingItems = config.getSortingPreferences()
+            outputStream.bufferedWriter().use { out ->
+                for ((key, value) in sortingItems) {
+                    out.writeLn("$key=$value")
+                }
+            }
+
+            toast(org.fossify.commons.R.string.exporting_successful)
+        }
+    }
+
+    private fun getExportSortingFilename(): String {
+        val appName = baseConfig.appId.removeSuffix(".debug").removeSuffix(".pro").removePrefix("org.fossify.")
+        return "$appName-sorting_${getCurrentFormattedDateTime()}"
+    }
+
+    private fun setupImportSorting() {
+        binding.settingsImportSortingHolder.setOnClickListener {
+            if (isQPlus()) {
+                Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "text/plain"
+
+                    try {
+                        startActivityForResult(this, SELECT_IMPORT_SORTING_FILE_INTENT)
+                    } catch (e: ActivityNotFoundException) {
+                        toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                    } catch (e: Exception) {
+                        showErrorToast(e)
+                    }
+                }
+            } else {
+                handlePermission(PERMISSION_READ_STORAGE) {
+                    if (it) {
+                        FilePickerDialog(this) {
+                            ensureBackgroundThread {
+                                importSorting(File(it).inputStream())
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // only sorting lines are taken out of the file, so the settings export can be fed in here too
+    private fun importSorting(inputStream: InputStream?) {
+        if (inputStream == null) {
+            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            return
+        }
+
+        ensureBackgroundThread {
+            var importedItems = 0
+            inputStream.bufferedReader().use {
+                while (true) {
+                    try {
+                        val line = it.readLine() ?: break
+                        val split = line.split("=".toRegex(), 2)
+                        if (split.size == 2 && config.applySortingPreference(split[0], split[1])) {
+                            importedItems++
+                        }
+                    } catch (e: Exception) {
+                        showErrorToast(e)
+                    }
+                }
+            }
+
+            if (importedItems > 0) {
+                toast(R.string.sorting_imported_successfully)
+            } else {
+                toast(org.fossify.commons.R.string.no_entries_for_importing)
+            }
+        }
+    }
+
     private fun setupExportSettings() {
         binding.settingsExportHolder.setOnClickListener {
             val configItems = LinkedHashMap<String, Any>().apply {
@@ -997,6 +1142,10 @@ class SettingsActivity : SimpleActivity() {
                 put(THUMBNAIL_SPACING, config.thumbnailSpacing)
                 put(FILE_ROUNDED_CORNERS, config.fileRoundedCorners)
                 put(SEARCH_ALL_FILES_BY_DEFAULT, config.searchAllFilesByDefault)
+
+                if (config.includeSortingInSettingsExport) {
+                    putAll(config.getSortingPreferences())
+                }
             }
 
             exportSettings(configItems)
@@ -1154,6 +1303,8 @@ class SettingsActivity : SimpleActivity() {
 
                     config.albumCovers = Gson().toJson(existingCovers)
                 }
+
+                else -> config.applySortingPreference(key, value.toString())
             }
         }
 

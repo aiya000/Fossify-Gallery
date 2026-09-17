@@ -11,6 +11,7 @@ import org.fossify.gallery.extensions.config
 
 class ExportFavoritesDialog(
     val activity: BaseSimpleActivity, val defaultFilename: String, val hidePath: Boolean,
+    val titleId: Int = R.string.export_favorite_paths,
     callback: (path: String, filename: String) -> Unit
 ) {
     init {
@@ -42,7 +43,7 @@ class ExportFavoritesDialog(
             .setPositiveButton(org.fossify.commons.R.string.ok, null)
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
             .apply {
-                activity.setupDialogStuff(binding.root, this, R.string.export_favorite_paths) { alertDialog ->
+                activity.setupDialogStuff(binding.root, this, titleId) { alertDialog ->
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         var filename = binding.exportFavoritesFilename.value
                         if (filename.isEmpty()) {

@@ -52,6 +52,10 @@
     <string name="remove_from_selection">選択から外す</string>
     <string name="grouped_by_file_name_date_taken">ファイル名ごとにグループ化して撮影日時</string>
     <string name="grouped_by_file_name_last_modified">ファイル名ごとにグループ化して最終更新日時</string>
+    <string name="export_sorting">並び順をエクスポート</string>
+    <string name="import_sorting">並び順をインポート</string>
+    <string name="include_sorting_in_settings_export">設定のエクスポートに並び順を含める</string>
+    <string name="sorting_imported_successfully">並び順をインポートしました</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

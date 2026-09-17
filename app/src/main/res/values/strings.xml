@@ -53,6 +53,10 @@
     <string name="remove_from_selection">Remove from selection</string>
     <string name="grouped_by_file_name_date_taken">Grouped by file name, then date taken</string>
     <string name="grouped_by_file_name_last_modified">Grouped by file name, then last modified</string>
+    <string name="export_sorting">Export sorting</string>
+    <string name="import_sorting">Import sorting</string>
+    <string name="include_sorting_in_settings_export">Include sorting in the settings export</string>
+    <string name="sorting_imported_successfully">Sorting imported successfully</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

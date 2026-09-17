@@ -8,6 +8,8 @@ import com.google.gson.reflect.TypeToken
 import org.fossify.commons.helpers.BaseConfig
 import org.fossify.commons.helpers.PROTECTION_PATTERN
 import org.fossify.commons.helpers.SORT_BY_DATE_MODIFIED
+import org.fossify.commons.helpers.SORT_FOLDER_PREFIX
+import org.fossify.commons.helpers.SORT_ORDER
 import org.fossify.commons.helpers.SORT_DESCENDING
 import org.fossify.commons.helpers.VIEW_TYPE_GRID
 import org.fossify.gallery.R
@@ -763,6 +765,51 @@ class Config(context: Context) : BaseConfig(context) {
     var lastExportedFavoritesFolder: String
         get() = prefs.getString(LAST_EXPORTED_FAVORITES_FOLDER, "")!!
         set(lastExportedFavoritesFolder) = prefs.edit().putString(LAST_EXPORTED_FAVORITES_FOLDER, lastExportedFavoritesFolder).apply()
+
+    var includeSortingInSettingsExport: Boolean
+        get() = prefs.getBoolean(INCLUDE_SORTING_IN_SETTINGS_EXPORT, true)
+        set(includeSortingInSettingsExport) = prefs.edit()
+            .putBoolean(INCLUDE_SORTING_IN_SETTINGS_EXPORT, includeSortingInSettingsExport).apply()
+
+    // Sorting lives partly under fixed keys and partly under per folder ones that carry the folder
+    // path, so the second half can only be found by walking the preferences themselves.
+    fun getSortingPreferences(): LinkedHashMap<String, Any> {
+        val items = LinkedHashMap<String, Any>()
+        items[SORT_ORDER] = sorting
+        items[DIRECTORY_SORT_ORDER] = directorySorting
+        items[GROUP_BY] = groupBy
+        items[CUSTOM_FOLDERS_ORDER] = customFoldersOrder
+
+        prefs.all.toSortedMap().forEach { (key, value) ->
+            if (value != null && isPerFolderSortingKey(key)) {
+                items[key] = value
+            }
+        }
+
+        return items
+    }
+
+    // returns false for a key that has nothing to do with sorting, so a caller can tell whether it
+    // handled the line
+    fun applySortingPreference(key: String, value: String): Boolean {
+        when {
+            key == SORT_ORDER -> sorting = value.toInt()
+            key == DIRECTORY_SORT_ORDER -> directorySorting = value.toInt()
+            key == GROUP_BY -> groupBy = value.toInt()
+            key == CUSTOM_FOLDERS_ORDER -> customFoldersOrder = value
+            key.startsWith(CUSTOM_MEDIA_ORDER_PREFIX) -> prefs.edit().putString(key, value).apply()
+            key.startsWith(SORT_FOLDER_PREFIX) || key.startsWith(GROUP_FOLDER_PREFIX) ->
+                prefs.edit().putInt(key, value.toInt()).apply()
+
+            else -> return false
+        }
+
+        return true
+    }
+
+    private fun isPerFolderSortingKey(key: String) = key.startsWith(SORT_FOLDER_PREFIX)
+            || key.startsWith(GROUP_FOLDER_PREFIX)
+            || key.startsWith(CUSTOM_MEDIA_ORDER_PREFIX)
 
     var showPermissionRationale: Boolean
         get() = prefs.getBoolean(SHOW_PERMISSION_RATIONALE, false)
