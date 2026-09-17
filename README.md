@@ -56,6 +56,7 @@ Everything above describes the upstream app. This fork adds the following on top
 - A group thumbnail is a 2x2 collage of the first images inside it
 - Groups get "Rename" and "Ungroup" (which moves their content one level up) instead of filesystem operations like delete, hide or exclude
 - Every folder picker lists groups and walks into them, including the one used by "Move to", "Copy to" and the widget configuration
+- The settings export carries the groups and the folders assigned to them, so they survive a move to another install. Importing takes them over as a whole, replacing whatever groups the device had
 
 ### Sorting media
 
