@@ -85,4 +85,5 @@ Everything above describes the upstream app. This fork adds the following on top
 ### Builds
 
 - This fork builds under the application id `io.github.aiya000.fossify.gallery`, so it installs next to the official Fossify Gallery instead of replacing it
+- Its launcher icon is pastel cyan rather than the upstream green, so the two are easy to tell apart on the home screen
 - Debug builds use the application id `io.github.aiya000.fossify.gallery.debug` and an orange launcher icon, so they can be told apart from a release build installed next to them
