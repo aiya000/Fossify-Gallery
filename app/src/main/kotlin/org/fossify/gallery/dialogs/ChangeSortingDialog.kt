@@ -41,6 +41,11 @@ class ChangeSortingDialog(
     private var pathToUse = if (!isDirectorySorting && path.isEmpty()) SHOW_ALL else path
     private val binding: DialogChangeSortingBinding
 
+    // the folder list offers one sorting per storage where the media of a folder offer one per
+    // folder, once there is a second storage to tell apart; the checkbox is the same view
+    private val showStorageCheckbox = isDirectorySorting && config.isPCloudLoggedIn
+    private val storageFilter = config.storageFilter
+
     init {
         currSorting = if (isDirectorySorting) {
             config.directorySorting
@@ -62,12 +67,17 @@ class ChangeSortingDialog(
             // the divider only has to separate the order from the numeric switch now, the folder
             // switch moved above the sortings and brought its own divider
             sortingDialogOrderDivider.beVisibleIf(sortingDialogNumericSorting.isVisible())
-            sortingDialogFolderDivider.beVisibleIf(showFolderCheckbox)
+            sortingDialogFolderDivider.beVisibleIf(showFolderCheckbox || showStorageCheckbox)
 
             sortingDialogNumericSorting.isChecked = currSorting and SORT_USE_NUMERIC_VALUE != 0
 
-            sortingDialogUseForThisFolder.beVisibleIf(showFolderCheckbox)
-            sortingDialogUseForThisFolder.isChecked = config.hasCustomSorting(pathToUse)
+            sortingDialogUseForThisFolder.beVisibleIf(showFolderCheckbox || showStorageCheckbox)
+            if (showStorageCheckbox) {
+                sortingDialogUseForThisFolder.setText(R.string.use_for_this_storage_only)
+                sortingDialogUseForThisFolder.isChecked = config.hasStorageDirectorySorting(storageFilter)
+            } else {
+                sortingDialogUseForThisFolder.isChecked = config.hasCustomSorting(pathToUse)
+            }
             sortingDialogBottomNote.beVisibleIf(!isDirectorySorting)
 
             // the folder list calls its drag and drop order "custom", for the media of a single
@@ -199,7 +209,12 @@ class ChangeSortingDialog(
         }
 
         if (isDirectorySorting) {
-            config.directorySorting = sorting
+            if (showStorageCheckbox && binding.sortingDialogUseForThisFolder.isChecked) {
+                config.saveStorageDirectorySorting(storageFilter, sorting)
+            } else {
+                config.removeStorageDirectorySorting(storageFilter)
+                config.globalDirectorySorting = sorting
+            }
         } else {
             if (binding.sortingDialogUseForThisFolder.isChecked) {
                 config.saveCustomSorting(pathToUse, sorting)

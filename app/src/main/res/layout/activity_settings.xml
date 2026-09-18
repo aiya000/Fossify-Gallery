@@ -1048,6 +1048,21 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_pcloud_rescan_on_unmetered_only_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_pcloud_rescan_on_unmetered_only"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pcloud_rescan_on_unmetered_only" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_pcloud_rescan_on_launch_holder"
                 style="@style/SettingsHolderSwitchStyle"
                 android:layout_width="match_parent"

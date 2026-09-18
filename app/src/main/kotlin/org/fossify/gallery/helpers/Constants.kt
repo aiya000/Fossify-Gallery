@@ -164,6 +164,8 @@ const val PCLOUD_RESULT_ALREADY_EXISTS = 2004
 const val PCLOUD_CATEGORY_IMAGE = 1
 const val PCLOUD_CATEGORY_VIDEO = 2
 const val STORAGE_FILTER = "storage_filter"
+// the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
+const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
 
 // when the pCloud cache is refreshed from the network, see PCloudSyncPolicy. Only launch and
 // storage switch are wired up so far, the other events land with the screens that raise them
@@ -173,6 +175,7 @@ const val PCLOUD_RESCAN_ON_FOLDER_OPEN = "pcloud_rescan_on_folder_open"
 const val PCLOUD_RESCAN_ON_GROUP_OPEN = "pcloud_rescan_on_group_open"
 const val PCLOUD_RESCAN_AFTER_WRITE = "pcloud_rescan_after_write"
 const val PCLOUD_RESCAN_INTERVAL_MINUTES = "pcloud_rescan_interval_minutes"
+const val PCLOUD_RESCAN_ON_UNMETERED_ONLY = "pcloud_rescan_on_unmetered_only"
 const val PCLOUD_LAST_FULL_SCAN_AT = "pcloud_last_full_scan_at"
 // where the diff sync left off, see PCloudScanner.sync(). 0 means the next sync is a full scan
 const val PCLOUD_DIFF_ID = "pcloud_diff_id"

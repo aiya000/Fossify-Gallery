@@ -458,7 +458,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // one when the setting asks for it, each under its own throttle. The cached folders are on
     // screen before this runs
     private fun rescanPCloudFoldersOfGroupIfDue(groupId: Long?) {
-        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(config).rescanOnGroupOpen) {
+        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(this).rescanOnGroupOpen) {
             return
         }
 
@@ -764,7 +764,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             // the cache is on screen right away; a rescan, when the settings ask for one,
             // refreshes the list a second time once it is through
             reloadDirectories()
-            val policy = PCloudSyncPolicy(config)
+            val policy = PCloudSyncPolicy(this)
             if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
                 rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
             }
@@ -805,7 +805,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mShouldRescanPCloudOnLaunch = false
-        val policy = PCloudSyncPolicy(config)
+        val policy = PCloudSyncPolicy(this)
         if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
             rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
         }

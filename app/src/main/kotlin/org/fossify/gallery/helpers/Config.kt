@@ -23,9 +23,28 @@ class Config(context: Context) : BaseConfig(context) {
         fun newInstance(context: Context) = Config(context)
     }
 
+    // The sorting of the folder list on screen. A storage (see storageFilter) may carry a sorting
+    // of its own, chosen with "apply to this storage only" in the sorting dialog; while it does,
+    // reading and writing go through that one, so every reader and the drag order act on the
+    // list that is shown. globalDirectorySorting is the one storages without their own fall back to
     var directorySorting: Int
+        get(): Int = prefs.getInt(getStorageDirectorySortingKey(storageFilter), globalDirectorySorting)
+        set(order) {
+            val key = if (hasStorageDirectorySorting(storageFilter)) getStorageDirectorySortingKey(storageFilter) else DIRECTORY_SORT_ORDER
+            prefs.edit().putInt(key, order).apply()
+        }
+
+    var globalDirectorySorting: Int
         get(): Int = prefs.getInt(DIRECTORY_SORT_ORDER, SORT_BY_DATE_MODIFIED or SORT_DESCENDING)
         set(order) = prefs.edit().putInt(DIRECTORY_SORT_ORDER, order).apply()
+
+    fun hasStorageDirectorySorting(storageFilter: Int) = prefs.contains(getStorageDirectorySortingKey(storageFilter))
+
+    fun saveStorageDirectorySorting(storageFilter: Int, sorting: Int) = prefs.edit().putInt(getStorageDirectorySortingKey(storageFilter), sorting).apply()
+
+    fun removeStorageDirectorySorting(storageFilter: Int) = prefs.edit().remove(getStorageDirectorySortingKey(storageFilter)).apply()
+
+    private fun getStorageDirectorySortingKey(storageFilter: Int) = "$SORT_FOLDERS_STORAGE_PREFIX$storageFilter"
 
     fun saveFolderGrouping(path: String, value: Int) {
         if (path.isEmpty()) {
@@ -268,6 +287,12 @@ class Config(context: Context) : BaseConfig(context) {
     var pCloudRescanAfterWrite: Boolean
         get() = prefs.getBoolean(PCLOUD_RESCAN_AFTER_WRITE, true)
         set(pCloudRescanAfterWrite) = prefs.edit().putBoolean(PCLOUD_RESCAN_AFTER_WRITE, pCloudRescanAfterWrite).apply()
+
+    // automatic rescans stay off a metered network (mobile data) while this is on; the manual
+    // ones from the menu never ask
+    var pCloudRescanOnUnmeteredOnly: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_UNMETERED_ONLY, true)
+        set(pCloudRescanOnUnmeteredOnly) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_UNMETERED_ONLY, pCloudRescanOnUnmeteredOnly).apply()
 
     // 0 means no throttling: every event that asks for a rescan gets one
     var pCloudRescanIntervalMinutes: Int
@@ -850,7 +875,7 @@ class Config(context: Context) : BaseConfig(context) {
     fun getSortingPreferences(): LinkedHashMap<String, Any> {
         val items = LinkedHashMap<String, Any>()
         items[SORT_ORDER] = sorting
-        items[DIRECTORY_SORT_ORDER] = directorySorting
+        items[DIRECTORY_SORT_ORDER] = globalDirectorySorting
         items[GROUP_BY] = groupBy
         items[CUSTOM_FOLDERS_ORDER] = customFoldersOrder
 
@@ -868,11 +893,11 @@ class Config(context: Context) : BaseConfig(context) {
     fun applySortingPreference(key: String, value: String): Boolean {
         when {
             key == SORT_ORDER -> sorting = value.toInt()
-            key == DIRECTORY_SORT_ORDER -> directorySorting = value.toInt()
+            key == DIRECTORY_SORT_ORDER -> globalDirectorySorting = value.toInt()
             key == GROUP_BY -> groupBy = value.toInt()
             key == CUSTOM_FOLDERS_ORDER -> customFoldersOrder = value
             key.startsWith(CUSTOM_MEDIA_ORDER_PREFIX) -> prefs.edit().putString(key, value).apply()
-            key.startsWith(SORT_FOLDER_PREFIX) || key.startsWith(GROUP_FOLDER_PREFIX) ->
+            key.startsWith(SORT_FOLDER_PREFIX) || key.startsWith(GROUP_FOLDER_PREFIX) || key.startsWith(SORT_FOLDERS_STORAGE_PREFIX) ->
                 prefs.edit().putInt(key, value.toInt()).apply()
 
             else -> return false
@@ -884,6 +909,7 @@ class Config(context: Context) : BaseConfig(context) {
     private fun isPerFolderSortingKey(key: String) = key.startsWith(SORT_FOLDER_PREFIX)
             || key.startsWith(GROUP_FOLDER_PREFIX)
             || key.startsWith(CUSTOM_MEDIA_ORDER_PREFIX)
+            || key.startsWith(SORT_FOLDERS_STORAGE_PREFIX)
 
     var showPermissionRationale: Boolean
         get() = prefs.getBoolean(SHOW_PERMISSION_RATIONALE, false)
