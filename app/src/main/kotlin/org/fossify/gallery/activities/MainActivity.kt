@@ -103,6 +103,7 @@ import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
+import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -1608,7 +1609,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun checkInvalidDirectories(dirs: ArrayList<Directory>) {
         val invalidDirs = ArrayList<Directory>()
         val OTGPath = config.OTGPath
-        dirs.filter { !it.areFavorites() && !it.isRecycleBin() }.forEach {
+        // a pCloud folder has no file behind it, only a rescan gets to decide that it is gone
+        dirs.filter { !it.areFavorites() && !it.isRecycleBin() && !it.path.isPCloudPath() }.forEach {
             if (!getDoesFilePathExist(it.path, OTGPath)) {
                 invalidDirs.add(it)
             } else if (it.path != config.tempFolderPath && (!isRPlus() || isExternalStorageManager())) {

@@ -12,6 +12,9 @@ interface DirectoryDao {
     @Query("SELECT path, thumbnail, filename, media_count, last_modified, date_taken, size, location, media_types, sort_value FROM directories")
     fun getAll(): List<Directory>
 
+    @Query("SELECT path FROM directories WHERE path LIKE :prefix || '%'")
+    fun getPathsWithPrefix(prefix: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(directory: Directory)
 

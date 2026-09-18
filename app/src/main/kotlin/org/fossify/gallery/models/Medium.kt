@@ -6,6 +6,7 @@ import com.bumptech.glide.signature.ObjectKey
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.FileDirItem
+import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.helpers.*
 import java.io.File
 import java.io.Serializable
@@ -99,7 +100,7 @@ data class Medium(
     }
 
     fun getSignature(): String {
-        val lastModified = if (modified > 1) {
+        val lastModified = if (modified > 1 || path.isPCloudPath()) {
             modified
         } else {
             File(path).lastModified()

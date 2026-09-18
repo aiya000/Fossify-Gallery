@@ -39,6 +39,7 @@ class SettingsActivity : SimpleActivity() {
 
     private var mRecycleBinContentSize = 0L
     private var mSettingsItemsToExport = LinkedHashMap<String, Any>()
+    private var mIsPCloudScanRunning = false
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -182,6 +183,40 @@ class SettingsActivity : SimpleActivity() {
                 }
             } else {
                 startActivity(Intent(this, PCloudAuthActivity::class.java))
+            }
+        }
+
+        setupPCloudRescan()
+    }
+
+    // the only way to fill the pCloud cache until the folder list gets its own rescan. The
+    // counts in the toast are what tells that the scanner works while nothing displays the result
+    private fun setupPCloudRescan() {
+        binding.settingsPcloudRescanHolder.beVisibleIf(config.isPCloudLoggedIn)
+        binding.settingsPcloudRescanHolder.setOnClickListener {
+            if (mIsPCloudScanRunning) {
+                return@setOnClickListener
+            }
+
+            mIsPCloudScanRunning = true
+            toast(R.string.pcloud_rescanning)
+            ensureBackgroundThread {
+                try {
+                    val result = PCloudScanner(this).scanAll()
+                    toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
+                } catch (e: PCloudException) {
+                    if (e.requiresLogIn) {
+                        config.clearPCloudAccount()
+                        toast(R.string.pcloud_log_in_required)
+                        runOnUiThread { setupPCloudAccount() }
+                    } else {
+                        showErrorToast(e)
+                    }
+                } catch (e: Exception) {
+                    showErrorToast(e)
+                } finally {
+                    mIsPCloudScanRunning = false
+                }
             }
         }
     }

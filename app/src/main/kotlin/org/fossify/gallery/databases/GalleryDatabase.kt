@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import org.fossify.gallery.interfaces.*
 import org.fossify.gallery.models.*
 
-@Database(entities = [Directory::class, Medium::class, Widget::class, DateTaken::class, Favorite::class], version = 10)
+@Database(entities = [Directory::class, Medium::class, Widget::class, DateTaken::class, Favorite::class, PCloudItem::class], version = 11)
 abstract class GalleryDatabase : RoomDatabase() {
 
     abstract fun DirectoryDao(): DirectoryDao
@@ -21,6 +21,8 @@ abstract class GalleryDatabase : RoomDatabase() {
     abstract fun DateTakensDao(): DateTakensDao
 
     abstract fun FavoritesDao(): FavoritesDao
+
+    abstract fun PCloudItemDao(): PCloudItemDao
 
     companion object {
         private var db: GalleryDatabase? = null
@@ -37,6 +39,7 @@ abstract class GalleryDatabase : RoomDatabase() {
                             .addMigrations(MIGRATION_7_8)
                             .addMigrations(MIGRATION_8_9)
                             .addMigrations(MIGRATION_9_10)
+                            .addMigrations(MIGRATION_10_11)
                             .build()
                     }
                 }
@@ -89,6 +92,13 @@ abstract class GalleryDatabase : RoomDatabase() {
         private val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE media ADD COLUMN media_store_id INTEGER default 0 NOT NULL")
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS `pcloud_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `path` TEXT NOT NULL, `item_id` INTEGER NOT NULL, `is_folder` INTEGER NOT NULL, `content_hash` INTEGER NOT NULL, `has_thumb` INTEGER NOT NULL, `last_scanned_at` INTEGER NOT NULL)")
+                database.execSQL("CREATE UNIQUE INDEX `index_pcloud_items_path` ON `pcloud_items` (`path`)")
             }
         }
     }
