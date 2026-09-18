@@ -1708,7 +1708,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // applies the virtual folder groups on top of the "Group direct subfolders" logic for the currently opened group level
     private fun getDirsToShowWithGroups(sortedDirs: ArrayList<Directory>): ArrayList<Directory> {
-        val grouped = getGroupedDirectories(sortedDirs, mCurrentGroupId)
+        val grouped = getGroupedDirectories(sortedDirs, mCurrentGroupId, hideGroupsWithoutVisibleFolders = true)
         val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
         val realDirsToShow = getDirsToShow(
             dirs = ArrayList(realDirs),
