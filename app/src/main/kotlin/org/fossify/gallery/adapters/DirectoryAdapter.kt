@@ -77,6 +77,7 @@ import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
 import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
@@ -184,13 +185,17 @@ class DirectoryAdapter(
         val realPaths = getSelectedRealPaths()
         val isAnyGroupSelected = realPaths.size != selectedPaths.size
         val areOnlyGroupsSelected = realPaths.isEmpty()
+
+        // a pCloud folder has no directory behind it, so the filesystem operations are off for
+        // it as they are for groups; pinning, locking and the cover image are settings and stay
+        val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
             findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) &&
-                (!isAnyGroupSelected || isOneItemSelected)
+                (!isAnyGroupSelected || isOneItemSelected) && !isAnyPCloudSelected
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
@@ -199,16 +204,17 @@ class DirectoryAdapter(
             findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
-            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected
+            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && !isAnyPCloudSelected
 
             // filesystem operations make no sense for virtual groups
-            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected
-            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected
-            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected
+            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_move_to).isVisible = !isAnyPCloudSelected
+            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && !isAnyPCloudSelected
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
 
-            checkHideBtnVisibility(this, realPaths)
+            checkHideBtnVisibility(this, ArrayList(realPaths.filter { !it.isPCloudPath() }))
             checkPinBtnVisibility(this, selectedPaths)
         }
     }

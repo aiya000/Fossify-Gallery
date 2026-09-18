@@ -97,6 +97,7 @@ import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudScanner
+import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -731,6 +732,56 @@ fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
     }
 }
 
+// Refreshes the given pCloud folders one by one, non-recursively, the way rescanPCloud()
+// refreshes the whole account; the counts toast sums them up. It shares the scanner's lock
+// with the full scan, so nothing happens while either is running. onDone runs in every case,
+// on whatever thread the scan ended on
+fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, onDone: () -> Unit = {}) {
+    if (paths.isEmpty() || !config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
+        onDone()
+        return
+    }
+
+    ensureBackgroundThread {
+        try {
+            val scanner = PCloudScanner(this)
+            var folderCount = 0
+            var mediaCount = 0
+            paths.forEach { path ->
+                scanner.scanFolder(path)?.let {
+                    folderCount += it.folderCount
+                    mediaCount += it.mediaCount
+                }
+            }
+
+            if (reportCounts) {
+                toast(getString(R.string.pcloud_rescan_done, folderCount, mediaCount))
+            }
+        } catch (e: PCloudException) {
+            if (e.requiresLogIn) {
+                config.clearPCloudAccount()
+                toast(R.string.pcloud_log_in_required)
+            } else {
+                showErrorToast(e)
+            }
+        } catch (e: Exception) {
+            showErrorToast(e)
+        } finally {
+            PCloudScanner.isRunning.set(false)
+        }
+
+        onDone()
+    }
+}
+
+// the folders among the given pCloud paths whose last scan is older than the rescan interval;
+// the throttle is per folder, see PCloudSyncPolicy.isFolderScanDue(). Reads the database, so
+// call it off the main thread
+fun Context.getPCloudFoldersDueForRescan(paths: List<String>): List<String> {
+    val policy = PCloudSyncPolicy(config)
+    return paths.filter { policy.isFolderScanDue(pCloudItemsDB.getItem(it)?.lastScannedAt ?: 0L) }
+}
+
 @SuppressLint("CheckResult")
 fun Context.loadImageBase(
     path: String,
@@ -992,7 +1043,7 @@ fun Context.getCachedMedia(
     ensureBackgroundThread {
         val mediaFetcher = MediaFetcher(this)
         val foldersToScan = if (path.isEmpty()) {
-            mediaFetcher.getFoldersToScan()
+            mediaFetcher.getFoldersToScan().apply { addAll(mediaFetcher.getPCloudFoldersToShow()) }
         } else {
             arrayListOf(path)
         }

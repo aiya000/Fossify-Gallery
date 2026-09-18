@@ -82,6 +82,7 @@ import org.fossify.gallery.adapters.PortraitPhotosAdapter
 import org.fossify.gallery.databinding.PagerPhotoItemBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.getBottomActionsHeight
+import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.sendFakeClick
 import org.fossify.gallery.helpers.ColorModeHelper
 import org.fossify.gallery.helpers.HIGH_TILE_DPI
@@ -248,6 +249,8 @@ class PhotoFragment : ViewPagerFragment() {
             binding.bottomActionsDummy.beGone()
         }
         loadImage()
+        // a pCloud photo starts from its thumbnail and is loaded again from the file once it is in
+        fetchPCloudOriginal(mMedium) { loadImage() }
         initExtendedDetails()
         mWasInit = true
         updateInstantSwitchWidths()
@@ -278,7 +281,7 @@ class PhotoFragment : ViewPagerFragment() {
                 mIsSubsamplingVisible = false
                 binding.subsamplingView.beGone()
                 loadImage()
-            } else if (mMedium.isGIF()) {
+            } else if (mMedium.isGIF() && !getPathToLoad(mMedium).isPCloudPath()) {
                 loadGif()
             } else if (mIsSubsamplingVisible && mShouldResetImage) {
                 binding.subsamplingView.onGlobalLayout {
@@ -425,6 +428,9 @@ class PhotoFragment : ViewPagerFragment() {
             mImageOrientation = getImageOrientation()
             activity?.runOnUiThread {
                 when {
+                    // the decoders below want a file; until the pCloud copy is in, Glide shows
+                    // the thumbnail through PCloudStreamLoader like the grid does
+                    getPathToLoad(mMedium).isPCloudPath() -> loadBitmap()
                     mMedium.isGIF() -> loadGif()
                     mMedium.isSVG() -> loadSVG()
                     mMedium.isApng() -> loadAPNG()
@@ -463,21 +469,21 @@ class PhotoFragment : ViewPagerFragment() {
             Glide.with(requireContext())
                 .`as`(PictureDrawable::class.java)
                 .listener(SvgSoftwareLayerSetter())
-                .load(mMedium.path)
+                .load(getPathToLoad(mMedium))
                 .into(binding.gesturesView)
         }
     }
 
     private fun loadAPNG() {
         if (context != null) {
-            val drawable = APNGDrawable.fromFile(mMedium.path)
+            val drawable = APNGDrawable.fromFile(getPathToLoad(mMedium))
             binding.gesturesView.setImageDrawable(drawable)
         }
     }
 
     private fun loadAVIF() {
         if (context != null) {
-            val drawable = AVIFDrawable.fromFile(mMedium.path)
+            val drawable = AVIFDrawable.fromFile(getPathToLoad(mMedium))
             if (drawable.intrinsicWidth == 0 || drawable.intrinsicHeight == 0) {
                 loadBitmap()
                 return
@@ -491,7 +497,7 @@ class PhotoFragment : ViewPagerFragment() {
         mHasInitialZoom = false
         if (context == null) return
         val path = getFilePathToShow()
-        if (path.isWebP()) {
+        if (path.isWebP() && !path.isPCloudPath()) {
             val drawable = WebPDrawable.fromFile(path)
             if (drawable.intrinsicWidth == 0) {
                 loadWithGlide(path, addZoomableView)
@@ -732,7 +738,8 @@ class PhotoFragment : ViewPagerFragment() {
     private fun scheduleZoomableView() {
         mLoadZoomableViewHandler.removeCallbacksAndMessages(null)
         mLoadZoomableViewHandler.postDelayed({
-            if (mIsFragmentVisible && context?.config?.allowZoomingImages == true && (mMedium.isImage() || mMedium.isPortrait()) && !mIsSubsamplingVisible) {
+            val hasFile = !getPathToLoad(mMedium).isPCloudPath()
+            if (mIsFragmentVisible && hasFile && context?.config?.allowZoomingImages == true && (mMedium.isImage() || mMedium.isPortrait()) && !mIsSubsamplingVisible) {
                 addZoomableView()
             }
         }, ZOOMABLE_VIEW_LOAD_DELAY)

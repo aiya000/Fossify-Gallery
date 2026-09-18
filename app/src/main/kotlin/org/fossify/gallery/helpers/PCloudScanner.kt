@@ -19,6 +19,7 @@ import org.fossify.gallery.extensions.getFavoritePaths
 import org.fossify.gallery.extensions.getNoMediaFoldersSync
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.toPCloudRemotePath
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.PCloudItem
@@ -71,18 +72,54 @@ class PCloudScanner(private val context: Context) {
         return Result(directories.size, media.size)
     }
 
-    private fun fetchTree(): Entry {
-        var root: Entry? = null
-        val params = mapOf("path" to "/", "recursive" to "1")
+    // Refreshes one folder from a non-recursive listfolder: its media rows, its Directory row
+    // and its pcloud_items rows are replaced, subfolders are left as they are. A folder pCloud
+    // no longer has is dropped from the cache, with everything under it, and null comes back.
+    // Blocks like scanAll() does and throws the same way
+    fun scanFolder(path: String): Result? {
+        val folder = try {
+            fetchFolder(path)
+        } catch (e: PCloudException) {
+            if (e.result == PCLOUD_RESULT_DIRECTORY_NOT_FOUND) {
+                forget(path)
+                return null
+            }
+
+            throw e
+        }
+
+        val media = ArrayList<Medium>()
+        val directories = ArrayList<Directory>()
+        val items = ArrayList<PCloudItem>()
+        val scannedAt = System.currentTimeMillis()
+        Collector(media, directories, items, scannedAt).collect(folder, path)
+
+        // the folder's own row is written even when it holds no media now, so that the
+        // throttle remembers this scan
+        items.removeAll { it.path == path }
+        items.add(PCloudItem(null, path, folder.itemId, true, 0L, false, scannedAt))
+
+        val keptItemPaths = HashSet<String>()
+        media.mapTo(keptItemPaths) { it.path }
+        folder.children.filter { it.isFolder }.mapTo(keptItemPaths) { "$path/${it.name}" }
+        storeFolder(path, media, directories, items, keptItemPaths)
+        return Result(directories.size, media.size)
+    }
+
+    private fun fetchTree() = fetchFolder(PCLOUD_PATH_SCHEME, recursive = true)
+
+    private fun fetchFolder(path: String, recursive: Boolean = false): Entry {
+        var folder: Entry? = null
+        val params = mapOf("path" to path.toPCloudRemotePath(), "recursive" to if (recursive) "1" else "0")
         PCloudApi.stream(config.pCloudApiHost, config.pCloudAccessToken, "listfolder", params) { name, reader ->
             if (name == "metadata") {
-                root = readEntry(reader)
+                folder = readEntry(reader)
             } else {
                 reader.skipValue()
             }
         }
 
-        return root ?: throw IllegalStateException("pCloud answered listfolder without metadata")
+        return folder ?: throw IllegalStateException("pCloud answered listfolder without metadata")
     }
 
     private fun readEntry(reader: JsonReader): Entry {
@@ -172,9 +209,9 @@ class PCloudScanner(private val context: Context) {
     private inner class Collector(
         private val media: ArrayList<Medium>,
         private val directories: ArrayList<Directory>,
-        private val items: ArrayList<PCloudItem>
+        private val items: ArrayList<PCloudItem>,
+        private val scannedAt: Long = System.currentTimeMillis()
     ) {
-        private val scannedAt = System.currentTimeMillis()
         private val favoritePaths = context.getFavoritePaths()
         private val albumCovers = config.parseAlbumCovers()
         private val hiddenString = context.getString(R.string.hidden)
@@ -252,6 +289,47 @@ class PCloudScanner(private val context: Context) {
             context.pCloudItemsDB.insertAll(items)
             context.mediaDB.insertAll(media)
             context.directoryDB.insertAll(directories)
+        }
+    }
+
+    // the same, narrowed to one folder: only its own media rows and the item rows of its direct
+    // children are dropped, a subfolder's rows are that subfolder's business
+    private fun storeFolder(path: String, media: List<Medium>, directories: List<Directory>, items: List<PCloudItem>, keptItemPaths: Set<String>) {
+        GalleryDatabase.getInstance(context).runInTransaction {
+            val keptMediaPaths = media.map { it.path }.toHashSet()
+            context.mediaDB.getMediaFromPath(path).map { it.path }.filter { it !in keptMediaPaths }.forEach { mediumPath ->
+                context.mediaDB.deleteMediumPath(mediumPath)
+                context.favoritesDB.deleteFavoritePath(mediumPath)
+            }
+
+            val prefix = "$path/"
+            context.pCloudItemsDB.getPathsWithPrefix(prefix)
+                .filter { !it.substring(prefix.length).contains('/') && it !in keptItemPaths }
+                .forEach { context.pCloudItemsDB.deleteItemPath(it) }
+
+            if (directories.isEmpty()) {
+                context.directoryDB.deleteDirPath(path)
+            }
+
+            context.pCloudItemsDB.insertAll(items)
+            context.mediaDB.insertAll(media)
+            context.directoryDB.insertAll(directories)
+        }
+    }
+
+    // drops a folder pCloud no longer has, with everything under it
+    private fun forget(path: String) {
+        GalleryDatabase.getInstance(context).runInTransaction {
+            val prefix = "$path/"
+            context.mediaDB.getPathsWithPrefix(prefix).forEach { mediumPath ->
+                context.mediaDB.deleteMediumPath(mediumPath)
+                context.favoritesDB.deleteFavoritePath(mediumPath)
+            }
+
+            context.directoryDB.getPathsWithPrefix(prefix).forEach { context.directoryDB.deleteDirPath(it) }
+            context.directoryDB.deleteDirPath(path)
+            context.pCloudItemsDB.getPathsWithPrefix(prefix).forEach { context.pCloudItemsDB.deleteItemPath(it) }
+            context.pCloudItemsDB.deleteItemPath(path)
         }
     }
 }

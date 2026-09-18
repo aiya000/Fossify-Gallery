@@ -17,6 +17,11 @@ interface PCloudItemDao {
     @Query("SELECT COUNT(id) FROM pcloud_items WHERE is_folder = 0")
     fun getFileCount(): Long
 
+    // the folder scanner uses this to spot the rows of a folder pCloud no longer has; the
+    // prefix carries no LIKE wildcards of its own
+    @Query("SELECT path FROM pcloud_items WHERE path LIKE :prefix || '%'")
+    fun getPathsWithPrefix(prefix: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(items: List<PCloudItem>)
 

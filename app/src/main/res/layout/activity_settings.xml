@@ -1078,6 +1078,36 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_pcloud_rescan_on_folder_open_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_pcloud_rescan_on_folder_open"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pcloud_rescan_on_folder_open" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_pcloud_rescan_on_group_open_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_pcloud_rescan_on_group_open"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pcloud_rescan_on_group_open" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_pcloud_rescan_interval_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"
