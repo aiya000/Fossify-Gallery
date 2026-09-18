@@ -769,7 +769,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                         .mapNotNull { it as? Medium }
                         .filter { !newPaths.contains(it.path) }
                         .forEach {
-                            if (mPath == FAVORITES && getDoesFilePathExist(it.path)) {
+                            // a pCloud favorite that dropped out of the list was unfavorited, its cache row stays
+                            if (mPath == FAVORITES && (it.path.isPCloudPath() || getDoesFilePathExist(it.path))) {
                                 favoritesDB.deleteFavoritePath(it.path)
                                 mediaDB.updateFavorite(it.path, false)
                             } else {

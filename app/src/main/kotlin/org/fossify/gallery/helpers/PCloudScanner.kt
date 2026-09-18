@@ -3,6 +3,8 @@ package org.fossify.gallery.helpers
 import android.content.Context
 import android.util.JsonReader
 import android.util.JsonToken
+import org.fossify.commons.extensions.getFilenameFromPath
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.isGif
 import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isRawFast
@@ -39,6 +41,9 @@ class PCloudScanner(private val context: Context) {
     companion object {
         // one scan at a time. Context.rescanPCloud() claims this before it starts one
         val isRunning = AtomicBoolean(false)
+
+        // how many diff pages a sync replays before it lists the whole account instead
+        private const val MAX_DIFF_PAGES = 20
     }
 
     class Result(val folderCount: Int, val mediaCount: Int)
@@ -59,6 +64,16 @@ class PCloudScanner(private val context: Context) {
     // when pCloud refused and an IOException when it could not be reached; the cache is left
     // untouched in both cases, it is only rewritten once the whole tree has arrived
     fun scanAll(): Result {
+        // the diff id is taken before the tree so that a change made while the tree is on its
+        // way is replayed by the next sync rather than lost; replaying it is harmless. Without
+        // one, every sync falls back to a full scan
+        val diffId = try {
+            PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = null, last = 1).diffId
+        } catch (e: PCloudException) {
+            if (e.requiresLogIn) throw e
+            0L
+        }
+
         val root = fetchTree()
 
         val media = ArrayList<Medium>()
@@ -68,8 +83,151 @@ class PCloudScanner(private val context: Context) {
         collector.collect(root, PCLOUD_PATH_SCHEME)
 
         store(media, directories, items)
+        config.pCloudDiffId = diffId
         config.pCloudLastFullScanAt = System.currentTimeMillis()
         return Result(directories.size, media.size)
+    }
+
+    // Brings the cache up to date with what changed on pCloud since the last scan: the diff
+    // API lists the events, and each folder they touched is listed again the way scanFolder()
+    // does it, while folders that were renamed, moved or deleted are handled from the event
+    // alone. Without a diff id to start from, when pCloud asks for a reset, or when an event
+    // names a folder the cache does not know, it is a full scan instead. The counts are those
+    // of the folders listed again. Blocks like scanAll() does and throws the same way; the
+    // diff id moves on only once every touched folder is through, so a sync that broke off
+    // replays its events next time
+    fun sync(): Result {
+        var diffId = config.pCloudDiffId
+        if (diffId <= 0L) {
+            return scanAll()
+        }
+
+        val touchedFolderIds = LinkedHashSet<Long>()
+        var pages = 0
+        while (true) {
+            val page = PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = diffId)
+            page.entries.forEach { entry ->
+                if (!apply(entry, touchedFolderIds)) {
+                    return scanAll()
+                }
+            }
+
+            if (page.entries.isEmpty() || page.diffId <= diffId) {
+                break
+            }
+
+            diffId = page.diffId
+            if (++pages >= MAX_DIFF_PAGES) {
+                // that many events are quicker to list than to replay
+                return scanAll()
+            }
+        }
+
+        // the folders are found by id at the end, an event after the one that touched a folder
+        // may have moved or dropped it since. One the cache cannot place means the diff missed
+        // something and the whole account is listed instead
+        val touchedPaths = ArrayList<String>()
+        touchedFolderIds.forEach { folderId ->
+            touchedPaths.add(folderPathOf(folderId) ?: return scanAll())
+        }
+
+        var folderCount = 0
+        var mediaCount = 0
+        touchedPaths.forEach { path ->
+            scanFolder(path)?.let {
+                folderCount += it.folderCount
+                mediaCount += it.mediaCount
+            }
+        }
+
+        config.pCloudDiffId = diffId
+        config.pCloudLastFullScanAt = System.currentTimeMillis()
+        return Result(folderCount, mediaCount)
+    }
+
+    // Applies one event to the cache, or notes the folder it touched for a listing. Answers
+    // false when the event cannot be applied from what the cache knows. Events pCloud sends
+    // about shares and the account are not about files and are passed over
+    private fun apply(entry: PCloudApi.DiffEntry, touchedFolderIds: LinkedHashSet<Long>): Boolean {
+        when (entry.event) {
+            "reset" -> return false
+
+            // an empty folder gets its row so that its id is known, the same as createFolder()
+            // does; whatever lands in it comes as events of its own
+            "createfolder" -> {
+                val parentPath = folderPathOf(entry.parentFolderId) ?: return false
+                context.pCloudItemsDB.insertIfMissing(listOf(PCloudItem(null, "$parentPath/${entry.name}", entry.itemId, true, 0L, false, 0L)))
+            }
+
+            // renamed or moved: every row under it follows, like after a rename from this app.
+            // pCloud sends this for the root too, which is nothing to place under a parent
+            "modifyfolder" -> {
+                if (entry.itemId == 0L) {
+                    return true
+                }
+
+                val parentPath = folderPathOf(entry.parentFolderId) ?: return false
+                val newPath = "$parentPath/${entry.name}"
+                val old = context.pCloudItemsDB.getItemByItemId(entry.itemId, true)
+                when {
+                    old == null -> context.pCloudItemsDB.insertIfMissing(listOf(PCloudItem(null, newPath, entry.itemId, true, 0L, false, 0L)))
+                    old.path != newPath -> moveFolderRows(old.path, newPath)
+                }
+            }
+
+            "deletefolder" -> context.pCloudItemsDB.getItemByItemId(entry.itemId, true)?.let { forget(it.path) }
+
+            // the folder the file is in now, and the one it was in when the cache last saw it,
+            // are listed again; a file that is not media leaves the listing as it was
+            "createfile", "modifyfile" -> {
+                context.pCloudItemsDB.getItemByItemId(entry.itemId, false)?.let { old ->
+                    folderIdOf(old.path.getParentPath())?.let { touchedFolderIds.add(it) }
+                }
+
+                if (getMediaType(entry.name, entry.category) != 0) {
+                    touchedFolderIds.add(entry.parentFolderId)
+                }
+            }
+
+            "deletefile" -> context.pCloudItemsDB.getItemByItemId(entry.itemId, false)?.let { old ->
+                folderIdOf(old.path.getParentPath())?.let { touchedFolderIds.add(it) }
+            }
+        }
+
+        return true
+    }
+
+    // Moves every row under a folder to its new path, at any depth, and the folder's place in a
+    // virtual group with them. Per-folder settings keyed by path (sorting, the cover image,
+    // pinning) stay with the old path, as they do for a local folder. PCloudWriter does this
+    // after a rename it asked for, the sync after one made elsewhere
+    fun moveFolderRows(oldPath: String, newPath: String) {
+        GalleryDatabase.getInstance(context).runInTransaction {
+            context.mediaDB.updatePathsUnderFolder(oldPath, newPath)
+            context.favoritesDB.updatePathsUnderFolder(oldPath, newPath)
+            context.directoryDB.updatePathsUnderFolder(oldPath, newPath, newPath.getFilenameFromPath())
+            context.pCloudItemsDB.updatePaths(oldPath, newPath)
+        }
+
+        config.updateFolderGroupMemberPath(oldPath, newPath)
+    }
+
+    // the pseudo path of a folder id, or null for one the cache has no row for. The root is
+    // folder 0 and needs no row
+    private fun folderPathOf(folderId: Long): String? {
+        if (folderId == 0L) {
+            return PCLOUD_PATH_SCHEME
+        }
+
+        return context.pCloudItemsDB.getItemByItemId(folderId, true)?.path
+    }
+
+    private fun folderIdOf(path: String): Long? {
+        if (path == PCLOUD_PATH_SCHEME) {
+            return 0L
+        }
+
+        return context.pCloudItemsDB.getItem(path)?.itemId
     }
 
     // Refreshes one folder from a non-recursive listfolder: its media rows, its Directory row
@@ -91,18 +249,14 @@ class PCloudScanner(private val context: Context) {
         val media = ArrayList<Medium>()
         val directories = ArrayList<Directory>()
         val items = ArrayList<PCloudItem>()
+        val unlistedFolders = ArrayList<PCloudItem>()
         val scannedAt = System.currentTimeMillis()
-        Collector(media, directories, items, scannedAt).collect(folder, path)
-
-        // the folder's own row is written even when it holds no media now, so that the
-        // throttle remembers this scan
-        items.removeAll { it.path == path }
-        items.add(PCloudItem(null, path, folder.itemId, true, 0L, false, scannedAt))
+        Collector(media, directories, items, scannedAt, unlistedFolders).collect(folder, path)
 
         val keptItemPaths = HashSet<String>()
         media.mapTo(keptItemPaths) { it.path }
-        folder.children.filter { it.isFolder }.mapTo(keptItemPaths) { "$path/${it.name}" }
-        storeFolder(path, media, directories, items, keptItemPaths)
+        unlistedFolders.mapTo(keptItemPaths) { it.path }
+        storeFolder(path, media, directories, items, unlistedFolders, keptItemPaths)
         return Result(directories.size, media.size)
     }
 
@@ -203,14 +357,18 @@ class PCloudScanner(private val context: Context) {
         else -> 0
     }
 
-    // walks the parsed tree and turns it into the rows the cache holds. The Directory rows are
+    // Walks the parsed tree and turns it into the rows the cache holds. The Directory rows are
     // built by the same createDirectoryFromMedia() that builds local folders, so MainActivity's
-    // recheck of the displayed folders finds nothing to change in them
+    // recheck of the displayed folders finds nothing to change in them. Every folder that was
+    // listed gets a pcloud_items row, media in it or not, so that the diff sync can place an
+    // event by its folder id; a subfolder a non-recursive listing only named goes to
+    // unlistedFolders, its row must not claim a scan that did not happen
     private inner class Collector(
         private val media: ArrayList<Medium>,
         private val directories: ArrayList<Directory>,
         private val items: ArrayList<PCloudItem>,
-        private val scannedAt: Long = System.currentTimeMillis()
+        private val scannedAt: Long = System.currentTimeMillis(),
+        private val unlistedFolders: ArrayList<PCloudItem>? = null
     ) {
         private val favoritePaths = context.getFavoritePaths()
         private val albumCovers = config.parseAlbumCovers()
@@ -221,11 +379,17 @@ class PCloudScanner(private val context: Context) {
         private val mediaFetcher = MediaFetcher(context)
 
         fun collect(folder: Entry, path: String) {
+            items.add(PCloudItem(null, path, folder.itemId, true, 0L, false, scannedAt))
+
             val folderMedia = ArrayList<Medium>()
             folder.children.forEach { child ->
                 val childPath = "$path/${child.name}"
                 if (child.isFolder) {
-                    collect(child, childPath)
+                    if (unlistedFolders == null) {
+                        collect(child, childPath)
+                    } else {
+                        unlistedFolders.add(PCloudItem(null, childPath, child.itemId, true, 0L, false, 0L))
+                    }
                 } else {
                     // pCloud knows when a file was uploaded or changed, not when the photo was
                     // taken, so the modification time stands in for both like it does on OTG
@@ -265,7 +429,6 @@ class PCloudScanner(private val context: Context) {
 
             media.addAll(folderMedia)
             directories.add(directory)
-            items.add(PCloudItem(null, path, folder.itemId, true, 0L, false, scannedAt))
         }
     }
 
@@ -293,8 +456,11 @@ class PCloudScanner(private val context: Context) {
     }
 
     // the same, narrowed to one folder: only its own media rows and the item rows of its direct
-    // children are dropped, a subfolder's rows are that subfolder's business
-    private fun storeFolder(path: String, media: List<Medium>, directories: List<Directory>, items: List<PCloudItem>, keptItemPaths: Set<String>) {
+    // children are dropped, a subfolder's rows are that subfolder's business. A subfolder gets
+    // a row only when it has none yet, an existing one keeps its own last scan time
+    private fun storeFolder(
+        path: String, media: List<Medium>, directories: List<Directory>, items: List<PCloudItem>, unlistedFolders: List<PCloudItem>, keptItemPaths: Set<String>
+    ) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val keptMediaPaths = media.map { it.path }.toHashSet()
             context.mediaDB.getMediaFromPath(path).map { it.path }.filter { it !in keptMediaPaths }.forEach { mediumPath ->
@@ -312,6 +478,7 @@ class PCloudScanner(private val context: Context) {
             }
 
             context.pCloudItemsDB.insertAll(items)
+            context.pCloudItemsDB.insertIfMissing(unlistedFolders)
             context.mediaDB.insertAll(media)
             context.directoryDB.insertAll(directories)
         }

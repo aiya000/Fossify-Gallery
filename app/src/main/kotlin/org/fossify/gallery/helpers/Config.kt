@@ -247,9 +247,10 @@ class Config(context: Context) : BaseConfig(context) {
         set(storageFilter) = prefs.edit().putInt(STORAGE_FILTER, storageFilter).apply()
 
     // the network is never touched for pCloud unless one of these says so, the list always
-    // comes from the cache first. The defaults follow the plan in issue #1
+    // comes from the cache first. The defaults follow the plan in issue #1; the launch one is
+    // on since a rescan became a diff sync, which is cheap (issue #11)
     var pCloudRescanOnLaunch: Boolean
-        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_LAUNCH, false)
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_LAUNCH, true)
         set(pCloudRescanOnLaunch) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_LAUNCH, pCloudRescanOnLaunch).apply()
 
     var pCloudRescanOnStorageSwitch: Boolean
@@ -276,6 +277,11 @@ class Config(context: Context) : BaseConfig(context) {
     var pCloudLastFullScanAt: Long
         get() = prefs.getLong(PCLOUD_LAST_FULL_SCAN_AT, 0L)
         set(pCloudLastFullScanAt) = prefs.edit().putLong(PCLOUD_LAST_FULL_SCAN_AT, pCloudLastFullScanAt).apply()
+
+    // the last diff id the cache was brought up to, 0 until a full scan set one
+    var pCloudDiffId: Long
+        get() = prefs.getLong(PCLOUD_DIFF_ID, 0L)
+        set(pCloudDiffId) = prefs.edit().putLong(PCLOUD_DIFF_ID, pCloudDiffId).apply()
 
     var pCloudAccessToken: String
         get() = prefs.getString(PCLOUD_ACCESS_TOKEN, "")!!
@@ -304,6 +310,8 @@ class Config(context: Context) : BaseConfig(context) {
             .remove(PCLOUD_API_HOST)
             .remove(PCLOUD_ACCOUNT_EMAIL)
             .remove(PCLOUD_OAUTH_STATE)
+            // another account has its own diff stream, the next scan has to start from scratch
+            .remove(PCLOUD_DIFF_ID)
             .apply()
     }
 

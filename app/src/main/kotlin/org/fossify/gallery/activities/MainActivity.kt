@@ -790,10 +790,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // the menu item lists the whole account again: it is the way out when the diff sync
+    // behind every other rescan has gone astray, and its counts toast means the whole account
     private fun rescanPCloudManually() {
         toast(R.string.pcloud_rescanning)
         binding.directoriesRefreshLayout.isRefreshing = true
-        rescanPCloud(reportCounts = true) { runOnUiThread { getDirectories() } }
+        rescanPCloud(reportCounts = true, full = true) { runOnUiThread { getDirectories() } }
     }
 
     // the cached folders are on screen before this runs, so the scan never keeps the user waiting

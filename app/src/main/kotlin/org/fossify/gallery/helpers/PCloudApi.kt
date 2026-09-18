@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.util.JsonReader
+import android.util.JsonToken
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
@@ -18,6 +19,9 @@ import java.util.concurrent.TimeUnit
 // code. Reads take the file or folder id the scanner stored; writes take the remote path, so
 // that a name pCloud already knows can be acted on without a cache row for it
 object PCloudApi {
+    // events per diff page; the sync reads pages until one comes back short
+    const val DIFF_PAGE_SIZE = 1000
+
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -67,6 +71,81 @@ object PCloudApi {
     }
 
     fun userInfo(apiHost: String, accessToken: String) = call(apiHost, accessToken, "userinfo")
+
+    // one event of a diff answer, trimmed to what the sync needs: what happened, to which file
+    // or folder id, under which name in which folder. The scanner classifies the name and
+    // pCloud's category into a media type like it does for a listing
+    class DiffEntry(val event: String, val isFolder: Boolean, val itemId: Long, val name: String, val parentFolderId: Long, val category: Int)
+
+    // diffId is the id to continue from next time, also when entries is empty
+    class DiffPage(val diffId: Long, val entries: List<DiffEntry>)
+
+    // The changes to the account since sinceDiffId, oldest first, at most limit of them; the
+    // page's diffId is where to continue when it is full. With last instead of sinceDiffId the
+    // newest events come back, which with last = 1 is the cheap way to learn the current diff
+    // id before a full scan. Streamed like a listing is, a backlog of events can run long
+    fun diff(apiHost: String, accessToken: String, sinceDiffId: Long?, last: Int? = null, limit: Int = DIFF_PAGE_SIZE): DiffPage {
+        val params = HashMap<String, String>()
+        sinceDiffId?.let { params["diffid"] = it.toString() }
+        last?.let { params["last"] = it.toString() }
+        params["limit"] = limit.toString()
+
+        var diffId = 0L
+        val entries = ArrayList<DiffEntry>()
+        stream(apiHost, accessToken, "diff", params) { name, reader ->
+            when (name) {
+                "diffid" -> diffId = reader.nextLong()
+                "entries" -> {
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        entries.add(readDiffEntry(reader))
+                    }
+                    reader.endArray()
+                }
+
+                else -> reader.skipValue()
+            }
+        }
+
+        return DiffPage(diffId, entries)
+    }
+
+    private fun readDiffEntry(reader: JsonReader): DiffEntry {
+        var event = ""
+        var isFolder = false
+        var itemId = 0L
+        var name = ""
+        var parentFolderId = -1L
+        var category = 0
+
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "event" -> event = reader.nextString()
+                // the share and account events carry no metadata object, or none of these keys
+                "metadata" -> if (reader.peek() == JsonToken.BEGIN_OBJECT) {
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        when (reader.nextName()) {
+                            "isfolder" -> isFolder = reader.nextBoolean()
+                            "folderid", "fileid" -> itemId = reader.nextLong()
+                            "name" -> name = reader.nextString()
+                            "parentfolderid" -> parentFolderId = reader.nextLong()
+                            "category" -> category = reader.nextInt()
+                            else -> reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                } else {
+                    reader.skipValue()
+                }
+
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+        return DiffEntry(event, isFolder, itemId, name, parentFolderId, category)
+    }
 
     // a short-lived https URL for a thumbnail of the file, "WIDTHxHEIGHT" sized, jpeg unless the
     // image is transparent. Only files whose metadata says thumb=true have one

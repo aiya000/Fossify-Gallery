@@ -165,6 +165,12 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
             return
         }
 
+        // a pCloud video is streamed inside the app only, the other players want a file
+        if (path.isPCloudPath()) {
+            openInViewPager(path)
+            return
+        }
+
         when (config.videoPlayerType) {
             VIDEO_PLAYER_SYSTEM -> openPath(path = path, forceChooser = false)
             VIDEO_PLAYER_APP -> if (config.gestureVideoPlayer) launchGesturePlayer(path) else openInViewPager(path)

@@ -14,6 +14,16 @@ interface PCloudItemDao {
     @Query("SELECT id, path, item_id, is_folder, content_hash, has_thumb, last_scanned_at FROM pcloud_items WHERE is_folder = 1")
     fun getFolders(): List<PCloudItem>
 
+    // the diff sync gets ids from pCloud and has to find the paths for them; file and folder
+    // ids are separate number spaces, so the kind is part of the key
+    @Query("SELECT id, path, item_id, is_folder, content_hash, has_thumb, last_scanned_at FROM pcloud_items WHERE item_id = :itemId AND is_folder = :isFolder LIMIT 1")
+    fun getItemByItemId(itemId: Long, isFolder: Boolean): PCloudItem?
+
+    // a row for a folder seen but not listed: its id becomes known, a row already there
+    // keeps its last scan time
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertIfMissing(items: List<PCloudItem>)
+
     @Query("SELECT COUNT(id) FROM pcloud_items WHERE is_folder = 0")
     fun getFileCount(): Long
 

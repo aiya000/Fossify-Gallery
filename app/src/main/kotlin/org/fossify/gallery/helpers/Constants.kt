@@ -172,6 +172,8 @@ const val PCLOUD_RESCAN_ON_GROUP_OPEN = "pcloud_rescan_on_group_open"
 const val PCLOUD_RESCAN_AFTER_WRITE = "pcloud_rescan_after_write"
 const val PCLOUD_RESCAN_INTERVAL_MINUTES = "pcloud_rescan_interval_minutes"
 const val PCLOUD_LAST_FULL_SCAN_AT = "pcloud_last_full_scan_at"
+// where the diff sync left off, see PCloudScanner.sync(). 0 means the next sync is a full scan
+const val PCLOUD_DIFF_ID = "pcloud_diff_id"
 
 // the choices offered for the interval, in minutes. 0 means no minimum interval at all
 val PCLOUD_RESCAN_INTERVAL_CHOICES = arrayListOf(0, 5, 15, 60, 360, 1440)

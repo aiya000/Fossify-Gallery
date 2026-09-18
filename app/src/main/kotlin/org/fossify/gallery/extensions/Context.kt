@@ -701,11 +701,13 @@ fun Context.isShownByStorageFilter(directory: Directory): Boolean {
     }
 }
 
-// Runs a full pCloud scan off the main thread and tells the user in a toast how it went: the
-// counts when asked for, otherwise only what failed. A token pCloud no longer accepts signs the
-// account out. onDone runs in every case, also when a scan was already running and this one was
-// skipped; it is called on whatever thread the scan ended on, so hop to the UI thread in it
-fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
+// Brings the pCloud cache up to date off the main thread and tells the user in a toast how it
+// went: the counts when asked for, otherwise only what failed. What is fetched is the changes
+// since the last scan (PCloudScanner.sync()); full lists the whole account again instead. A
+// token pCloud no longer accepts signs the account out. onDone runs in every case, also when
+// a scan was already running and this one was skipped; it is called on whatever thread the
+// scan ended on, so hop to the UI thread in it
+fun Context.rescanPCloud(reportCounts: Boolean, full: Boolean = false, onDone: () -> Unit = {}) {
     if (!config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
         onDone()
         return
@@ -713,7 +715,8 @@ fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
 
     ensureBackgroundThread {
         try {
-            val result = PCloudScanner(this).scanAll()
+            val scanner = PCloudScanner(this)
+            val result = if (full) scanner.scanAll() else scanner.sync()
             if (reportCounts) {
                 toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
             }
@@ -1244,6 +1247,13 @@ fun Context.updateFavorite(path: String, isFavorite: Boolean) {
             favoritesDB.insert(getFavoriteFromPath(path))
         } else {
             favoritesDB.deleteFavoritePath(path)
+        }
+
+        // a local row is rewritten with its flag the next time its folder is listed, a pCloud row
+        // only by a rescan, so the flag is set right away: the favorites count and the cached
+        // Favorites folder read it
+        if (path.isPCloudPath()) {
+            mediaDB.updateFavorite(path, isFavorite)
         }
     } catch (e: Exception) {
         toast(org.fossify.commons.R.string.unknown_error_occurred)
