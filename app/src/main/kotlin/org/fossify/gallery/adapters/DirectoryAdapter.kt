@@ -191,8 +191,9 @@ class DirectoryAdapter(
 
         // a pCloud folder has no directory behind it, so the filesystem operations are off for
         // it as they are for groups; pinning, locking and the cover image are settings and stay.
-        // Deleting, and renaming one at a time, go through the pCloud API when every real
-        // folder selected is a pCloud one; a selection mixing both storages gets neither
+        // Deleting, copying, moving, and renaming one at a time, go through the pCloud API
+        // when every real folder selected is a pCloud one; a selection mixing both storages
+        // gets none of them
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
         menu.apply {
@@ -214,8 +215,8 @@ class DirectoryAdapter(
 
             // filesystem operations make no sense for virtual groups
             findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && !isAnyPCloudSelected
-            findItem(R.id.cab_move_to).isVisible = !isAnyPCloudSelected
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
+            findItem(R.id.cab_move_to).isVisible = !isAnyPCloudSelected || isPCloudOnly
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
@@ -745,10 +746,17 @@ class DirectoryAdapter(
     }
 
     // the media files directly inside the given folders, respecting the current filter
+    // the media directly inside the folders, from the disk for local ones and from the cache
+    // for pCloud ones, which is all there is of them on the device
     private fun getMediaFileDirItems(folderPaths: Collection<String>): ArrayList<FileDirItem> {
         val paths = ArrayList<String>()
         val showHidden = config.shouldShowHidden
         folderPaths.forEach {
+            if (it.isPCloudPath()) {
+                activity.mediaDB.getMediaFromPath(it).mapTo(paths) { medium -> medium.path }
+                return@forEach
+            }
+
             val filter = config.filterMedia
             File(it).listFiles()?.filter {
                 !File(it.absolutePath).isDirectory &&

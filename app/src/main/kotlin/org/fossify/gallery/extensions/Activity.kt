@@ -47,6 +47,7 @@ import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
+import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.models.DateTaken
 import java.io.*
 import java.text.SimpleDateFormat
@@ -328,7 +329,10 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(fileDirItems: ArrayList<FileDirItem>, 
     }
 }
 
-// copies or moves the files to an already picked real folder, asking for SAF access if needed
+// Copies or moves the files to an already picked real folder, asking for SAF access if
+// needed. With pCloud on either side the transfer goes to PCloudTransferService instead and
+// the callback never fires: nothing has moved when this returns, the screens learn of the
+// end through the service's listeners
 fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
     fileDirItems: ArrayList<FileDirItem>,
     source: String,
@@ -336,10 +340,72 @@ fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
     isCopyOperation: Boolean,
     callback: (destinationPath: String) -> Unit
 ) {
+    if (source.isPCloudPath() || destination.isPCloudPath()) {
+        startPCloudTransfer(fileDirItems, source, destination, isCopyOperation)
+        return
+    }
+
     handleSAFDialog(source) {
         if (it) {
             copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopyOperation, true, config.shouldShowHidden, callback)
         }
+    }
+}
+
+// Queues the transfer once the storage permissions the local side needs are in: a move away
+// from the device deletes the sources afterwards, a download writes into the destination.
+// The notification permission is asked for so that the progress can be seen; the transfer
+// runs without it too
+fun BaseSimpleActivity.startPCloudTransfer(fileDirItems: ArrayList<FileDirItem>, source: String, destination: String, isCopyOperation: Boolean) {
+    if (!config.isPCloudLoggedIn) {
+        toast(R.string.pcloud_log_in_required)
+        return
+    }
+
+    val paths = fileDirItems.map { it.path }
+    if (paths.isEmpty()) {
+        return
+    }
+
+    val kind = when {
+        source.isPCloudPath() && destination.isPCloudPath() -> PCloudTransferService.Kind.WITHIN_PCLOUD
+        destination.isPCloudPath() -> PCloudTransferService.Kind.UPLOAD
+        else -> PCloudTransferService.Kind.DOWNLOAD
+    }
+
+    val enqueue = {
+        handleNotificationPermission {
+            PCloudTransferService.enqueue(this, PCloudTransferService.Job(kind, paths, destination, isCopyOperation))
+            toast(R.string.pcloud_transfer_started)
+        }
+    }
+
+    when (kind) {
+        PCloudTransferService.Kind.UPLOAD -> if (isCopyOperation) {
+            enqueue()
+        } else {
+            handleSAFDialog(source) { granted ->
+                if (granted) {
+                    checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
+                        if (allowed) {
+                            enqueue()
+                        }
+                    }
+                }
+            }
+        }
+
+        PCloudTransferService.Kind.DOWNLOAD -> handleSAFDialog(destination) { granted ->
+            if (granted) {
+                handleSAFDialogSdk30(destination) { allowed ->
+                    if (allowed) {
+                        enqueue()
+                    }
+                }
+            }
+        }
+
+        PCloudTransferService.Kind.WITHIN_PCLOUD -> enqueue()
     }
 }
 

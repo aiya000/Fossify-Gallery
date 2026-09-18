@@ -219,10 +219,10 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
 
-        // pCloud media have no file behind them, so nothing that reads one or writes into it is
-        // offered while any is selected, until the download step lands. Deleting, and renaming
-        // one at a time, go through the pCloud API when the whole selection is pCloud; a
-        // selection mixing both storages gets neither. Favorites work
+        // pCloud media have no file behind them, so nothing that reads one on the device is
+        // offered while any is selected. Deleting, copying, moving, and renaming one at a
+        // time, go through the pCloud API when the whole selection is pCloud; a selection
+        // mixing both storages gets none of them. Favorites work
         val isLocal = selectedPaths.none { it.isPCloudPath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         menu.apply {
@@ -233,7 +233,7 @@ class MediaAdapter(
             findItem(R.id.cab_rename).isVisible = (isLocal || (isPCloudOnly && isOneItemSelected)) && !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
             findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
-            findItem(R.id.cab_move_to).isVisible = isLocal && !isInRecycleBin
+            findItem(R.id.cab_move_to).isVisible = (isLocal || isPCloudOnly) && !isInRecycleBin
             findItem(R.id.cab_open_with).isVisible = isLocal && isOneItemSelected
             findItem(R.id.cab_edit).isVisible = isLocal && isOneItemSelected
             findItem(R.id.cab_set_as).isVisible = isLocal && isOneItemSelected
@@ -245,7 +245,7 @@ class MediaAdapter(
             findItem(R.id.cab_share).isVisible = isLocal
             findItem(R.id.cab_rotate).isVisible = isLocal
             findItem(R.id.cab_properties).isVisible = isLocal
-            findItem(R.id.cab_copy_to).isVisible = isLocal
+            findItem(R.id.cab_copy_to).isVisible = isLocal || isPCloudOnly
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -616,6 +616,12 @@ class MediaAdapter(
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
+        // a pCloud source has no MediaStore entry to manage
+        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+            copyMoveTo(isCopyOperation)
+            return
+        }
+
         activity.handleMediaManagementPrompt {
             copyMoveTo(isCopyOperation)
         }

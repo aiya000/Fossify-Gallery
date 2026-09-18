@@ -157,6 +157,7 @@ import org.fossify.gallery.helpers.getPermissionToRequest
 import org.fossify.gallery.helpers.getPermissionsToRequest
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
 import org.fossify.gallery.jobs.NewPhotoFetcher
+import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -313,9 +314,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
     }
 
+    // a copy or move to or from pCloud ends in the background; the folders are read again then
+    private val pCloudTransferListener: () -> Unit = { getDirectories() }
+
     override fun onResume() {
         super.onResume()
         updateMenuColors()
+        PCloudTransferService.addListener(pCloudTransferListener)
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
         mTimeFormat = getTimeFormat()
@@ -378,6 +383,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onPause() {
         super.onPause()
+        PCloudTransferService.removeListener(pCloudTransferListener)
         binding.directoriesRefreshLayout.isRefreshing = false
         mIsGettingDirs = false
         storeStateVariables()

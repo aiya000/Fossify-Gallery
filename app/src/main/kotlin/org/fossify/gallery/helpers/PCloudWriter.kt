@@ -1,6 +1,15 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import okhttp3.MediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okio.BufferedSink
+import okio.source
+import org.fossify.commons.extensions.getFileInputStreamSync
+import org.fossify.commons.extensions.getFilenameFromPath
+import org.fossify.commons.extensions.getMimeType
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.helpers.SORT_BY_SIZE
 import org.fossify.gallery.R
@@ -16,6 +25,9 @@ import org.fossify.gallery.extensions.toPCloudRemotePath
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.PCloudItem
+import java.io.File
+import java.io.FileNotFoundException
+import java.io.InputStream
 
 // Writes to pCloud on the user's behalf and keeps the cache in step with what was written.
 // Every method asks pCloud first and touches the database only once pCloud has agreed, so a
@@ -102,18 +114,73 @@ class PCloudWriter(private val context: Context) {
 
     // Answers the new folder's path. An empty folder gets no Directory row, the same as an
     // empty local folder, only a pcloud_items row so that a folder created inside it next
-    // finds the id. The parent's id comes from its row; the root is folder 0
+    // finds the id
     fun createFolder(parentPath: String, name: String): String {
-        val parentFolderId = if (parentPath == PCLOUD_PATH_SCHEME) {
-            0L
-        } else {
-            context.pCloudItemsDB.getItem(parentPath)?.itemId ?: throw IllegalStateException("$parentPath is not in the pCloud cache")
-        }
-
-        val folderId = PCloudApi.createFolder(apiHost, accessToken, parentFolderId, name)
+        val folderId = PCloudApi.createFolder(apiHost, accessToken, folderIdOf(parentPath), name)
         val newPath = "$parentPath/$name"
         context.pCloudItemsDB.insertAll(listOf(PCloudItem(null, newPath, folderId, true, 0L, false, 0L)))
         return newPath
+    }
+
+    // A copy within pCloud, one API call, nothing downloaded. The cache learns of the copy
+    // when the destination is rescanned, which the caller does once its batch is through
+    fun copyFileTo(path: String, destinationFolder: String) {
+        PCloudApi.copyFileTo(apiHost, accessToken, path.toPCloudRemotePath(), folderIdOf(destinationFolder))
+    }
+
+    // A move within pCloud, one API call. The rows follow the file like they do for a rename,
+    // and both folders get their Directory rows rebuilt. Answers the new path
+    fun moveFileTo(path: String, destinationFolder: String): String {
+        val newPath = "$destinationFolder/${path.substringAfterLast('/')}"
+        PCloudApi.moveFileTo(apiHost, accessToken, path.toPCloudRemotePath(), folderIdOf(destinationFolder))
+        GalleryDatabase.getInstance(context).runInTransaction {
+            context.updateDBMediaPath(path, newPath)
+            context.pCloudItemsDB.updatePaths(path, newPath)
+        }
+
+        refreshDirectory(path.getParentPath())
+        refreshDirectory(destinationFolder)
+        return newPath
+    }
+
+    // Sends one local file into a pCloud folder. The cache learns of it when the destination
+    // is rescanned, which the caller does once its batch is through
+    fun uploadFile(localPath: String, destinationFolder: String) {
+        val file = File(localPath)
+        val name = localPath.getFilenameFromPath()
+        val body: RequestBody = if (file.isFile) {
+            file.asRequestBody(localPath.getMimeType().toMediaTypeOrNull())
+        } else {
+            // an OTG or SAF file has no File behind it; the stream has an unknown length
+            StreamRequestBody(localPath.getMimeType().toMediaTypeOrNull()) {
+                context.getFileInputStreamSync(localPath) ?: throw FileNotFoundException(localPath)
+            }
+        }
+
+        val modifiedSeconds = (if (file.isFile) file.lastModified() else System.currentTimeMillis()) / 1000
+        PCloudApi.upload(apiHost, accessToken, folderIdOf(destinationFolder), name, body, modifiedSeconds)
+    }
+
+    // the id the API wants for a folder: the root is folder 0, everything else has a row
+    // from the scanner or from createFolder()
+    private fun folderIdOf(path: String): Long {
+        if (path == PCLOUD_PATH_SCHEME) {
+            return 0L
+        }
+
+        return context.pCloudItemsDB.getItem(path)?.itemId ?: throw IllegalStateException("$path is not in the pCloud cache")
+    }
+
+    private class StreamRequestBody(private val mediaType: MediaType?, private val open: () -> InputStream) : RequestBody() {
+        override fun contentType() = mediaType
+
+        override fun contentLength() = -1L
+
+        override fun writeTo(sink: BufferedSink) {
+            open().use { input ->
+                input.source().use { sink.writeAll(it) }
+            }
+        }
     }
 
     // rebuilds a folder's row from the media rows left in it, the way the scanner builds it,
