@@ -62,6 +62,10 @@
     <string name="pcloud_log_in_failed">pCloud にログインできませんでした</string>
     <string name="pcloud_client_id_missing">このビルドには pCloud のクライアント ID が設定されていません</string>
     <string name="pcloud_log_out_confirmation">pCloud からログアウトしますか？ pCloud 上のメディアはギャラリーに表示されなくなります。</string>
+    <string name="pcloud_log_in_required">pCloud のログインが無効になりました。もう一度ログインしてください</string>
+    <string name="pcloud_rescan">pCloud を再スキャン</string>
+    <string name="pcloud_rescanning">pCloud をスキャンしています…</string>
+    <string name="pcloud_rescan_done">pCloud: %1$d フォルダ、%2$d ファイル</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

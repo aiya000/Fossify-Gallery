@@ -89,9 +89,11 @@ import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_MONTHLY
 import org.fossify.gallery.helpers.IsoTypeReader
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_OTG
+import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -108,6 +110,7 @@ import org.fossify.gallery.interfaces.DateTakensDao
 import org.fossify.gallery.interfaces.DirectoryDao
 import org.fossify.gallery.interfaces.FavoritesDao
 import org.fossify.gallery.interfaces.MediumDao
+import org.fossify.gallery.interfaces.PCloudItemDao
 import org.fossify.gallery.interfaces.WidgetsDao
 import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
@@ -145,6 +148,9 @@ val Context.favoritesDB: FavoritesDao
 
 val Context.dateTakensDB: DateTakensDao
     get() = GalleryDatabase.getInstance(applicationContext).DateTakensDao()
+
+val Context.pCloudItemsDB: PCloudItemDao
+    get() = GalleryDatabase.getInstance(applicationContext).PCloudItemDao()
 
 val Context.recycleBin: File get() = filesDir
 
@@ -597,6 +603,7 @@ fun Context.getFolderNameFromPath(path: String): String {
         otgPath -> getString(org.fossify.commons.R.string.usb)
         FAVORITES -> getString(org.fossify.commons.R.string.favorites)
         RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
+        PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
         else -> path.getFilenameFromPath()
     }
 }
@@ -664,6 +671,7 @@ fun Context.addTempFolderIfNeeded(dirs: ArrayList<Directory>): ArrayList<Directo
 
 fun Context.getPathLocation(path: String): Int {
     return when {
+        path.isPCloudPath() -> LOCATION_PCLOUD
         isPathOnSD(path) -> LOCATION_SD
         isPathOnOTG(path) -> LOCATION_OTG
         else -> LOCATION_INTERNAL
@@ -991,7 +999,8 @@ fun Context.getCachedMedia(
             val mediaToDelete = ArrayList<Medium>()
             // creating a new thread intentionally, do not reuse the common background thread
             Thread {
-                media.filter { !getDoesFilePathExist(it.path, OTGPath) }.forEach {
+                // pCloud media has no file behind it, the cache row is all there is. Only a rescan may drop it
+                media.filter { !it.path.isPCloudPath() && !getDoesFilePathExist(it.path, OTGPath) }.forEach {
                     if (it.path.startsWith(recycleBinPath)) {
                         deleteDBPath(it.path)
                     } else {
@@ -1021,6 +1030,7 @@ fun Context.removeInvalidDBDirectories(dirs: ArrayList<Directory>? = null) {
     dirsToCheck.filter {
         !it.areFavorites()
                 && !it.isRecycleBin()
+                && !it.path.isPCloudPath()
                 && !getDoesFilePathExist(it.path, OTGPath)
                 && it.path != config.tempFolderPath
     }.forEach {
@@ -1245,15 +1255,16 @@ fun Context.createDirectoryFromMedia(
     val grouped = MediaFetcher(this).groupMedia(curMedia, path)
     var thumbnail: String? = null
 
+    // a pCloud thumbnail has no file to check for, its cache row is the proof that it exists
     albumCovers.forEach {
-        if (it.path == path && getDoesFilePathExist(it.tmb, OTGPath)) {
+        if (it.path == path && (it.tmb.isPCloudPath() || getDoesFilePathExist(it.tmb, OTGPath))) {
             thumbnail = it.tmb
         }
     }
 
     if (thumbnail == null) {
         val sortedMedia = grouped.filter { it is Medium }.toMutableList() as ArrayList<Medium>
-        thumbnail = sortedMedia.firstOrNull { getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
+        thumbnail = sortedMedia.firstOrNull { it.path.isPCloudPath() || getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
     }
 
     if (config.OTGPath.isNotEmpty() && thumbnail!!.startsWith(config.OTGPath)) {

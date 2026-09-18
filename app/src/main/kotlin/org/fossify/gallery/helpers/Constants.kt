@@ -127,8 +127,11 @@ const val GROUP_PATH_PREFIX = "group://"
 const val UPSTREAM_APP_ID = "org.fossify.gallery"
 
 // pCloud media is displayed with this pseudo path prefix, e.g. "pcloud:/Camera/IMG_0001.jpg".
-// It mirrors the pCloud path, so getParentPath() and the rest of the path handling keep working
-const val PCLOUD_PATH_PREFIX = "pcloud:/"
+// It mirrors the pCloud path, so getParentPath() and the rest of the path handling keep working.
+// The pCloud root itself is "pcloud:" with no slash, which is what getParentPath() hands back
+// for a file lying directly in the root, so Medium.parentPath == Directory.path holds there too
+const val PCLOUD_PATH_SCHEME = "pcloud:"
+const val PCLOUD_PATH_PREFIX = "$PCLOUD_PATH_SCHEME/"
 
 const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
 const val PCLOUD_API_HOST = "pcloud_api_host"
@@ -146,6 +149,11 @@ const val PCLOUD_AUTHORIZE_URL = "https://my.pcloud.com/oauth2/authorize"
 // longer good, there is no other notice that it expired
 const val PCLOUD_RESULT_LOG_IN_FAILED = 1000
 const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
+
+// pCloud's own idea of what a file is, carried as "category" in file metadata. Used as the
+// fallback when the filename extension tells nothing
+const val PCLOUD_CATEGORY_IMAGE = 1
+const val PCLOUD_CATEGORY_VIDEO = 2
 const val STORAGE_FILTER = "storage_filter"
 
 const val AVOID_SHOWING_ALL_FILES_PROMPT = "avoid_showing_all_files_prompt"

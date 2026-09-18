@@ -37,7 +37,10 @@ class MediaFetcher(val context: Context) {
         }
 
         val curMedia = ArrayList<Medium>()
-        if (context.isPathOnOTG(curPath)) {
+        if (curPath.isPCloudPath()) {
+            // the cache is the only source there is, the network is touched by a rescan alone
+            curMedia.addAll(getMediaOnPCloud(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths))
+        } else if (context.isPathOnOTG(curPath)) {
             if (context.hasOTGConnected()) {
                 val newMedia = getMediaOnOTG(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths, getVideoDurations)
                 curMedia.addAll(newMedia)
@@ -606,6 +609,29 @@ class MediaFetcher(val context: Context) {
         }
 
         return media
+    }
+
+    // what PCloudScanner wrote for the folder, narrowed the way getMediaOnOTG narrows a real one
+    private fun getMediaOnPCloud(folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
+        val cached = try {
+            context.mediaDB.getMediaFromPath(folder)
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val showHidden = context.config.shouldShowHidden
+        val media = cached.filter { medium ->
+            val isWanted = when (medium.type) {
+                TYPE_VIDEOS -> !isPickImage && filterMedia and TYPE_VIDEOS != 0
+                TYPE_IMAGES -> !isPickVideo && filterMedia and TYPE_IMAGES != 0
+                else -> filterMedia and medium.type != 0
+            }
+
+            isWanted && (showHidden || !medium.name.startsWith('.'))
+        }
+
+        media.forEach { it.isFavorite = favoritePaths.contains(it.path) }
+        return media.toMutableList() as ArrayList<Medium>
     }
 
     fun getFolderDateTakens(folder: String): HashMap<String, Long> {

@@ -63,6 +63,10 @@
     <string name="pcloud_log_in_failed">Could not sign in to pCloud</string>
     <string name="pcloud_client_id_missing">This build has no pCloud client id</string>
     <string name="pcloud_log_out_confirmation">Sign out of pCloud? Media stored there will stop showing up in the gallery.</string>
+    <string name="pcloud_log_in_required">pCloud has signed you out, please sign in again</string>
+    <string name="pcloud_rescan">Rescan pCloud</string>
+    <string name="pcloud_rescanning">Scanning pCloud…</string>
+    <string name="pcloud_rescan_done">pCloud: %1$d folders, %2$d files</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

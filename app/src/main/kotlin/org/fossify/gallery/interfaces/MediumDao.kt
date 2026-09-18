@@ -20,6 +20,11 @@ interface MediumDao {
     @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0")
     fun getDeletedMediaCount(): Long
 
+    // the pCloud scanner uses this to find the rows pCloud no longer has; the prefix carries no
+    // LIKE wildcards of its own
+    @Query("SELECT full_path FROM media WHERE full_path LIKE :prefix || '%'")
+    fun getPathsWithPrefix(prefix: String): List<String>
+
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestmap AND deleted_ts != 0")
     fun getOldRecycleBinItems(timestmap: Long): List<Medium>
 
