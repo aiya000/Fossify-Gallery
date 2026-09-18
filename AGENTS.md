@@ -19,6 +19,21 @@
 `.claude/skills/` の `debug-build` / `debug-install` / `release-build` / `release-install` を使います。
 コンパイルだけ確かめたいときは `./gradlew :app:compileFossDebugKotlin`（`JAVA_HOME` に Android Studio の JBR が必要です）。
 
+## 実機を操作するときは、ユーザーの許可を取ること
+
+**`adb` で実機の画面を動かす前に、必ずユーザーに聞いてください。**
+
+繋がっている端末は、ユーザーが今そのとき使っている端末です。
+`adb shell am start` はユーザーが見ている画面を横取りしますし、`adb shell input` はユーザーの
+操作とぶつかって、まったく別のアプリに入力が飛びます。
+
+- 許可なしでよいのは `adb devices` と `adb install` だけです
+    - `adb install` は画面に出ないので、ユーザーの操作を邪魔しません
+- `am start`、`input`、`screencap`、`uiautomator` などは、**毎回ユーザーに聞いてから**実行します
+- 「今は端末に触らないで」と言われているあいだは、ビルドだけを行います
+- 動作確認は、基本的にユーザーの手で行ってもらいます。エージェントが自分で画面を動かして確かめるのは、
+  ユーザーが「動かしていいよ」と言ったときだけです
+
 ## 旧 application id への逃げ道
 
 このフォークは application id を `io.github.aiya000.fossify.gallery` に変えています。
