@@ -67,6 +67,16 @@
     <string name="pcloud_rescan">Rescan pCloud</string>
     <string name="pcloud_rescanning">Scanning pCloud…</string>
     <string name="pcloud_rescan_done">pCloud: %1$d folders, %2$d files</string>
+    <string name="storage_filter">Storage</string>
+    <string name="storage_local">This device</string>
+    <string name="storage_local_and_pcloud">This device and pCloud</string>
+    <string name="pcloud_rescan_on_launch">Rescan pCloud when the app starts</string>
+    <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
+    <string name="pcloud_rescan_interval">Minimum interval between automatic rescans</string>
+    <string name="pcloud_rescan_interval_always">Every time (no minimum interval)</string>
+    <string name="pcloud_interval_minutes">%d minutes</string>
+    <string name="pcloud_interval_hours">%d hours</string>
+    <string name="pcloud_interval_day">1 day</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

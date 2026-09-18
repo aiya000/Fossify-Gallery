@@ -24,6 +24,7 @@ import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.PCloudItem
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Pulls the whole pCloud tree down in one listfolder call and rewrites the pCloud half of the
 // media and directories cache from it. Folders without an image or video in them are left out,
@@ -34,6 +35,11 @@ import java.util.Locale
 // What is kept per entry is a few fields, and files that are not media are dropped as soon as
 // they are parsed, so memory follows the number of media files rather than the answer size
 class PCloudScanner(private val context: Context) {
+    companion object {
+        // one scan at a time. Context.rescanPCloud() claims this before it starts one
+        val isRunning = AtomicBoolean(false)
+    }
+
     class Result(val folderCount: Int, val mediaCount: Int)
 
     // one entry of a listfolder answer, trimmed to what the cache needs. children holds only
@@ -61,6 +67,7 @@ class PCloudScanner(private val context: Context) {
         collector.collect(root, PCLOUD_PATH_SCHEME)
 
         store(media, directories, items)
+        config.pCloudLastFullScanAt = System.currentTimeMillis()
         return Result(directories.size, media.size)
     }
 

@@ -156,6 +156,19 @@ const val PCLOUD_CATEGORY_IMAGE = 1
 const val PCLOUD_CATEGORY_VIDEO = 2
 const val STORAGE_FILTER = "storage_filter"
 
+// when the pCloud cache is refreshed from the network, see PCloudSyncPolicy. Only launch and
+// storage switch are wired up so far, the other events land with the screens that raise them
+const val PCLOUD_RESCAN_ON_LAUNCH = "pcloud_rescan_on_launch"
+const val PCLOUD_RESCAN_ON_STORAGE_SWITCH = "pcloud_rescan_on_storage_switch"
+const val PCLOUD_RESCAN_ON_FOLDER_OPEN = "pcloud_rescan_on_folder_open"
+const val PCLOUD_RESCAN_ON_GROUP_OPEN = "pcloud_rescan_on_group_open"
+const val PCLOUD_RESCAN_AFTER_WRITE = "pcloud_rescan_after_write"
+const val PCLOUD_RESCAN_INTERVAL_MINUTES = "pcloud_rescan_interval_minutes"
+const val PCLOUD_LAST_FULL_SCAN_AT = "pcloud_last_full_scan_at"
+
+// the choices offered for the interval, in minutes. 0 means no minimum interval at all
+val PCLOUD_RESCAN_INTERVAL_CHOICES = arrayListOf(0, 5, 15, 60, 360, 1440)
+
 const val AVOID_SHOWING_ALL_FILES_PROMPT = "avoid_showing_all_files_prompt"
 const val SEARCH_ALL_FILES_BY_DEFAULT = "search_all_files_by_default"
 const val LAST_EXPORTED_FAVORITES_FOLDER = "last_exported_favorites_folder"

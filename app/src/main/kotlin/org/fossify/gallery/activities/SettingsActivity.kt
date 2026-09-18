@@ -39,7 +39,6 @@ class SettingsActivity : SimpleActivity() {
 
     private var mRecycleBinContentSize = 0L
     private var mSettingsItemsToExport = LinkedHashMap<String, Any>()
-    private var mIsPCloudScanRunning = false
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -186,39 +185,44 @@ class SettingsActivity : SimpleActivity() {
             }
         }
 
-        setupPCloudRescan()
+        setupPCloudRescanPolicy()
     }
 
-    // the only way to fill the pCloud cache until the folder list gets its own rescan. The
-    // counts in the toast are what tells that the scanner works while nothing displays the result
-    private fun setupPCloudRescan() {
-        binding.settingsPcloudRescanHolder.beVisibleIf(config.isPCloudLoggedIn)
-        binding.settingsPcloudRescanHolder.setOnClickListener {
-            if (mIsPCloudScanRunning) {
-                return@setOnClickListener
-            }
+    // only the events that are wired up are offered here; the folder, group and write ones
+    // arrive with the screens that raise them. Nothing here applies without an account
+    private fun setupPCloudRescanPolicy() {
+        val isLoggedIn = config.isPCloudLoggedIn
+        binding.settingsPcloudRescanOnLaunchHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanOnStorageSwitchHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanIntervalHolder.beVisibleIf(isLoggedIn)
 
-            mIsPCloudScanRunning = true
-            toast(R.string.pcloud_rescanning)
-            ensureBackgroundThread {
-                try {
-                    val result = PCloudScanner(this).scanAll()
-                    toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
-                } catch (e: PCloudException) {
-                    if (e.requiresLogIn) {
-                        config.clearPCloudAccount()
-                        toast(R.string.pcloud_log_in_required)
-                        runOnUiThread { setupPCloudAccount() }
-                    } else {
-                        showErrorToast(e)
-                    }
-                } catch (e: Exception) {
-                    showErrorToast(e)
-                } finally {
-                    mIsPCloudScanRunning = false
-                }
+        binding.settingsPcloudRescanOnLaunch.isChecked = config.pCloudRescanOnLaunch
+        binding.settingsPcloudRescanOnLaunchHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnLaunch.toggle()
+            config.pCloudRescanOnLaunch = binding.settingsPcloudRescanOnLaunch.isChecked
+        }
+
+        binding.settingsPcloudRescanOnStorageSwitch.isChecked = config.pCloudRescanOnStorageSwitch
+        binding.settingsPcloudRescanOnStorageSwitchHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnStorageSwitch.toggle()
+            config.pCloudRescanOnStorageSwitch = binding.settingsPcloudRescanOnStorageSwitch.isChecked
+        }
+
+        binding.settingsPcloudRescanInterval.text = getPCloudRescanIntervalText(config.pCloudRescanIntervalMinutes)
+        binding.settingsPcloudRescanIntervalHolder.setOnClickListener {
+            val items = ArrayList(PCLOUD_RESCAN_INTERVAL_CHOICES.map { RadioItem(it, getPCloudRescanIntervalText(it)) })
+            RadioGroupDialog(this, items, config.pCloudRescanIntervalMinutes) {
+                config.pCloudRescanIntervalMinutes = it as Int
+                binding.settingsPcloudRescanInterval.text = getPCloudRescanIntervalText(it)
             }
         }
+    }
+
+    private fun getPCloudRescanIntervalText(minutes: Int) = when {
+        minutes <= 0 -> getString(R.string.pcloud_rescan_interval_always)
+        minutes < 60 -> getString(R.string.pcloud_interval_minutes, minutes)
+        minutes < 1440 -> getString(R.string.pcloud_interval_hours, minutes / 60)
+        else -> getString(R.string.pcloud_interval_day)
     }
 
     private fun setupCustomizeColors() {

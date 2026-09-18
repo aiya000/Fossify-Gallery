@@ -246,6 +246,37 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(STORAGE_FILTER, STORAGE_FILTER_LOCAL)
         set(storageFilter) = prefs.edit().putInt(STORAGE_FILTER, storageFilter).apply()
 
+    // the network is never touched for pCloud unless one of these says so, the list always
+    // comes from the cache first. The defaults follow the plan in issue #1
+    var pCloudRescanOnLaunch: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_LAUNCH, false)
+        set(pCloudRescanOnLaunch) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_LAUNCH, pCloudRescanOnLaunch).apply()
+
+    var pCloudRescanOnStorageSwitch: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_STORAGE_SWITCH, false)
+        set(pCloudRescanOnStorageSwitch) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_STORAGE_SWITCH, pCloudRescanOnStorageSwitch).apply()
+
+    var pCloudRescanOnFolderOpen: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_FOLDER_OPEN, true)
+        set(pCloudRescanOnFolderOpen) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_FOLDER_OPEN, pCloudRescanOnFolderOpen).apply()
+
+    var pCloudRescanOnGroupOpen: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, false)
+        set(pCloudRescanOnGroupOpen) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, pCloudRescanOnGroupOpen).apply()
+
+    var pCloudRescanAfterWrite: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_AFTER_WRITE, true)
+        set(pCloudRescanAfterWrite) = prefs.edit().putBoolean(PCLOUD_RESCAN_AFTER_WRITE, pCloudRescanAfterWrite).apply()
+
+    // 0 means no throttling: every event that asks for a rescan gets one
+    var pCloudRescanIntervalMinutes: Int
+        get() = prefs.getInt(PCLOUD_RESCAN_INTERVAL_MINUTES, 0)
+        set(pCloudRescanIntervalMinutes) = prefs.edit().putInt(PCLOUD_RESCAN_INTERVAL_MINUTES, pCloudRescanIntervalMinutes).apply()
+
+    var pCloudLastFullScanAt: Long
+        get() = prefs.getLong(PCLOUD_LAST_FULL_SCAN_AT, 0L)
+        set(pCloudLastFullScanAt) = prefs.edit().putLong(PCLOUD_LAST_FULL_SCAN_AT, pCloudLastFullScanAt).apply()
+
     var pCloudAccessToken: String
         get() = prefs.getString(PCLOUD_ACCESS_TOKEN, "")!!
         set(pCloudAccessToken) = prefs.edit().putString(PCLOUD_ACCESS_TOKEN, pCloudAccessToken).apply()
