@@ -152,6 +152,10 @@ const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
 
 // listfolder answers this for a folder that has been deleted or moved since it was scanned
 const val PCLOUD_RESULT_DIRECTORY_NOT_FOUND = 2005
+// "File not found", the file half of the above
+const val PCLOUD_RESULT_FILE_NOT_FOUND = 2009
+// "File or folder already exists", what createfolder answers for a name that is taken
+const val PCLOUD_RESULT_ALREADY_EXISTS = 2004
 
 // pCloud's own idea of what a file is, carried as "category" in file metadata. Used as the
 // fallback when the filename extension tells nothing

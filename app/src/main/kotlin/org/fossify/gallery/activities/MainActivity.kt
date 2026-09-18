@@ -86,6 +86,7 @@ import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
+import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.createDirectoryFromMedia
@@ -108,6 +109,7 @@ import org.fossify.gallery.extensions.isShownByStorageFilter
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -141,6 +143,7 @@ import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
@@ -1028,7 +1031,17 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // With the folder list showing pCloud alone, the new folder goes to the pCloud root: the
+    // picker below only walks the device. With both storages on screen it stays a local
+    // folder; a pCloud folder can be created from inside any pCloud folder
     private fun createNewFolder() {
+        if (config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD) {
+            PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
+                writeToPCloud(listOf(PCLOUD_PATH_SCHEME), { createFolder(PCLOUD_PATH_SCHEME, name) })
+            }
+            return
+        }
+
         FilePickerDialog(this, internalStoragePath, false, config.shouldShowHidden, false, true) {
             CreateNewFolderDialog(this, it) {
                 config.tempFolderPath = it

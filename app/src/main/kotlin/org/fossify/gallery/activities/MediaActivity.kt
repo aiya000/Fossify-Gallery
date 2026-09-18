@@ -65,6 +65,7 @@ import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
+import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
@@ -75,6 +76,7 @@ import org.fossify.gallery.extensions.getCachedMedia
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.getHumanizedFilename
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.launchAbout
@@ -363,7 +365,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             findItem(R.id.open_camera).isVisible = mShowAll
             findItem(R.id.about).isVisible = mShowAll
             findItem(R.id.create_new_folder).isVisible =
-                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && !mPath.isPCloudPath()
+                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
@@ -813,8 +815,22 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun createNewFolder() {
+        if (mPath.isPCloudPath()) {
+            createNewPCloudFolder()
+            return
+        }
+
         CreateNewFolderDialog(this, mPath) {
             config.tempFolderPath = it
+        }
+    }
+
+    // Inside the folder on screen. The new folder is empty, so it has no row in the cache and
+    // the folder list will not show it until something is in it, the same as a new local
+    // folder once its temporary entry is gone
+    private fun createNewPCloudFolder() {
+        PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
+            writeToPCloud(listOf(mPath), { createFolder(mPath, name) })
         }
     }
 

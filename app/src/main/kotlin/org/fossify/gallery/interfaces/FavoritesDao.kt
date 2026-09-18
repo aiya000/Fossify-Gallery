@@ -23,6 +23,10 @@ interface FavoritesDao {
     @Query("UPDATE OR REPLACE favorites SET filename = :newFilename, full_path = :newFullPath, parent_path = :newParentPath WHERE full_path = :oldPath COLLATE NOCASE")
     fun updateFavorite(newFilename: String, newFullPath: String, newParentPath: String, oldPath: String)
 
+    // the favorites counterpart of MediumDao.updatePathsUnderFolder()
+    @Query("UPDATE OR REPLACE favorites SET full_path = :newFolder || substr(full_path, length(:oldFolder) + 1), parent_path = :newFolder || substr(parent_path, length(:oldFolder) + 1) WHERE full_path LIKE :oldFolder || '/%'")
+    fun updatePathsUnderFolder(oldFolder: String, newFolder: String)
+
     @Query("DELETE FROM favorites WHERE full_path = :path COLLATE NOCASE")
     fun deleteFavoritePath(path: String)
 

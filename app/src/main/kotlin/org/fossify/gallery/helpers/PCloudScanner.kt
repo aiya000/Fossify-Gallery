@@ -317,8 +317,9 @@ class PCloudScanner(private val context: Context) {
         }
     }
 
-    // drops a folder pCloud no longer has, with everything under it
-    private fun forget(path: String) {
+    // drops a folder pCloud no longer has, with everything under it. PCloudWriter uses it for a
+    // folder it has just deleted
+    fun forget(path: String) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val prefix = "$path/"
             context.mediaDB.getPathsWithPrefix(prefix).forEach { mediumPath ->

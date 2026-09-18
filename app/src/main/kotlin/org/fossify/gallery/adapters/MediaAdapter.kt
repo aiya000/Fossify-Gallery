@@ -20,6 +20,7 @@ import com.bumptech.glide.Glide
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.dialogs.RenameDialog
 import org.fossify.commons.dialogs.RenameItemDialog
@@ -66,6 +67,7 @@ import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
@@ -88,6 +90,7 @@ import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
@@ -216,15 +219,18 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
 
-        // pCloud media have no file behind them, so nothing that reads or writes one is offered
-        // while any is selected, until the write and download steps land. Favorites work
+        // pCloud media have no file behind them, so nothing that reads one or writes into it is
+        // offered while any is selected, until the download step lands. Deleting, and renaming
+        // one at a time, go through the pCloud API when the whole selection is pCloud; a
+        // selection mixing both storages gets neither. Favorites work
         val isLocal = selectedPaths.none { it.isPCloudPath() }
+        val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
-            findItem(R.id.cab_rename).isVisible = isLocal && !isInRecycleBin
+            findItem(R.id.cab_rename).isVisible = (isLocal || (isPCloudOnly && isOneItemSelected)) && !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
             findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
             findItem(R.id.cab_move_to).isVisible = isLocal && !isInRecycleBin
@@ -235,7 +241,7 @@ class MediaAdapter(
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible = selectedPaths.all { it.startsWith(activity.recycleBinPath) }
             findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
-            findItem(R.id.cab_delete).isVisible = isLocal
+            findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly
             findItem(R.id.cab_share).isVisible = isLocal
             findItem(R.id.cab_rotate).isVisible = isLocal
             findItem(R.id.cab_properties).isVisible = isLocal
@@ -423,8 +429,26 @@ class MediaAdapter(
     }
 
     private fun checkMediaManagementAndRename() {
+        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+            renamePCloudMedium()
+            return
+        }
+
         activity.handleMediaManagementPrompt {
             renameFile()
+        }
+    }
+
+    // one item only, the action mode offers it for no more than that
+    private fun renamePCloudMedium() {
+        val oldPath = getFirstSelectedItemPath() ?: return
+        PCloudNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
+            activity.writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) {
+                activity.runOnUiThread {
+                    listener?.refreshItems()
+                    finishActMode()
+                }
+            }
         }
     }
 
@@ -667,6 +691,11 @@ class MediaAdapter(
     }
 
     private fun checkDeleteConfirmation() {
+        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+            checkPCloudDeleteConfirmation()
+            return
+        }
+
         activity.handleMediaManagementPrompt {
             if (config.isDeletePasswordProtectionOn) {
                 activity.handleDeletePasswordProtection {
@@ -714,6 +743,53 @@ class MediaAdapter(
             }
 
             deleteFiles(skipRecycleBin)
+        }
+    }
+
+    // pCloud media go to pCloud's own trash, so the recycle bin and its "skip" option do not
+    // come into it; the delete password and the "skip confirmation" setting do. No media
+    // management prompt either, there is no MediaStore entry to touch
+    private fun checkPCloudDeleteConfirmation() {
+        val deleteConfirmed = { deletePCloudFiles() }
+        when {
+            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection(deleteConfirmed)
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteConfirmed()
+            else -> {
+                val itemsCnt = selectedKeys.size
+                val items = if (itemsCnt == 1) {
+                    "\"${getFirstSelectedItemPath()?.getFilenameFromPath()}\""
+                } else {
+                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
+                }
+
+                ConfirmationDialog(activity, activity.getString(R.string.pcloud_delete_confirmation, items)) {
+                    deleteConfirmed()
+                }
+            }
+        }
+    }
+
+    // The items leave the grid right away and the write follows; the list is read again once
+    // it is through, which also brings a refused item back. The folder is not closed when it
+    // ends up empty, the way a local one is: the write may still be on its way
+    private fun deletePCloudFiles() {
+        val selectedItems = getSelectedItems()
+        if (selectedItems.isEmpty()) {
+            return
+        }
+
+        val paths = selectedItems.map { it.path }
+        val positions = getSelectedItemPositions()
+        media.removeAll(selectedItems)
+        listener?.updateMediaGridDecoration(media)
+        removeSelectedItems(positions)
+        currentMediaHash = media.hashCode()
+
+        activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
+        activity.writeToPCloud(paths.map { it.getParentPath() }.distinct(), { deleteFiles(paths) }) {
+            activity.runOnUiThread {
+                listener?.refreshItems()
+            }
         }
     }
 

@@ -25,6 +25,11 @@ interface PCloudItemDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(items: List<PCloudItem>)
 
+    // after a rename on pCloud: the row of the item itself and, for a folder, every row under
+    // it get the new path in place of the old one. The ids and hashes stay, pCloud keeps them
+    @Query("UPDATE OR REPLACE pcloud_items SET path = :newPath || substr(path, length(:oldPath) + 1) WHERE path = :oldPath OR path LIKE :oldPath || '/%'")
+    fun updatePaths(oldPath: String, newPath: String)
+
     @Query("DELETE FROM pcloud_items WHERE path = :path")
     fun deleteItemPath(path: String)
 

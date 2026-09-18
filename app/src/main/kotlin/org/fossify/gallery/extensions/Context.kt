@@ -95,9 +95,11 @@ import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.PCLOUD_RESULT_ALREADY_EXISTS
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -771,6 +773,47 @@ fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, onDo
         }
 
         onDone()
+    }
+}
+
+// Runs one write to pCloud off the main thread and reports failure the way the scans do; a
+// token pCloud no longer accepts signs the account out. Once the write went through and the
+// "rescan after write" setting is on, the folders it names are refreshed from pCloud before
+// onDone runs, so that a list read in onDone shows the folder as pCloud has it now; the
+// throttle does not apply, the user just changed the folder. onDone gets whether the write
+// went through, on whatever thread that was decided on
+fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() -> Unit, onDone: (success: Boolean) -> Unit = {}) {
+    if (!config.isPCloudLoggedIn) {
+        toast(R.string.pcloud_log_in_required)
+        onDone(false)
+        return
+    }
+
+    ensureBackgroundThread {
+        val success = try {
+            PCloudWriter(this).write()
+            true
+        } catch (e: PCloudException) {
+            when {
+                e.requiresLogIn -> {
+                    config.clearPCloudAccount()
+                    toast(R.string.pcloud_log_in_required)
+                }
+
+                e.result == PCLOUD_RESULT_ALREADY_EXISTS -> toast(R.string.pcloud_already_exists)
+                else -> showErrorToast(e)
+            }
+            false
+        } catch (e: Exception) {
+            showErrorToast(e)
+            false
+        }
+
+        if (success && PCloudSyncPolicy(config).rescanAfterWrite) {
+            rescanPCloudFolders(foldersToRescan, reportCounts = false) { onDone(true) }
+        } else {
+            onDone(success)
+        }
     }
 }
 

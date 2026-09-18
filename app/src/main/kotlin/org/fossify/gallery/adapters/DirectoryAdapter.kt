@@ -37,6 +37,7 @@ import org.fossify.commons.extensions.convertToBitmap
 import org.fossify.commons.extensions.doesThisOrParentHaveNoMedia
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getFilenameFromPath
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleDeletePasswordProtection
@@ -72,6 +73,7 @@ import org.fossify.gallery.databinding.DirectoryItemListBinding
 import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.ExcludeFolderDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
+import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
@@ -91,6 +93,7 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.removeNoMedia
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
@@ -187,15 +190,18 @@ class DirectoryAdapter(
         val areOnlyGroupsSelected = realPaths.isEmpty()
 
         // a pCloud folder has no directory behind it, so the filesystem operations are off for
-        // it as they are for groups; pinning, locking and the cover image are settings and stay
+        // it as they are for groups; pinning, locking and the cover image are settings and stay.
+        // Deleting, and renaming one at a time, go through the pCloud API when every real
+        // folder selected is a pCloud one; a selection mixing both storages gets neither
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
+        val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
             findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) &&
-                (!isAnyGroupSelected || isOneItemSelected) && !isAnyPCloudSelected
+                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected))
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
@@ -211,7 +217,7 @@ class DirectoryAdapter(
             findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && !isAnyPCloudSelected
             findItem(R.id.cab_move_to).isVisible = !isAnyPCloudSelected
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
-            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
 
             checkHideBtnVisibility(this, ArrayList(realPaths.filter { !it.isPCloudPath() }))
@@ -358,6 +364,11 @@ class DirectoryAdapter(
                 return
             }
 
+            if (sourcePath.isPCloudPath()) {
+                renamePCloudDir(firstDir)
+                return
+            }
+
             val dir = File(sourcePath)
             if (activity.isAStorageRootFolder(dir.absolutePath)) {
                 activity.toast(org.fossify.commons.R.string.rename_folder_root)
@@ -392,6 +403,25 @@ class DirectoryAdapter(
             val paths = getSelectedRealPaths().filter { !activity.isAStorageRootFolder(it) && !config.isFolderProtected(it) } as ArrayList<String>
             RenameItemsDialog(activity, paths) {
                 listener?.refreshItems()
+            }
+        }
+    }
+
+    // the writer moves every cached row under the folder along with it, so the list only has
+    // to be read again
+    private fun renamePCloudDir(dir: Directory) {
+        val sourcePath = dir.path
+        activity.handleLockedFolderOpening(sourcePath) { success ->
+            if (success) {
+                PCloudNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
+                    val newPath = "${sourcePath.getParentPath()}/$newName"
+                    activity.writeToPCloud(listOf(newPath), { renameFolder(sourcePath, newName) }) {
+                        activity.runOnUiThread {
+                            finishActMode()
+                            listener?.refreshItems()
+                        }
+                    }
+                }
             }
         }
     }
@@ -778,6 +808,11 @@ class DirectoryAdapter(
     }
 
     private fun askConfirmDelete() {
+        if (getSelectedRealPaths().firstOrNull()?.isPCloudPath() == true) {
+            askConfirmPCloudDelete()
+            return
+        }
+
         when {
             config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection {
                 deleteFolders()
@@ -817,6 +852,51 @@ class DirectoryAdapter(
                 val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
                 ConfirmDeleteFolderDialog(activity, question, warning) {
                     deleteFolders()
+                }
+            }
+        }
+    }
+
+    // pCloud folders go to pCloud's own trash with everything in them, so the recycle bin does
+    // not come into it; the delete password and the "skip confirmation" setting do. The
+    // warning line is the same red one a local folder gets
+    private fun askConfirmPCloudDelete() {
+        val deleteConfirmed = { deletePCloudFolders() }
+        when {
+            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection(deleteConfirmed)
+            config.skipDeleteConfirmation -> deleteConfirmed()
+            else -> {
+                val itemsCnt = selectedKeys.size
+                val items = if (itemsCnt == 1) {
+                    "\"${getSelectedPaths().first().getFilenameFromPath()}\""
+                } else {
+                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
+                }
+
+                val question = activity.getString(R.string.pcloud_delete_folder_confirmation, items)
+                val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
+                ConfirmDeleteFolderDialog(activity, question, warning) {
+                    deleteConfirmed()
+                }
+            }
+        }
+    }
+
+    // a locked folder is skipped, like deleteFolders() skips it; the parents are rescanned so
+    // that a folder pCloud kept after all comes back
+    private fun deletePCloudFolders() {
+        val paths = getSelectedRealPaths().filter { it.isPCloudPath() }
+        handleLockedFolderOpeningForFolders(paths) { folders ->
+            if (folders.isEmpty()) {
+                return@handleLockedFolderOpeningForFolders
+            }
+
+            activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
+            val parents = folders.map { it.getParentPath() }.distinct()
+            activity.writeToPCloud(parents, { deleteFolders(folders.toList()) }) {
+                activity.runOnUiThread {
+                    finishActMode()
+                    listener?.refreshItems()
                 }
             }
         }
