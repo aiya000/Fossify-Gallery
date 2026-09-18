@@ -94,3 +94,5 @@ Everything above describes the upstream app. This fork adds the following on top
 - This fork builds under the application id `io.github.aiya000.fossify.gallery`, so it installs next to the official Fossify Gallery instead of replacing it
 - Its launcher icon is pastel cyan rather than the upstream green, so the two are easy to tell apart on the home screen
 - Debug builds use the application id `io.github.aiya000.fossify.gallery.debug` and an orange launcher icon, so they can be told apart from a release build installed next to them
+- **This is not the official Fossify Gallery, and it is not supported by the Fossify project.** Report anything that goes wrong here, not to them. The official app lives at [fossify.org](https://www.fossify.org) and under the store badges at the top of this file
+    - The upstream app warns at random that a build whose application id does not start with `org.fossify.` is "a fake version". That warning is meant for repackaged APKs handed out by third parties, and it is switched off here because this fork is built from source. This bullet is what takes its place

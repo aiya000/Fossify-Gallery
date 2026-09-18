@@ -122,6 +122,10 @@ const val FOLDER_GROUP_MEMBERS = "folder_group_members"
 // virtual folder groups are displayed as Directory items with this pseudo path prefix, e.g. "group://12"
 const val GROUP_PATH_PREFIX = "group://"
 
+// the application id this fork was renamed from. It is still the `namespace`, and SimpleActivity
+// hands it to the commons anti-tampering check so this build stops calling itself a fake
+const val UPSTREAM_APP_ID = "org.fossify.gallery"
+
 // pCloud media is displayed with this pseudo path prefix, e.g. "pcloud:/Camera/IMG_0001.jpg".
 // It mirrors the pCloud path, so getParentPath() and the rest of the path handling keep working
 const val PCLOUD_PATH_PREFIX = "pcloud:/"
