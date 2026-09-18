@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.util.JsonReader
 import android.util.JsonToken
+import android.util.Log
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
@@ -278,8 +279,17 @@ object PCloudApi {
 }
 
 class PCloudException(val result: Int, val error: String) : Exception("pCloud returned $result: $error") {
+    init {
+        // a refusal is rare and worth a line in the log: the toast that shows it is short-lived
+        Log.w("PCloudApi", message!!)
+    }
+
     // an implicit grant token carries no expiry and pCloud sends no notice when it stops working,
     // so these two results are the only sign that the account has to be signed in again
     val requiresLogIn: Boolean
         get() = result == PCLOUD_RESULT_LOG_IN_FAILED || result == PCLOUD_RESULT_LOG_IN_REQUIRED
+
+    // showErrorToast() prints the exception itself; the class name would push the result code
+    // out of the two lines a toast has
+    override fun toString() = message!!
 }

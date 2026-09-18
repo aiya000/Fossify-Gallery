@@ -149,6 +149,8 @@ const val PCLOUD_AUTHORIZE_URL = "https://my.pcloud.com/oauth2/authorize"
 // longer good, there is no other notice that it expired
 const val PCLOUD_RESULT_LOG_IN_FAILED = 1000
 const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
+// undocumented; seen for a recursive listfolder of the root, which pCloud refuses
+const val PCLOUD_RESULT_INVALID_REQUEST = 1101
 
 // listfolder answers this for a folder that has been deleted or moved since it was scanned
 const val PCLOUD_RESULT_DIRECTORY_NOT_FOUND = 2005

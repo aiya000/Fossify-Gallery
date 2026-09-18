@@ -53,7 +53,9 @@ class PCloudScanner(private val context: Context) {
     private class Entry(
         val name: String, val isFolder: Boolean, val itemId: Long, val modified: Long, val size: Long,
         val type: Int, val hash: Long, val hasThumb: Boolean, val duration: Int, val children: List<Entry>
-    )
+    ) {
+        fun withChildren(children: List<Entry>) = Entry(name, isFolder, itemId, modified, size, type, hash, hasThumb, duration, children)
+    }
 
     private val config = context.config
 
@@ -260,7 +262,32 @@ class PCloudScanner(private val context: Context) {
         return Result(directories.size, media.size)
     }
 
-    private fun fetchTree() = fetchFolder(PCLOUD_PATH_SCHEME, recursive = true)
+    // pCloud refuses a recursive listing of the root with 1101 "Invalid request" (seen on a real
+    // account, not documented), while a folder below it lists fine that way. So the root is
+    // listed flat and each folder in it is fetched as a tree of its own
+    private fun fetchTree(): Entry {
+        val root = fetchFolder(PCLOUD_PATH_SCHEME)
+        return root.withChildren(root.children.map { child ->
+            if (child.isFolder) fetchSubtree("$PCLOUD_PATH_SCHEME/${child.name}") else child
+        })
+    }
+
+    // one recursive listing, or, should pCloud refuse that for this folder too, a flat one
+    // with every folder in it fetched the same way
+    private fun fetchSubtree(path: String): Entry {
+        try {
+            return fetchFolder(path, recursive = true)
+        } catch (e: PCloudException) {
+            if (e.result != PCLOUD_RESULT_INVALID_REQUEST) {
+                throw e
+            }
+        }
+
+        val folder = fetchFolder(path)
+        return folder.withChildren(folder.children.map { child ->
+            if (child.isFolder) fetchSubtree("$path/${child.name}") else child
+        })
+    }
 
     private fun fetchFolder(path: String, recursive: Boolean = false): Entry {
         var folder: Entry? = null
