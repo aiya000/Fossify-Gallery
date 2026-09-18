@@ -81,6 +81,11 @@
     <string name="pcloud_interval_minutes">%d minutes</string>
     <string name="pcloud_interval_hours">%d hours</string>
     <string name="pcloud_interval_day">1 day</string>
+    <string name="pcloud_rescan_after_write">Rescan a pCloud folder after deleting, renaming or creating in it</string>
+    <string name="pcloud_name">Name</string>
+    <string name="pcloud_delete_confirmation">Move %1$s to the pCloud trash? It can be brought back from the trash on pcloud.com, not from this app.</string>
+    <string name="pcloud_delete_folder_confirmation">Move %1$s to the pCloud trash, with everything inside? It can be brought back from the trash on pcloud.com, not from this app.</string>
+    <string name="pcloud_already_exists">pCloud already has a file or folder with that name</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

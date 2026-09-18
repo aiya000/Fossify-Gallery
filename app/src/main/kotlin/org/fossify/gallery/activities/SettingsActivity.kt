@@ -188,14 +188,15 @@ class SettingsActivity : SimpleActivity() {
         setupPCloudRescanPolicy()
     }
 
-    // only the events that are wired up are offered here; the after-write one arrives with the
-    // screens that raise it. Nothing here applies without an account
+    // one row per event that can ask for a rescan, see PCloudSyncPolicy. Nothing here applies
+    // without an account
     private fun setupPCloudRescanPolicy() {
         val isLoggedIn = config.isPCloudLoggedIn
         binding.settingsPcloudRescanOnLaunchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnStorageSwitchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnFolderOpenHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnGroupOpenHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanAfterWriteHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanIntervalHolder.beVisibleIf(isLoggedIn)
 
         binding.settingsPcloudRescanOnLaunch.isChecked = config.pCloudRescanOnLaunch
@@ -220,6 +221,12 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcloudRescanOnGroupOpenHolder.setOnClickListener {
             binding.settingsPcloudRescanOnGroupOpen.toggle()
             config.pCloudRescanOnGroupOpen = binding.settingsPcloudRescanOnGroupOpen.isChecked
+        }
+
+        binding.settingsPcloudRescanAfterWrite.isChecked = config.pCloudRescanAfterWrite
+        binding.settingsPcloudRescanAfterWriteHolder.setOnClickListener {
+            binding.settingsPcloudRescanAfterWrite.toggle()
+            config.pCloudRescanAfterWrite = binding.settingsPcloudRescanAfterWrite.isChecked
         }
 
         binding.settingsPcloudRescanInterval.text = getPCloudRescanIntervalText(config.pCloudRescanIntervalMinutes)

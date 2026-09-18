@@ -30,6 +30,12 @@ interface DirectoryDao {
     @Query("UPDATE directories SET thumbnail = :thumbnail, filename = :name, path = :newPath WHERE path = :oldPath COLLATE NOCASE")
     fun updateDirectoryAfterRename(thumbnail: String, name: String, newPath: String, oldPath: String)
 
+    // after a pCloud folder was renamed: the folder's own row gets the new name and path, the
+    // rows of the folders under it get the new path prefix, and every thumbnail that pointed
+    // into the old subtree follows
+    @Query("UPDATE OR REPLACE directories SET filename = CASE WHEN path = :oldFolder THEN :newName ELSE filename END, path = :newFolder || substr(path, length(:oldFolder) + 1), thumbnail = CASE WHEN thumbnail LIKE :oldFolder || '/%' THEN :newFolder || substr(thumbnail, length(:oldFolder) + 1) ELSE thumbnail END WHERE path = :oldFolder OR path LIKE :oldFolder || '/%'")
+    fun updatePathsUnderFolder(oldFolder: String, newFolder: String, newName: String)
+
     @Query("DELETE FROM directories WHERE path = \'$RECYCLE_BIN\' COLLATE NOCASE")
     fun deleteRecycleBin()
 

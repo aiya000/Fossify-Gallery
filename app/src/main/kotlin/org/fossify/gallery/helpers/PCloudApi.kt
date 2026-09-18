@@ -13,7 +13,8 @@ import java.util.concurrent.TimeUnit
 
 // The pCloud HTTP API, as much of it as the gallery needs. Every call goes to the host that came
 // with the token, answers JSON, and reports failure in a "result" field rather than in the status
-// code. Writing lands here in a later step
+// code. Reads take the file or folder id the scanner stored; writes take the remote path, so
+// that a name pCloud already knows can be acted on without a cache row for it
 object PCloudApi {
     private val client by lazy {
         OkHttpClient.Builder()
@@ -107,6 +108,32 @@ object PCloudApi {
     // A plain GET of a link handed out by getFileLink(): the link carries its own authorisation,
     // so no token goes with it. Handed back as a Call so that the caller can cancel it
     fun download(url: String): Call = client.newCall(Request.Builder().url(url).build())
+
+    // moves the file into pCloud's own trash, from where the web UI can bring it back
+    fun deleteFile(apiHost: String, accessToken: String, remotePath: String) {
+        call(apiHost, accessToken, "deletefile", mapOf("path" to remotePath))
+    }
+
+    // the folder and everything under it go to pCloud's trash together
+    fun deleteFolderRecursive(apiHost: String, accessToken: String, remotePath: String) {
+        call(apiHost, accessToken, "deletefolderrecursive", mapOf("path" to remotePath))
+    }
+
+    // a new name in the same folder; the file keeps its id and its content hash
+    fun renameFile(apiHost: String, accessToken: String, remotePath: String, newName: String) {
+        call(apiHost, accessToken, "renamefile", mapOf("path" to remotePath, "toname" to newName))
+    }
+
+    fun renameFolder(apiHost: String, accessToken: String, remotePath: String, newName: String) {
+        call(apiHost, accessToken, "renamefolder", mapOf("path" to remotePath, "toname" to newName))
+    }
+
+    // Creates a folder inside the one with the given id (0 is the root) and answers with the
+    // new folder's id. pCloud refuses a name that is already taken there
+    fun createFolder(apiHost: String, accessToken: String, parentFolderId: Long, name: String): Long {
+        val json = call(apiHost, accessToken, "createfolder", mapOf("folderid" to parentFolderId.toString(), "name" to name))
+        return json.getJSONObject("metadata").getLong("folderid")
+    }
 
     // link answers carry a list of hosts and a path, any host serves the path
     private fun toLink(json: JSONObject): String {

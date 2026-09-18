@@ -39,6 +39,7 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.appbar.AppBarLayout
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.dialogs.RenameItemDialog
 import org.fossify.commons.extensions.applyColorFilter
@@ -100,6 +101,7 @@ import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
 import org.fossify.gallery.extensions.config
@@ -129,6 +131,7 @@ import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
@@ -298,8 +301,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         currentMedium.isFavorite = mFavoritePaths.contains(currentMedium.path)
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
 
-        // a pCloud medium has no file behind it, so everything that reads or writes one stays
-        // hidden until the write and download steps land. Favorites and the slideshow work
+        // a pCloud medium has no file behind it, so everything that reads one or writes into
+        // it stays hidden until the download step lands. Deleting and renaming go through the
+        // pCloud API; favorites and the slideshow work
         val isLocal = !currentMedium.path.isPCloudPath()
 
         runOnUiThread {
@@ -308,10 +312,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_show_on_map).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP == 0
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
                 findItem(R.id.menu_properties).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
-                findItem(R.id.menu_delete).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_DELETE == 0
+                findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
                 findItem(R.id.menu_share).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
                 findItem(R.id.menu_edit).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
-                findItem(R.id.menu_rename).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
+                findItem(R.id.menu_rename).isVisible = visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
                 findItem(R.id.menu_rotate).isVisible = isLocal && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
                 findItem(R.id.menu_set_as).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = isLocal && currentMedium.isImage()
@@ -1050,7 +1054,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             shareMediumPath(getCurrentPath())
         }
 
-        binding.bottomActions.bottomDelete.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_DELETE != 0)
+        binding.bottomActions.bottomDelete.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_DELETE != 0)
         binding.bottomActions.bottomDelete.setOnLongClickListener { toast(org.fossify.commons.R.string.delete); true }
         binding.bottomActions.bottomDelete.setOnClickListener {
             checkDeleteConfirmation()
@@ -1107,7 +1111,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
         }
 
-        binding.bottomActions.bottomRename.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_RENAME != 0 && currentMedium?.getIsInRecycleBin() == false)
+        binding.bottomActions.bottomRename.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_RENAME != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomRename.setOnLongClickListener { toast(org.fossify.commons.R.string.rename); true }
         binding.bottomActions.bottomRename.setOnClickListener {
             checkMediaManagementAndRename()
@@ -1249,7 +1253,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun checkDeleteConfirmation() {
-        if (getCurrentMedium() == null) {
+        val currentMedium = getCurrentMedium() ?: return
+        if (currentMedium.path.isPCloudPath()) {
+            checkPCloudDeleteConfirmation(currentMedium)
             return
         }
 
@@ -1339,6 +1345,49 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
+    // A pCloud medium goes to pCloud's own trash, so the recycle bin and its "skip" option do
+    // not come into it; the delete password and the "skip confirmation" setting do, like for
+    // a local file. No media management prompt either, there is no MediaStore entry to touch
+    private fun checkPCloudDeleteConfirmation(medium: Medium) {
+        val deleteConfirmed = { deletePCloudMedium(medium) }
+        when {
+            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection(deleteConfirmed)
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteConfirmed()
+            else -> ConfirmationDialog(this, getString(R.string.pcloud_delete_confirmation, "\"${medium.name}\"")) {
+                deleteConfirmed()
+            }
+        }
+    }
+
+    // the same as handleDeletion(): the page goes right away, the write follows, and the view
+    // closes when it was the last one. A refused write brings the page back
+    private fun deletePCloudMedium(medium: Medium) {
+        val path = medium.path
+        mIgnoredPaths.add(path)
+        dropFromSelection(path)
+        val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
+        if (media.isNotEmpty()) {
+            runOnUiThread {
+                refreshUI(media, false)
+            }
+        }
+
+        if (media.size == 1) {
+            onPageSelected(0)
+        }
+
+        writeToPCloud(listOf(path.getParentPath()), { deleteFiles(listOf(path)) }) { success ->
+            mIgnoredPaths.remove(path)
+            runOnUiThread {
+                if (!success) {
+                    refreshViewPager(refetchPosition = true)
+                } else if (media.isEmpty()) {
+                    finish()
+                }
+            }
+        }
+    }
+
     private fun handleDeletion(fileDirItem: FileDirItem) {
         checkManageMediaOrHandleSAFDialogSdk30(fileDirItem.path) {
             if (!it) {
@@ -1379,8 +1428,33 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun checkMediaManagementAndRename() {
+        if (getCurrentPath().isPCloudPath()) {
+            renamePCloudMedium()
+            return
+        }
+
         handleMediaManagementPrompt {
             renameFile()
+        }
+    }
+
+    // like renameFile(), only the name is sent to pCloud and the medium on screen is updated
+    // once pCloud has taken it
+    private fun renamePCloudMedium() {
+        val medium = getCurrentMedium() ?: return
+        val oldPath = medium.path
+        PCloudNameDialog(this, medium.name, org.fossify.commons.R.string.rename) { newName ->
+            writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) { success ->
+                if (success) {
+                    runOnUiThread {
+                        getCurrentMedia().firstOrNull { it.path == oldPath }?.apply {
+                            path = "${oldPath.getParentPath()}/$newName"
+                            name = newName
+                        }
+                        updateActionbarTitle()
+                    }
+                }
+            }
         }
     }
 

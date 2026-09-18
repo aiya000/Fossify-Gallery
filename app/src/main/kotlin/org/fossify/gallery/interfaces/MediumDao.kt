@@ -46,6 +46,11 @@ interface MediumDao {
     @Query("UPDATE OR REPLACE media SET full_path = :newPath, deleted_ts = :deletedTS WHERE full_path = :oldPath COLLATE NOCASE")
     fun updateDeleted(newPath: String, deletedTS: Long, oldPath: String)
 
+    // after a pCloud folder was renamed: every medium under it, at any depth, gets the folder's
+    // new path in place of the old one, in the full path and in the parent path alike
+    @Query("UPDATE OR REPLACE media SET full_path = :newFolder || substr(full_path, length(:oldFolder) + 1), parent_path = :newFolder || substr(parent_path, length(:oldFolder) + 1) WHERE full_path LIKE :oldFolder || '/%'")
+    fun updatePathsUnderFolder(oldFolder: String, newFolder: String)
+
     @Query("UPDATE media SET date_taken = :dateTaken WHERE full_path = :path COLLATE NOCASE")
     fun updateFavoriteDateTaken(path: String, dateTaken: Long)
 
