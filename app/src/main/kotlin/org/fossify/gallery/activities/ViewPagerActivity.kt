@@ -135,6 +135,7 @@ import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
+import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.helpers.BOTTOM_ACTION_CHANGE_ORIENTATION
 import org.fossify.gallery.helpers.BOTTOM_ACTION_COPY
 import org.fossify.gallery.helpers.BOTTOM_ACTION_DELETE
@@ -258,6 +259,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         initFavorites()
     }
 
+    // a move to or from pCloud ends after this screen was left alone for a while; the list
+    // is read again so that a page that went away goes away here too
+    private val pCloudTransferListener: () -> Unit = { refreshViewPager(refetchPosition = true) }
+
     override fun onResume() {
         super.onResume()
         if (!hasPermission(getPermissionToRequest())) {
@@ -265,6 +270,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             return
         }
 
+        PCloudTransferService.addListener(pCloudTransferListener)
         initBottomActions()
         mOriginalBrightness = window.updateBrightness(config.maxBrightness, mOriginalBrightness)
         setupOrientation()
@@ -276,6 +282,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onPause() {
         super.onPause()
+        PCloudTransferService.removeListener(pCloudTransferListener)
         stopSlideshow()
     }
 
@@ -301,9 +308,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         currentMedium.isFavorite = mFavoritePaths.contains(currentMedium.path)
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
 
-        // a pCloud medium has no file behind it, so everything that reads one or writes into
-        // it stays hidden until the download step lands. Deleting and renaming go through the
-        // pCloud API; favorites and the slideshow work
+        // a pCloud medium has no file behind it, so everything that reads one on the device
+        // stays hidden. Deleting, renaming, copying and moving go through the pCloud API;
+        // favorites and the slideshow work
         val isLocal = !currentMedium.path.isPCloudPath()
 
         runOnUiThread {
@@ -319,8 +326,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_rotate).isVisible = isLocal && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
                 findItem(R.id.menu_set_as).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = isLocal && currentMedium.isImage()
-                findItem(R.id.menu_copy_to).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_COPY == 0
-                findItem(R.id.menu_move_to).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
+                findItem(R.id.menu_copy_to).isVisible = visibleBottomActions and BOTTOM_ACTION_COPY == 0
+                findItem(R.id.menu_move_to).isVisible = visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = isLocal && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
@@ -862,6 +869,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
+        // a pCloud source has no MediaStore entry to manage
+        if (getCurrentPath().isPCloudPath()) {
+            copyMoveTo(isCopyOperation)
+            return
+        }
+
         handleMediaManagementPrompt {
             copyMoveTo(isCopyOperation)
         }
@@ -1123,13 +1136,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             setAs(getCurrentPath())
         }
 
-        binding.bottomActions.bottomCopy.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
+        binding.bottomActions.bottomCopy.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_COPY != 0)
         binding.bottomActions.bottomCopy.setOnLongClickListener { toast(org.fossify.commons.R.string.copy); true }
         binding.bottomActions.bottomCopy.setOnClickListener {
             checkMediaManagementAndCopy(true)
         }
 
-        binding.bottomActions.bottomMove.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
+        binding.bottomActions.bottomMove.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
         binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()

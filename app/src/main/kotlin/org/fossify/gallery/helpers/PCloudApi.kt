@@ -3,8 +3,10 @@ package org.fossify.gallery.helpers
 import android.util.JsonReader
 import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
@@ -20,6 +22,8 @@ object PCloudApi {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
+            // an upload is not done until the whole body went out
+            .writeTimeout(0, TimeUnit.SECONDS)
             .build()
     }
 
@@ -133,6 +137,46 @@ object PCloudApi {
     fun createFolder(apiHost: String, accessToken: String, parentFolderId: Long, name: String): Long {
         val json = call(apiHost, accessToken, "createfolder", mapOf("folderid" to parentFolderId.toString(), "name" to name))
         return json.getJSONObject("metadata").getLong("folderid")
+    }
+
+    // a copy of the file into the folder with the given id, under the same name; a name that
+    // is taken there gets a number appended by pCloud rather than being overwritten
+    fun copyFileTo(apiHost: String, accessToken: String, remotePath: String, toFolderId: Long) {
+        call(apiHost, accessToken, "copyfile", mapOf("path" to remotePath, "tofolderid" to toFolderId.toString(), "toname" to remotePath.substringAfterLast('/'), "noover" to "1"))
+    }
+
+    // renamefile with a destination folder moves the file; it keeps its id and content hash
+    fun moveFileTo(apiHost: String, accessToken: String, remotePath: String, toFolderId: Long) {
+        call(apiHost, accessToken, "renamefile", mapOf("path" to remotePath, "tofolderid" to toFolderId.toString(), "toname" to remotePath.substringAfterLast('/')))
+    }
+
+    // Uploads one file into the folder with the given id as a multipart POST; the body is
+    // streamed, so a video does not have to fit in memory. A name that is taken there gets
+    // a number appended by pCloud rather than being overwritten, and nopartial keeps a file
+    // whose upload broke off from appearing at all. mtime keeps the file's modification time
+    fun upload(apiHost: String, accessToken: String, toFolderId: Long, name: String, body: RequestBody, modifiedSeconds: Long) {
+        val params = mapOf(
+            "folderid" to toFolderId.toString(),
+            "filename" to name,
+            "nopartial" to "1",
+            "renameifexists" to "1",
+            "mtime" to modifiedSeconds.toString()
+        )
+        val multipart = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", name, body)
+            .build()
+        val request = buildRequest(apiHost, accessToken, "uploadfile", params)
+            .newBuilder()
+            .post(multipart)
+            .build()
+
+        val responseBody = client.newCall(request).execute().use { it.body.string() }
+        val json = JSONObject(responseBody)
+        val result = json.optInt("result", -1)
+        if (result != 0) {
+            throw PCloudException(result, json.optString("error"))
+        }
     }
 
     // link answers carry a list of hosts and a path, any host serves the path

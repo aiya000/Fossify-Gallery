@@ -116,6 +116,7 @@ import org.fossify.gallery.helpers.SLIDESHOW_START_ON_ENTER
 import org.fossify.gallery.helpers.VIDEO_PLAYER_APP
 import org.fossify.gallery.helpers.VIDEO_PLAYER_SYSTEM
 import org.fossify.gallery.interfaces.MediaOperationsListener
+import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
@@ -214,9 +215,13 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
     }
 
+    // a copy or move to or from pCloud ends in the background; the list is read again then
+    private val pCloudTransferListener: () -> Unit = { getMedia() }
+
     override fun onResume() {
         super.onResume()
         updateMenuColors()
+        PCloudTransferService.addListener(pCloudTransferListener)
         if (mStoredAnimateGifs != config.animateGifs) {
             getMediaAdapter()?.updateAnimateGifs(config.animateGifs)
         }
@@ -290,6 +295,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun onPause() {
         super.onPause()
+        PCloudTransferService.removeListener(pCloudTransferListener)
         mIsGettingMedia = false
         binding.mediaRefreshLayout.isRefreshing = false
         storeStateVariables()

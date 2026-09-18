@@ -86,6 +86,14 @@
     <string name="pcloud_delete_confirmation">Move %1$s to the pCloud trash? It can be brought back from the trash on pcloud.com, not from this app.</string>
     <string name="pcloud_delete_folder_confirmation">Move %1$s to the pCloud trash, with everything inside? It can be brought back from the trash on pcloud.com, not from this app.</string>
     <string name="pcloud_already_exists">pCloud already has a file or folder with that name</string>
+    <string name="pcloud_transfer_channel">pCloud transfers</string>
+    <string name="pcloud_transfer_started">Transfer started, the notification shows its progress</string>
+    <string name="pcloud_uploading">Uploading to pCloud (%1$d/%2$d)</string>
+    <string name="pcloud_downloading">Downloading from pCloud (%1$d/%2$d)</string>
+    <string name="pcloud_copying">Copying on pCloud (%1$d/%2$d)</string>
+    <string name="pcloud_moving">Moving on pCloud (%1$d/%2$d)</string>
+    <string name="pcloud_transfer_done">pCloud: %1$d files transferred</string>
+    <string name="pcloud_transfer_done_with_failures">pCloud: %1$d files transferred, %2$d failed</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

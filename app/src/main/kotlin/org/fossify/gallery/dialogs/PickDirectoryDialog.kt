@@ -346,7 +346,12 @@ class PickDirectoryDialog(
     }
 
     private fun fetchDirectories(forceShowHiddenAndExcluded: Boolean) {
-        activity.getCachedDirectories(forceShowHidden = forceShowHiddenAndExcluded, forceShowExcluded = forceShowHiddenAndExcluded) {
+        // files can be copied to pCloud whichever storage the folder list is showing
+        activity.getCachedDirectories(
+            forceShowHidden = forceShowHiddenAndExcluded,
+            forceShowExcluded = forceShowHiddenAndExcluded,
+            forceShowPCloud = isPickingCopyMoveDestination
+        ) {
             if (it.isNotEmpty()) {
                 it.forEach {
                     it.subfoldersMediaCount = it.mediaCnt
