@@ -70,6 +70,7 @@ import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
+import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
 import org.fossify.gallery.extensions.loadImage
@@ -214,22 +215,31 @@ class MediaAdapter(
         val isOneItemSelected = isOneItemSelected()
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
+
+        // pCloud media have no file behind them, so nothing that reads or writes one is offered
+        // while any is selected, until the write and download steps land. Favorites work
+        val isLocal = selectedPaths.none { it.isPCloudPath() }
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
-            findItem(R.id.cab_rename).isVisible = !isInRecycleBin
+            findItem(R.id.cab_rename).isVisible = isLocal && !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
-            findItem(R.id.cab_fix_date_taken).isVisible = !isInRecycleBin
-            findItem(R.id.cab_move_to).isVisible = !isInRecycleBin
-            findItem(R.id.cab_open_with).isVisible = isOneItemSelected
-            findItem(R.id.cab_edit).isVisible = isOneItemSelected
-            findItem(R.id.cab_set_as).isVisible = isOneItemSelected
-            findItem(R.id.cab_resize).isVisible = canResize(selectedItems)
+            findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
+            findItem(R.id.cab_move_to).isVisible = isLocal && !isInRecycleBin
+            findItem(R.id.cab_open_with).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_edit).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_set_as).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_resize).isVisible = isLocal && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible = selectedPaths.all { it.startsWith(activity.recycleBinPath) }
-            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected
+            findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_delete).isVisible = isLocal
+            findItem(R.id.cab_share).isVisible = isLocal
+            findItem(R.id.cab_rotate).isVisible = isLocal
+            findItem(R.id.cab_properties).isVisible = isLocal
+            findItem(R.id.cab_copy_to).isVisible = isLocal
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -388,8 +398,9 @@ class MediaAdapter(
 
     private fun checkHideBtnVisibility(menu: Menu, selectedItems: ArrayList<Medium>) {
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
-        menu.findItem(R.id.cab_hide).isVisible = (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { !it.isHidden() }
-        menu.findItem(R.id.cab_unhide).isVisible = (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { it.isHidden() }
+        val isLocal = selectedItems.none { it.path.isPCloudPath() }
+        menu.findItem(R.id.cab_hide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { !it.isHidden() }
+        menu.findItem(R.id.cab_unhide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { it.isHidden() }
     }
 
     private fun checkFavoriteBtnVisibility(menu: Menu, selectedItems: ArrayList<Medium>) {

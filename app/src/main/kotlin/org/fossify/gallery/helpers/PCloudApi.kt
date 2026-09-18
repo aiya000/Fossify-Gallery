@@ -104,6 +104,10 @@ object PCloudApi {
         return toLink(json)
     }
 
+    // A plain GET of a link handed out by getFileLink(): the link carries its own authorisation,
+    // so no token goes with it. Handed back as a Call so that the caller can cancel it
+    fun download(url: String): Call = client.newCall(Request.Builder().url(url).build())
+
     // link answers carry a list of hosts and a path, any host serves the path
     private fun toLink(json: JSONObject): String {
         val host = json.getJSONArray("hosts").getString(0)

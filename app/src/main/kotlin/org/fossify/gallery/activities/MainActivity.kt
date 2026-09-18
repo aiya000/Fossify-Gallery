@@ -105,7 +105,9 @@ import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isShownByStorageFilter
+import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
+import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -440,6 +442,29 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mCurrentPathPrefix = ""
         mOpenedSubfolders = arrayListOf("")
         setupAdapter(mDirs, "")
+        rescanPCloudFoldersOfGroupIfDue(groupId)
+    }
+
+    // The pCloud folders assigned to the group, or to a group inside it, are refreshed one by
+    // one when the setting asks for it, each under its own throttle. The cached folders are on
+    // screen before this runs
+    private fun rescanPCloudFoldersOfGroupIfDue(groupId: Long?) {
+        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(config).rescanOnGroupOpen) {
+            return
+        }
+
+        ensureBackgroundThread {
+            val groups = config.parseFolderGroups()
+            val members = config.parseFolderGroupMembers()
+                .filter { (path, memberGroupId) -> path.isPCloudPath() && config.isFolderGroupDescendantOrSelf(memberGroupId, groupId, groups) }
+                .keys
+                .toList()
+
+            val due = getPCloudFoldersDueForRescan(members)
+            if (due.isNotEmpty()) {
+                rescanPCloudFolders(due, reportCounts = false) { runOnUiThread { getDirectories() } }
+            }
+        }
     }
 
     private fun createNewGroup() {

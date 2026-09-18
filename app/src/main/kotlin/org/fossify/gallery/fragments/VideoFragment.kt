@@ -40,6 +40,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.ContentDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -72,6 +73,8 @@ import org.fossify.gallery.activities.BaseViewerActivity
 import org.fossify.gallery.activities.VideoActivity
 import org.fossify.gallery.databinding.PagerVideoItemBinding
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.extensions.getActionBarHeight
 import org.fossify.gallery.extensions.getBottomActionsHeight
 import org.fossify.gallery.extensions.getFormattedDuration
@@ -83,6 +86,7 @@ import org.fossify.gallery.helpers.EXOPLAYER_MAX_BUFFER_MS
 import org.fossify.gallery.helpers.EXOPLAYER_MIN_BUFFER_MS
 import org.fossify.gallery.helpers.FAST_FORWARD_VIDEO_MS
 import org.fossify.gallery.helpers.MEDIUM
+import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.SHOULD_INIT_FRAGMENT
 import org.fossify.gallery.interfaces.PlaybackSpeedListener
 import org.fossify.gallery.models.Medium
@@ -130,6 +134,10 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
     private var mOriginalPlaybackSpeed = 1f
     private var mIsLongPressActive = false
     private var mHasAudio = true
+
+    // the streaming link of a pCloud video, fetched once per fragment; see createPCloudMediaSource()
+    private var mPCloudStreamUrl: String? = null
+    private var mIsFetchingPCloudStreamUrl = false
 
     private val mTouchHoldRunnable = Runnable {
         mView.parent.requestDisallowInterceptTouchEvent(true)
@@ -185,7 +193,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
             videoSurfaceFrame.controller.settings.swallowDoubleTaps = true
 
             videoPlayOutline.setOnClickListener {
-                if (mConfig.gestureVideoPlayer) activity.launchGesturePlayer(mMedium.path) else togglePlayPause()
+                if (usesGesturePlayer()) activity.launchGesturePlayer(mMedium.path) else togglePlayPause()
             }
 
             mPlayPauseButton = bottomVideoTimeHolder.videoTogglePlayPause
@@ -291,10 +299,13 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         initTimeHolder()
         // checkIfPanorama() TODO: Implement panorama using a FOSS library
 
-        ensureBackgroundThread {
-            activity.getVideoResolution(mMedium.path)?.apply {
-                mVideoSize.x = x
-                mVideoSize.y = y
+        // a pCloud video has no file to read the size from, the player reports it once it plays
+        if (!mMedium.path.isPCloudPath()) {
+            ensureBackgroundThread {
+                activity.getVideoResolution(mMedium.path)?.apply {
+                    mVideoSize.x = x
+                    mVideoSize.y = y
+                }
             }
         }
 
@@ -349,7 +360,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
                     })
 
                 videoSurface.onGlobalLayout {
-                    if (mIsFragmentVisible && mConfig.autoplayVideos && !mConfig.gestureVideoPlayer) {
+                    if (mIsFragmentVisible && mConfig.autoplayVideos && !usesGesturePlayer()) {
                         playVideo()
                     }
                 }
@@ -370,7 +381,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
             requireContext().config      // make sure we get a new config, in case the user changed something in the app settings
         requireActivity().updateTextColors(binding.videoHolder)
         val allowVideoGestures = mConfig.allowVideoGestures
-        mTextureView.beGoneIf(mConfig.gestureVideoPlayer || mIsPanorama)
+        mTextureView.beGoneIf(usesGesturePlayer() || mIsPanorama)
         binding.videoSurfaceFrame.beGoneIf(mTextureView.isGone())
 
         mVolumeSideScroll.beVisibleIf(allowVideoGestures && !mIsPanorama)
@@ -404,7 +415,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         }
 
         mIsFragmentVisible = menuVisible
-        val shouldPlayVideo = mWasFragmentInit && menuVisible && mConfig.autoplayVideos && !mConfig.gestureVideoPlayer
+        val shouldPlayVideo = mWasFragmentInit && menuVisible && mConfig.autoplayVideos && !usesGesturePlayer()
         if (shouldPlayVideo) playVideo()
     }
 
@@ -473,31 +484,14 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
     }
 
     private fun initExoPlayer() {
-        val shouldSkipInit = activity == null || mConfig.gestureVideoPlayer || mIsPanorama || mExoPlayer != null
+        val shouldSkipInit = activity == null || usesGesturePlayer() || mIsPanorama || mExoPlayer != null
         if (shouldSkipInit) return
 
-        val isContentUri = mMedium.path.startsWith("content://")
-        val uri = if (isContentUri) Uri.parse(mMedium.path) else Uri.fromFile(File(mMedium.path))
-        val dataSpec = DataSpec(uri)
-        val fileDataSource = if (isContentUri) {
-            ContentDataSource(requireContext())
+        val mediaSource = if (mMedium.path.isPCloudPath()) {
+            createPCloudMediaSource() ?: return
         } else {
-            FileDataSource()
+            createFileMediaSource() ?: return
         }
-
-        try {
-            fileDataSource.open(dataSpec)
-        } catch (e: Exception) {
-            fileDataSource.close()
-            activity?.showErrorToast(e)
-            return
-        }
-
-        val factory = DataSource.Factory { fileDataSource }
-        val mediaSource: MediaSource = ProgressiveMediaSource.Factory(factory)
-            .createMediaSource(MediaItem.fromUri(fileDataSource.uri!!))
-
-        fileDataSource.close()
 
         mPlayOnPrepared = true
 
@@ -539,6 +533,80 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
 
         updatePlayerMuteState()
     }
+
+    private fun createFileMediaSource(): MediaSource? {
+        val isContentUri = mMedium.path.startsWith("content://")
+        val uri = if (isContentUri) Uri.parse(mMedium.path) else Uri.fromFile(File(mMedium.path))
+        val dataSpec = DataSpec(uri)
+        val fileDataSource = if (isContentUri) {
+            ContentDataSource(requireContext())
+        } else {
+            FileDataSource()
+        }
+
+        try {
+            fileDataSource.open(dataSpec)
+        } catch (e: Exception) {
+            fileDataSource.close()
+            activity?.showErrorToast(e)
+            return null
+        }
+
+        val factory = DataSource.Factory { fileDataSource }
+        val mediaSource: MediaSource = ProgressiveMediaSource.Factory(factory)
+            .createMediaSource(MediaItem.fromUri(fileDataSource.uri!!))
+
+        fileDataSource.close()
+        return mediaSource
+    }
+
+    // A pCloud video is streamed from the link getfilelink hands out, nothing is downloaded
+    // first. The link is fetched off the main thread the first time round and initExoPlayer()
+    // is run again once it is in; null comes back meanwhile
+    private fun createPCloudMediaSource(): MediaSource? {
+        val url = mPCloudStreamUrl
+        if (url == null) {
+            fetchPCloudStreamUrl()
+            return null
+        }
+
+        val factory = DefaultDataSource.Factory(requireContext())
+        return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(url))
+    }
+
+    private fun fetchPCloudStreamUrl() {
+        if (mIsFetchingPCloudStreamUrl) {
+            return
+        }
+
+        val context = context ?: return
+        val config = context.config
+        if (!config.isPCloudLoggedIn) {
+            return
+        }
+
+        mIsFetchingPCloudStreamUrl = true
+        ensureBackgroundThread {
+            val url = try {
+                val item = context.pCloudItemsDB.getItem(mMedium.path)
+                if (item == null) null else PCloudApi.getFileLink(config.pCloudApiHost, config.pCloudAccessToken, item.itemId)
+            } catch (e: Exception) {
+                activity?.showErrorToast(e)
+                null
+            }
+
+            activity?.runOnUiThread {
+                mIsFetchingPCloudStreamUrl = false
+                if (url != null && isAdded) {
+                    mPCloudStreamUrl = url
+                    initExoPlayer()
+                }
+            }
+        }
+    }
+
+    // the separate gesture player wants a file, so a pCloud video plays in here whatever the setting says
+    private fun usesGesturePlayer() = mConfig.gestureVideoPlayer && !mMedium.path.isPCloudPath()
 
     private fun ExoPlayer.initListeners() {
         addListener(object : Player.Listener {
@@ -870,7 +938,12 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
 
     private fun setupVideoDuration() {
         ensureBackgroundThread {
-            mDuration = context?.getDuration(mMedium.path)?.times(1000L)?.coerceAtLeast(0L) ?: 0L
+            mDuration = if (mMedium.path.isPCloudPath()) {
+                // the scanner keeps the duration pCloud reports, there is no file to ask
+                mMedium.videoDuration * 1000L
+            } else {
+                context?.getDuration(mMedium.path)?.times(1000L)?.coerceAtLeast(0L) ?: 0L
+            }
 
             activity?.runOnUiThread {
                 setupTimeHolder()
@@ -954,7 +1027,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
     }
 
     private fun setVideoSize() {
-        if (activity == null || mConfig.gestureVideoPlayer) return
+        if (activity == null || usesGesturePlayer()) return
 
         val videoProportion = mVideoSize.x.toFloat() / mVideoSize.y.toFloat()
         val display = requireActivity().windowManager.defaultDisplay

@@ -611,6 +611,17 @@ class MediaFetcher(val context: Context) {
         return media
     }
 
+    // the cached pCloud folders, for "show all" when the storage filter lets pCloud through.
+    // They join the local folders and are read from the cache like any other pCloud folder
+    fun getPCloudFoldersToShow(): List<String> {
+        val config = context.config
+        return if (config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL) {
+            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME)
+        } else {
+            emptyList()
+        }
+    }
+
     // what PCloudScanner wrote for the folder, narrowed the way getMediaOnOTG narrows a real one
     private fun getMediaOnPCloud(folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
         val cached = try {

@@ -72,6 +72,9 @@ import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
 import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.getCachedMedia
+import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.getHumanizedFilename
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.launchAbout
@@ -90,6 +93,8 @@ import org.fossify.gallery.extensions.updateWidgets
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
@@ -130,6 +135,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mLoadedInitialPhotos = false
     private var mShowLoadingIndicator = true
     private var mWasFullscreenViewOpen = false
+    private var mDidRescanPCloudFolder = false
     private var mLastSearchedText = ""
     private var mLatestMediaId = 0L
     private var mLatestMediaDateId = 0L
@@ -173,7 +179,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             mAllowPickingMultiple = getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false)
         }
 
-        binding.mediaRefreshLayout.setOnRefreshListener { getMedia() }
+        binding.mediaRefreshLayout.setOnRefreshListener { refreshMedia() }
         try {
             mPath = intent.getStringExtra(DIRECTORY) ?: ""
         } catch (e: Exception) {
@@ -357,7 +363,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             findItem(R.id.open_camera).isVisible = mShowAll
             findItem(R.id.about).isVisible = mShowAll
             findItem(R.id.create_new_folder).isVisible =
-                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES
+                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && !mPath.isPCloudPath()
+            findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
             findItem(R.id.temporarily_show_hidden).isVisible = !config.shouldShowHidden
@@ -397,6 +404,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 R.id.change_view_type -> changeViewType()
                 R.id.group -> showGroupByDialog()
                 R.id.create_new_folder -> createNewFolder()
+                R.id.rescan_pcloud_folder -> rescanPCloudFolderManually()
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.temporarily_show_hidden -> tryToggleTemporarilyShowHidden()
                 R.id.stop_showing_hidden -> tryToggleTemporarilyShowHidden()
@@ -480,6 +488,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 FAVORITES -> getString(org.fossify.commons.R.string.favorites)
                 RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
+                PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
                 else -> getHumanizedFilename(mPath)
             }
 
@@ -691,10 +700,44 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     gotMedia(it, true)
                 }
                 startAsyncTask()
+                rescanPCloudFolderIfDue()
             }
         }
 
         mLoadedInitialPhotos = true
+    }
+
+    // a pull refreshes a pCloud folder from the network first; the cache is what the list is
+    // read from either way
+    private fun refreshMedia() {
+        if (mPath.isPCloudPath() && config.isPCloudLoggedIn) {
+            rescanPCloudFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+        } else {
+            getMedia()
+        }
+    }
+
+    private fun rescanPCloudFolderManually() {
+        toast(R.string.pcloud_rescanning)
+        binding.mediaRefreshLayout.isRefreshing = true
+        rescanPCloudFolders(listOf(mPath), reportCounts = true) { runOnUiThread { getMedia() } }
+    }
+
+    // Runs once per screen, after the cached media is up, so the scan never keeps the user
+    // waiting. The folder is refreshed from pCloud when the setting asks for it and the
+    // folder's own throttle allows it; only this folder, not its subfolders
+    private fun rescanPCloudFolderIfDue() {
+        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(config).rescanOnFolderOpen) {
+            return
+        }
+
+        mDidRescanPCloudFolder = true
+        ensureBackgroundThread {
+            val due = getPCloudFoldersDueForRescan(listOf(mPath))
+            if (due.isNotEmpty()) {
+                rescanPCloudFolders(due, reportCounts = false) { runOnUiThread { getMedia() } }
+            }
+        }
     }
 
     private fun startAsyncTask() {
@@ -984,6 +1027,12 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         } else {
             mWasFullscreenViewOpen = true
             if (!path.isVideoFast()) {
+                openInViewPager(path)
+                return
+            }
+
+            // a pCloud video is streamed inside the app only, the other players want a file
+            if (path.isPCloudPath()) {
                 openInViewPager(path)
                 return
             }

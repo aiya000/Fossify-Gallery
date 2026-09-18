@@ -84,6 +84,11 @@
         android:title="@string/create_new_folder"
         app:showAsAction="never" />
     <item
+        android:id="@+id/rescan_pcloud_folder"
+        android:showAsAction="never"
+        android:title="@string/pcloud_rescan_folder"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/column_count"
         android:icon="@drawable/ic_column_count_vector"
         android:title="@string/column_count"

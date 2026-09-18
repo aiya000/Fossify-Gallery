@@ -150,6 +150,9 @@ const val PCLOUD_AUTHORIZE_URL = "https://my.pcloud.com/oauth2/authorize"
 const val PCLOUD_RESULT_LOG_IN_FAILED = 1000
 const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
 
+// listfolder answers this for a folder that has been deleted or moved since it was scanned
+const val PCLOUD_RESULT_DIRECTORY_NOT_FOUND = 2005
+
 // pCloud's own idea of what a file is, carried as "category" in file metadata. Used as the
 // fallback when the filename extension tells nothing
 const val PCLOUD_CATEGORY_IMAGE = 1

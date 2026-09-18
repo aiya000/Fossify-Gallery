@@ -188,12 +188,14 @@ class SettingsActivity : SimpleActivity() {
         setupPCloudRescanPolicy()
     }
 
-    // only the events that are wired up are offered here; the folder, group and write ones
-    // arrive with the screens that raise them. Nothing here applies without an account
+    // only the events that are wired up are offered here; the after-write one arrives with the
+    // screens that raise it. Nothing here applies without an account
     private fun setupPCloudRescanPolicy() {
         val isLoggedIn = config.isPCloudLoggedIn
         binding.settingsPcloudRescanOnLaunchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnStorageSwitchHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanOnFolderOpenHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanOnGroupOpenHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanIntervalHolder.beVisibleIf(isLoggedIn)
 
         binding.settingsPcloudRescanOnLaunch.isChecked = config.pCloudRescanOnLaunch
@@ -206,6 +208,18 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcloudRescanOnStorageSwitchHolder.setOnClickListener {
             binding.settingsPcloudRescanOnStorageSwitch.toggle()
             config.pCloudRescanOnStorageSwitch = binding.settingsPcloudRescanOnStorageSwitch.isChecked
+        }
+
+        binding.settingsPcloudRescanOnFolderOpen.isChecked = config.pCloudRescanOnFolderOpen
+        binding.settingsPcloudRescanOnFolderOpenHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnFolderOpen.toggle()
+            config.pCloudRescanOnFolderOpen = binding.settingsPcloudRescanOnFolderOpen.isChecked
+        }
+
+        binding.settingsPcloudRescanOnGroupOpen.isChecked = config.pCloudRescanOnGroupOpen
+        binding.settingsPcloudRescanOnGroupOpenHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnGroupOpen.toggle()
+            config.pCloudRescanOnGroupOpen = binding.settingsPcloudRescanOnGroupOpen.isChecked
         }
 
         binding.settingsPcloudRescanInterval.text = getPCloudRescanIntervalText(config.pCloudRescanIntervalMinutes)
