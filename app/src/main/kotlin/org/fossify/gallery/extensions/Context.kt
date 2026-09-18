@@ -60,6 +60,7 @@ import org.fossify.commons.extensions.normalizeString
 import org.fossify.commons.extensions.otgPath
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
+import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.AlphanumericComparator
 import org.fossify.commons.helpers.FAVORITES
@@ -94,11 +95,15 @@ import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.PCloudException
+import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
+import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
@@ -678,6 +683,53 @@ fun Context.getPathLocation(path: String): Int {
     }
 }
 
+// Which folders the storage filter lets through. Favorites, the recycle bin and virtual groups
+// belong to no storage and always pass. Without a pCloud account the filter means local
+// storage whatever it says, so a stale pCloud cache never shows up after signing out
+fun Context.isShownByStorageFilter(directory: Directory): Boolean {
+    val isPCloud = directory.path.isPCloudPath()
+    return when {
+        directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
+        !config.isPCloudLoggedIn -> !isPCloud
+        config.storageFilter == STORAGE_FILTER_PCLOUD -> isPCloud
+        config.storageFilter == STORAGE_FILTER_ALL -> true
+        else -> !isPCloud
+    }
+}
+
+// Runs a full pCloud scan off the main thread and tells the user in a toast how it went: the
+// counts when asked for, otherwise only what failed. A token pCloud no longer accepts signs the
+// account out. onDone runs in every case, also when a scan was already running and this one was
+// skipped; it is called on whatever thread the scan ended on, so hop to the UI thread in it
+fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
+    if (!config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
+        onDone()
+        return
+    }
+
+    ensureBackgroundThread {
+        try {
+            val result = PCloudScanner(this).scanAll()
+            if (reportCounts) {
+                toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
+            }
+        } catch (e: PCloudException) {
+            if (e.requiresLogIn) {
+                config.clearPCloudAccount()
+                toast(R.string.pcloud_log_in_required)
+            } else {
+                showErrorToast(e)
+            }
+        } catch (e: Exception) {
+            showErrorToast(e)
+        } finally {
+            PCloudScanner.isRunning.set(false)
+        }
+
+        onDone()
+    }
+}
+
 @SuppressLint("CheckResult")
 fun Context.loadImageBase(
     path: String,
@@ -900,6 +952,8 @@ fun Context.getCachedDirectories(
                         || (filterMedia and TYPE_PORTRAITS != 0 && it.types and TYPE_PORTRAITS != 0)
             }
         }) as ArrayList<Directory>
+
+        filteredDirectories = filteredDirectories.filter { isShownByStorageFilter(it) } as ArrayList<Directory>
 
         if (shouldShowHidden) {
             val hiddenString = resources.getString(R.string.hidden)

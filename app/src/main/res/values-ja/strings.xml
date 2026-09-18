@@ -66,6 +66,16 @@
     <string name="pcloud_rescan">pCloud を再スキャン</string>
     <string name="pcloud_rescanning">pCloud をスキャンしています…</string>
     <string name="pcloud_rescan_done">pCloud: %1$d フォルダ、%2$d ファイル</string>
+    <string name="storage_filter">ストレージ</string>
+    <string name="storage_local">この端末</string>
+    <string name="storage_local_and_pcloud">この端末と pCloud</string>
+    <string name="pcloud_rescan_on_launch">起動時に pCloud を再スキャン</string>
+    <string name="pcloud_rescan_on_storage_switch">ストレージ切替時に pCloud を再スキャン</string>
+    <string name="pcloud_rescan_interval">自動再スキャンの最小間隔</string>
+    <string name="pcloud_rescan_interval_always">毎回（間隔を空けない）</string>
+    <string name="pcloud_interval_minutes">%d 分</string>
+    <string name="pcloud_interval_hours">%d 時間</string>
+    <string name="pcloud_interval_day">1 日</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

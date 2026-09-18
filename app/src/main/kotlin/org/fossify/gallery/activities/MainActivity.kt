@@ -104,6 +104,8 @@ import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isShownByStorageFilter
+import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -130,12 +132,16 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
+import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
+import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
+import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_RAWS
@@ -208,6 +214,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mStoredStyleString = ""
     private val binding by viewBinding(ActivityMainBinding::inflate)
 
+    // set once per launch, a rotation must not count as one
+    private var mShouldRescanPCloudOnLaunch = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -221,6 +230,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             removeTempFolder()
             checkRecycleBinItems()
             startNewPhotoFetcher()
+            mShouldRescanPCloudOnLaunch = true
         }
 
         mIsPickImageIntent = isPickImageIntent(intent)
@@ -244,7 +254,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             padBottomImeAndSystem = listOf(binding.directoriesGrid)
         )
 
-        binding.directoriesRefreshLayout.setOnRefreshListener { getDirectories() }
+        binding.directoriesRefreshLayout.setOnRefreshListener { refreshDirectories() }
         storeStateVariables()
         checkWhatsNewDialog()
         setupLatestMediaId()
@@ -483,6 +493,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     config.useRecycleBin && !config.showRecycleBinAtFolders
                 findItem(R.id.more_apps_from_us).isVisible =
                     !resources.getBoolean(org.fossify.commons.R.bool.hide_google_relations)
+                findItem(R.id.storage_filter).isVisible = config.isPCloudLoggedIn
+                findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
             }
         }
 
@@ -524,6 +536,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             when (menuItem.itemId) {
                 R.id.sort -> showSortingDialog()
                 R.id.filter -> showFilterMediaDialog()
+                R.id.storage_filter -> showStorageFilterDialog()
+                R.id.rescan_pcloud -> rescanPCloudManually()
                 R.id.open_camera -> launchCamera()
                 R.id.show_all -> showAllMedia()
                 R.id.change_view_type -> changeViewType()
@@ -644,6 +658,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 showAllMedia()
             } else {
                 getDirectories()
+                rescanPCloudOnLaunchIfDue()
             }
 
             setupLayoutManager()
@@ -693,10 +708,70 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     private fun showFilterMediaDialog() {
         FilterMediaDialog(this) {
-            mShouldStopFetching = true
-            binding.directoriesRefreshLayout.isRefreshing = true
-            binding.directoriesGrid.adapter = null
+            reloadDirectories()
+        }
+    }
+
+    private fun showStorageFilterDialog() {
+        val items = arrayListOf(
+            RadioItem(STORAGE_FILTER_LOCAL, getString(R.string.storage_local)),
+            RadioItem(STORAGE_FILTER_PCLOUD, getString(R.string.pcloud)),
+            RadioItem(STORAGE_FILTER_ALL, getString(R.string.storage_local_and_pcloud))
+        )
+
+        RadioGroupDialog(this, items, config.storageFilter) {
+            val newFilter = it as Int
+            if (newFilter == config.storageFilter) {
+                return@RadioGroupDialog
+            }
+
+            config.storageFilter = newFilter
+
+            // the cache is on screen right away; a rescan, when the settings ask for one,
+            // refreshes the list a second time once it is through
+            reloadDirectories()
+            val policy = PCloudSyncPolicy(config)
+            if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
+                rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+            }
+        }
+    }
+
+    private fun reloadDirectories() {
+        mShouldStopFetching = true
+        binding.directoriesRefreshLayout.isRefreshing = true
+        binding.directoriesGrid.adapter = null
+        getDirectories()
+    }
+
+    private fun isPCloudShown() = config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL
+
+    // a pull refreshes pCloud too while it is on screen; the local folders are rechecked by
+    // getDirectories() either way, and that is also what stops the spinner
+    private fun refreshDirectories() {
+        if (isPCloudShown()) {
+            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+        } else {
             getDirectories()
+        }
+    }
+
+    private fun rescanPCloudManually() {
+        toast(R.string.pcloud_rescanning)
+        binding.directoriesRefreshLayout.isRefreshing = true
+        rescanPCloud(reportCounts = true) { runOnUiThread { getDirectories() } }
+    }
+
+    // the cached folders are on screen before this runs, so the scan never keeps the user waiting
+    private fun rescanPCloudOnLaunchIfDue() {
+        if (!mShouldRescanPCloudOnLaunch) {
+            return
+        }
+
+        mShouldRescanPCloudOnLaunch = false
+        val policy = PCloudSyncPolicy(config)
+        if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
+            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
         }
     }
 
@@ -1508,7 +1583,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         forceRecreate: Boolean = false
     ) {
         val currAdapter = binding.directoriesGrid.adapter
+        // the folders found while rechecking come from every storage, the filter decides what is displayed
         val distinctDirs = dirs
+            .filter { isShownByStorageFilter(it) }
             .distinctBy { it.path.getDistinctPath() }
             .toMutableList() as ArrayList<Directory>
 
