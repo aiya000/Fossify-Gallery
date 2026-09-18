@@ -1,10 +1,14 @@
 package org.fossify.gallery.helpers
 
 import android.util.JsonReader
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
+import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
 // The pCloud HTTP API, as much of it as the gallery needs. Every call goes to the host that came
@@ -64,6 +68,34 @@ object PCloudApi {
     fun getThumbLink(apiHost: String, accessToken: String, fileId: Long, size: String): String {
         val json = call(apiHost, accessToken, "getthumblink", mapOf("fileid" to fileId.toString(), "size" to size))
         return toLink(json)
+    }
+
+    // The thumbnail bytes themselves rather than a link to them: one round trip per tile instead
+    // of getthumblink plus a download. pCloud renders images and videos alike into a
+    // "WIDTHxHEIGHT" box, each side between 16 and 2048 in multiples of 4, and fits the picture
+    // inside it without cropping. Only files whose metadata says thumb=true have one. Handed
+    // back as a Call so that a load Glide gave up on can be cancelled; read it with contentOf()
+    fun thumbCall(apiHost: String, accessToken: String, fileId: Long, size: String): Call {
+        return client.newCall(buildRequest(apiHost, accessToken, "getthumb", mapOf("fileid" to fileId.toString(), "size" to size)))
+    }
+
+    // The body of an answer to thumbCall(). A binary method reports a refusal the same way as
+    // the JSON ones do, only with a JSON body where the picture was expected, so that case is
+    // read and thrown. Closing the response closes the stream
+    fun contentOf(response: Response): InputStream {
+        val body = response.body
+        val contentType = body.contentType()
+        if (contentType?.type == "application" && contentType.subtype == "json") {
+            val json = JSONObject(body.use { it.string() })
+            throw PCloudException(json.optInt("result", -1), json.optString("error"))
+        }
+
+        if (!response.isSuccessful) {
+            body.close()
+            throw IOException("pCloud answered HTTP ${response.code}")
+        }
+
+        return body.byteStream()
     }
 
     // a short-lived https URL for the file's content

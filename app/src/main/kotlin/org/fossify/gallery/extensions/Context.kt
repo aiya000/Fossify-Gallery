@@ -643,7 +643,8 @@ fun Context.loadImage(
             signature = signature,
             skipMemoryCacheAtPaths = skipMemoryCacheAtPaths,
             animate = animateGifs,
-            tryLoadingWithPicasso = type == TYPE_IMAGES && path.isPng(),
+            // Picasso reads files off the disk, which a pCloud thumbnail never is
+            tryLoadingWithPicasso = type == TYPE_IMAGES && path.isPng() && !path.isPCloudPath(),
             onError = onError
         )
     }
