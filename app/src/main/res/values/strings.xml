@@ -57,6 +57,12 @@
     <string name="import_sorting">Import sorting</string>
     <string name="include_sorting_in_settings_export">Include sorting in the settings export</string>
     <string name="sorting_imported_successfully">Sorting imported successfully</string>
+    <string name="pcloud">pCloud</string>
+    <string name="pcloud_account">pCloud account</string>
+    <string name="pcloud_not_logged_in">Not signed in</string>
+    <string name="pcloud_log_in_failed">Could not sign in to pCloud</string>
+    <string name="pcloud_client_id_missing">This build has no pCloud client id</string>
+    <string name="pcloud_log_out_confirmation">Sign out of pCloud? Media stored there will stop showing up in the gallery.</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>

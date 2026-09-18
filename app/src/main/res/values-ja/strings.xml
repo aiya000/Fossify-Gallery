@@ -56,6 +56,12 @@
     <string name="import_sorting">並び順をインポート</string>
     <string name="include_sorting_in_settings_export">設定のエクスポートに並び順を含める</string>
     <string name="sorting_imported_successfully">並び順をインポートしました</string>
+    <string name="pcloud">pCloud</string>
+    <string name="pcloud_account">pCloud アカウント</string>
+    <string name="pcloud_not_logged_in">ログインしていません</string>
+    <string name="pcloud_log_in_failed">pCloud にログインできませんでした</string>
+    <string name="pcloud_client_id_missing">このビルドには pCloud のクライアント ID が設定されていません</string>
+    <string name="pcloud_log_out_confirmation">pCloud からログアウトしますか？ pCloud 上のメディアはギャラリーに表示されなくなります。</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

@@ -112,6 +112,7 @@ class SettingsActivity : SimpleActivity() {
         setupShowRecycleBin()
         setupShowRecycleBinLast()
         setupEmptyRecycleBin()
+        setupPCloudAccount()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupExportFavorites()
@@ -161,6 +162,27 @@ class SettingsActivity : SimpleActivity() {
         } else if (requestCode == SELECT_EXPORT_SETTINGS_FILE && resultCode == Activity.RESULT_OK && resultData != null && resultData.data != null) {
             val outputStream = contentResolver.openOutputStream(resultData.data!!)
             exportConfigItemsTo(outputStream, mSettingsItemsToExport)
+        }
+    }
+
+    // logging in happens in PCloudAuthActivity, and setupSettingItems() runs again on the way
+    // back from it, so the value below refreshes itself without a result to listen for
+    private fun setupPCloudAccount() {
+        binding.settingsPcloudAccount.text = when {
+            !config.isPCloudLoggedIn -> getString(R.string.pcloud_not_logged_in)
+            // an account whose userinfo carried no email still has its host to show for itself
+            else -> config.pCloudAccountEmail.ifEmpty { config.pCloudApiHost }
+        }
+
+        binding.settingsPcloudAccountHolder.setOnClickListener {
+            if (config.isPCloudLoggedIn) {
+                ConfirmationDialog(this, getString(R.string.pcloud_log_out_confirmation)) {
+                    config.clearPCloudAccount()
+                    setupPCloudAccount()
+                }
+            } else {
+                startActivity(Intent(this, PCloudAuthActivity::class.java))
+            }
         }
     }
 

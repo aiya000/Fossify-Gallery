@@ -158,6 +158,32 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Catches the pCloud OAuth redirect. The host is ${applicationId}, so the debug build
+            listens on its own ".debug" URI and the two installs never steal each other's token.
+            Both spellings have to be registered with pCloud as redirect URIs.
+            singleTask keeps the redirect going to the instance that opened the browser
+        -->
+        <activity
+            android:name=".activities.PCloudAuthActivity"
+            android:configChanges="orientation"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:parentActivityName=".activities.SettingsActivity"
+            android:theme="@style/TranslucentTheme">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data
+                    android:host="${applicationId}"
+                    android:scheme="pcloud-oauth" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".activities.PhotoVideoActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"
