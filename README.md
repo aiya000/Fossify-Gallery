@@ -1,13 +1,15 @@
+> [!NOTE]
+> This is a personal fork of [FossifyOrg/Gallery](https://github.com/FossifyOrg/Gallery), built and
+> installed by hand. The store badges below lead to the official app, which does not contain the
+> changes listed under [Fork-specific features](#fork-specific-features).
+
+- - - - -
+
 # Fossify Gallery
 
 <img alt="Logo" src="graphics/icon.webp" width="120" />
 
 <a href='https://play.google.com/store/apps/details?id=org.fossify.gallery'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png' height=80/></a> <a href="https://f-droid.org/en/packages/org.fossify.gallery/"><img src="https://fdroid.gitlab.io/artwork/badge/get-it-on-en.svg" alt="Get it on F-Droid" height=80/></a> <a href="https://apt.izzysoft.de/fdroid/index/apk/org.fossify.gallery"><img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height=80/></a>
-
-> [!NOTE]
-> This is a personal fork of [FossifyOrg/Gallery](https://github.com/FossifyOrg/Gallery), built and
-> installed by hand. The store badges above lead to the official app, which does not contain the
-> changes listed under [Fork-specific features](#fork-specific-features).
 
 Unleash memories, not personal data. Fossify Gallery is the ultimate photo and video app that's as powerful as it is private. No ads, no unnecessary permissions – just a seamless experience tailored for you.
 
