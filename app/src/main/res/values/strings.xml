@@ -61,7 +61,7 @@
     <string name="pcloud_account">pCloud account</string>
     <string name="pcloud_not_logged_in">Not signed in</string>
     <string name="pcloud_log_in_failed">Could not sign in to pCloud</string>
-    <string name="pcloud_client_id_missing">This build has no pCloud client id</string>
+    <string name="pcloud_client_id_missing">pCloud is not enabled in this build: it was made without a pCloud client id. To use pCloud, build the app with a client id of your own, see \"How to enable pCloud\" in the README</string>
     <string name="pcloud_log_out_confirmation">Sign out of pCloud? Media stored there will stop showing up in the gallery.</string>
     <string name="pcloud_log_in_required">pCloud has signed you out, please sign in again</string>
     <string name="pcloud_rescan">Rescan pCloud</string>

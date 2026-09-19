@@ -12,6 +12,7 @@ import org.fossify.commons.dialogs.*
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
+import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivitySettingsBinding
 import org.fossify.gallery.dialogs.*
@@ -166,14 +167,22 @@ class SettingsActivity : SimpleActivity() {
     }
 
     // logging in happens in PCloudAuthActivity, and setupSettingItems() runs again on the way
-    // back from it, so the value below refreshes itself without a result to listen for
+    // back from it, so the value below refreshes itself without a result to listen for.
+    // A build made without a pCloud client id (see the README, "How to enable pCloud") cannot
+    // sign in, so its row says so and takes no tap; an account still signed in from an
+    // earlier build keeps working and can sign out
     private fun setupPCloudAccount() {
+        val isLoggedIn = config.isPCloudLoggedIn
+        val isEnabledInThisBuild = BuildConfig.PCLOUD_CLIENT_ID.isNotEmpty() || isLoggedIn
         binding.settingsPcloudAccount.text = when {
-            !config.isPCloudLoggedIn -> getString(R.string.pcloud_not_logged_in)
+            !isEnabledInThisBuild -> getString(R.string.pcloud_client_id_missing)
+            !isLoggedIn -> getString(R.string.pcloud_not_logged_in)
             // an account whose userinfo carried no email still has its host to show for itself
             else -> config.pCloudAccountEmail.ifEmpty { config.pCloudApiHost }
         }
 
+        binding.settingsPcloudAccountHolder.isEnabled = isEnabledInThisBuild
+        binding.settingsPcloudAccountHolder.alpha = if (isEnabledInThisBuild) 1f else 0.5f
         binding.settingsPcloudAccountHolder.setOnClickListener {
             if (config.isPCloudLoggedIn) {
                 ConfirmationDialog(this, getString(R.string.pcloud_log_out_confirmation)) {
