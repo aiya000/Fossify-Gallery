@@ -78,6 +78,7 @@
     <string name="pcloud_rescan_on_group_open">Rescan the pCloud folders of a group when opening it</string>
     <string name="pcloud_rescan_folder">Rescan this folder</string>
     <string name="pcloud_fetch_failed">Could not fetch the file from pCloud</string>
+    <string name="pcloud_fetching">Fetching from pCloud…</string>
     <string name="pcloud_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="pcloud_rescan_interval_always">Every time (no minimum interval)</string>
     <string name="pcloud_interval_minutes">%d minutes</string>
