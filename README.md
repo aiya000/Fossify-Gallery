@@ -93,6 +93,7 @@ Everything above describes the upstream app. This fork adds the following on top
 
 ### What pCloud looks like from the gallery
 
+- pCloud is only built in when a pCloud client id is set at build time. A build made without one has no pCloud side at all: local folders work as always, and the pCloud account row in the settings just says that pCloud is not enabled in this build. See [How to enable pCloud](#how-to-enable-pcloud) below
 - Once signed in (Settings → pCloud account), the storage switch in the folder list's menu shows the folders of this device, of pCloud, or both; dragging the folder list sideways switches it too, like turning a page: to the left brings pCloud, to the right this device, and the icon next to the search bar shows which one is on screen. pCloud folders are listed from a cache that is filled by "Rescan pCloud" and kept up to date by cheap diff syncs afterwards: when the app starts, when the storage is switched, when a folder is opened, after a write, each of them a switch in the settings with a minimum interval between them
 - Thumbnails, the fullscreen view and video playback stream from pCloud; the file behind a photo is fetched once and kept in a bounded cache on the device
 - Deleting, renaming and creating folders act on pCloud itself. A deleted file goes to the gallery's own recycle bin on pCloud (a hidden `.gallery-recycle-bin` folder in the root), shown next to the device's bin in the folder list, and can be restored from there to the folder it came from, or to another one, for 30 days. Deleting with "skip the recycle bin", or from the bin, sends the file to the trash on pcloud.com, which the app cannot read: pCloud does not open its trash to OAuth apps
@@ -100,15 +101,17 @@ Everything above describes the upstream app. This fork adds the following on top
 - The destination picker narrows its list to this device, pCloud or both with a row of chips, and its "Other folder" picker walks the storages the same way, pCloud included: any pCloud folder can be picked there, empty or not, and a new one created on the spot
 - Favorites, search, slideshows, widgets and virtual folder groups take pCloud media like local media. Sharing hands the file itself to the other app, fetched from pCloud first. Editing, rotating, wallpaper and the other tools that want a file on the device stay hidden for it
 
-### Building with pCloud
+### How to enable pCloud
 
-The pCloud side needs a client id of your own, which does not ship with this repository:
+pCloud is off unless the build carries a pCloud client id, and the id is yours to bring: whoever builds this fork registers a pCloud app of their own and puts its client id into the build. Neither this repository nor any APK carries one, which is also why no APK is published under GitHub Releases: an APK built here would carry its builder's id. To enable pCloud:
 
-1. Register an app under "My apps" at [docs.pcloud.com](https://docs.pcloud.com/) and add the redirect URIs `pcloud-oauth://io.github.aiya000.fossify.gallery` (release builds) and `pcloud-oauth://io.github.aiya000.fossify.gallery.debug` (debug builds)
+1. Register an app under "My apps" at [docs.pcloud.com](https://docs.pcloud.com/) and add the redirect URIs `pcloud-oauth://io.github.aiya000.fossify.gallery` (release builds) and `pcloud-oauth://io.github.aiya000.fossify.gallery.debug` (debug builds). If you change the application id, register the redirect URIs under your id instead
 2. Put the client id into `local.properties` next to the SDK path: `PCLOUD_CLIENT_ID=your_client_id`
 3. Build as usual. The id is compiled into `BuildConfig` and never committed, `local.properties` is ignored by git
 
-No client secret is involved: the app signs in with the implicit grant, so the token comes straight back to it from the browser. A build without a client id still works for local folders and says so when the pCloud sign-in is tried.
+No client secret is involved: the app signs in with the implicit grant, so the token comes straight back to it from the browser.
+
+A build made without the id is the plain gallery. Local folders work as always, the pCloud account row in the settings is greyed out and says that pCloud is not enabled in this build, and nothing pCloud-related shows up anywhere else.
 
 ### Builds
 
