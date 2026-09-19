@@ -210,6 +210,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mZoomListener: MyRecyclerView.MyZoomListener? = null
     private var mLastMediaFetcher: MediaFetcher? = null
     private var mDirs = ArrayList<Directory>()
+
+    // the full folder list the search filters, kept up to date by every setupAdapter() call
+    // that hands the full list over, so a search sees a folder as the cache has it now
     private var mDirsIgnoringSearch = ArrayList<Directory>()
 
     private var mStoredAnimateGifs = true
@@ -372,6 +375,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (!binding.mainMenu.isSearchOpen) {
             refreshMenuItems()
             tryLoadGallery()
+        } else {
+            // the folders may have changed while this screen was away (a transfer ended, a
+            // folder was written to); the search keeps its query and filters the fresh list
+            getDirectories()
         }
 
         if (config.searchAllFilesByDefault) {
@@ -1629,6 +1636,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         forceRecreate: Boolean = false
     ) {
         val currAdapter = binding.directoriesGrid.adapter
+        // every caller but the search itself hands the full list over; remember it for the
+        // search, whether the adapter is being created or updated
+        if (dirs !== mDirsIgnoringSearch) {
+            mDirsIgnoringSearch = dirs
+        }
+
         // the folders found while rechecking come from every storage, the filter decides what is displayed
         val distinctDirs = dirs
             .filter { isShownByStorageFilter(it) }
@@ -1648,7 +1661,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         if (currAdapter == null || forceRecreate) {
-            mDirsIgnoringSearch = dirs
             initZoomListener()
             DirectoryAdapter(
                 this,
