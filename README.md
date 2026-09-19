@@ -106,7 +106,7 @@ Everything above describes the upstream app. This fork adds the following on top
 pCloud is off unless the build carries a pCloud client id, and the id is yours to bring: whoever builds this fork registers a pCloud app of their own and puts its client id into the build. Neither this repository nor any APK carries one, which is also why no APK is published under GitHub Releases: an APK built here would carry its builder's id. To enable pCloud:
 
 1. Register an app under "My apps" at [docs.pcloud.com](https://docs.pcloud.com/) and add the redirect URIs `pcloud-oauth://io.github.aiya000.fossify.gallery` (release builds) and `pcloud-oauth://io.github.aiya000.fossify.gallery.debug` (debug builds). If you change the application id, register the redirect URIs under your id instead
-2. Put the client id into `local.properties` next to the SDK path: `PCLOUD_CLIENT_ID=your_client_id`
+2. Put the client id into `local.properties` in the repository root, next to `gradlew` — the same file Android Studio keeps the SDK path in — as `PCLOUD_CLIENT_ID=your_client_id`. Copy [local.properties.example](local.properties.example) if you do not have the file yet
 3. Build as usual. The id is compiled into `BuildConfig` and never committed, `local.properties` is ignored by git
 
 No client secret is involved: the app signs in with the implicit grant, so the token comes straight back to it from the browser.

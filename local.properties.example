@@ -1,0 +1,12 @@
+# Copy this file to `local.properties` in the repository root (next to `gradlew`).
+# `local.properties` is listed in `.gitignore`, so nothing you put there is ever committed.
+
+# Path to your Android SDK.
+# Android Studio writes this line itself the first time it opens the project,
+# so an existing `local.properties` usually has it already.
+sdk.dir=/path/to/Android/Sdk
+
+# Client id of the pCloud app you registered, which switches the pCloud side on.
+# Leave it empty, or leave the line out, to build the plain gallery without pCloud.
+# See "How to enable pCloud" in README.md for how to register the app.
+PCLOUD_CLIENT_ID=
