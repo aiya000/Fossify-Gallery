@@ -649,7 +649,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // a temporary pCloud folder only comes off the list, it is never deleted: the app does
+    // not delete a folder on pCloud on its own, and the one the user just made stays where
+    // it was put, empty or not
     private fun removeTempFolder() {
+        if (config.tempFolderPath.isPCloudPath()) {
+            config.tempFolderPath = ""
+            return
+        }
+
         if (config.tempFolderPath.isNotEmpty()) {
             val newFolder = File(config.tempFolderPath)
             if (getDoesFilePathExist(newFolder.absolutePath) && newFolder.isDirectory) {
@@ -1260,7 +1268,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun createNewFolder() {
         if (config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD) {
             PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
-                writeToPCloud(listOf(PCLOUD_PATH_SCHEME), { createFolder(PCLOUD_PATH_SCHEME, name) })
+                // the new folder is empty and has no Directory row, so it is shown the way a
+                // new local folder is: as the temporary tile at the top, until something is
+                // moved into it or the app is left
+                var newPath = ""
+                writeToPCloud(listOf(PCLOUD_PATH_SCHEME), { newPath = createFolder(PCLOUD_PATH_SCHEME, name) }) { success ->
+                    if (success) {
+                        config.tempFolderPath = newPath
+                        ensureBackgroundThread {
+                            gotDirectories(addTempFolderIfNeeded(getCurrentlyDisplayedDirs()))
+                        }
+                    }
+                }
             }
             return
         }

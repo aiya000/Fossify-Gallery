@@ -663,29 +663,36 @@ fun Context.loadImage(
     }
 }
 
+// The temporary tile for a folder that was just created and is still empty. A folder that
+// has grown a row of its own since is not doubled, and a pCloud folder stays off the list
+// while the storage filter shows the device only
 fun Context.addTempFolderIfNeeded(dirs: ArrayList<Directory>): ArrayList<Directory> {
     val tempFolderPath = config.tempFolderPath
-    return if (tempFolderPath.isNotEmpty()) {
-        val directories = ArrayList<Directory>()
-        val newFolder = Directory(
-            id = null,
-            path = tempFolderPath,
-            tmb = "",
-            name = tempFolderPath.getFilenameFromPath(),
-            mediaCnt = 0,
-            modified = 0,
-            taken = 0,
-            size = 0L,
-            location = getPathLocation(tempFolderPath),
-            types = 0,
-            sortValue = ""
-        )
-        directories.add(newFolder)
-        directories.addAll(dirs)
-        directories
-    } else {
-        dirs
+    if (tempFolderPath.isEmpty() || dirs.any { it.path == tempFolderPath }) {
+        return dirs
     }
+
+    val newFolder = Directory(
+        id = null,
+        path = tempFolderPath,
+        tmb = "",
+        name = tempFolderPath.getFilenameFromPath(),
+        mediaCnt = 0,
+        modified = 0,
+        taken = 0,
+        size = 0L,
+        location = getPathLocation(tempFolderPath),
+        types = 0,
+        sortValue = ""
+    )
+    if (!isShownByStorageFilter(newFolder)) {
+        return dirs
+    }
+
+    val directories = ArrayList<Directory>()
+    directories.add(newFolder)
+    directories.addAll(dirs)
+    return directories
 }
 
 fun Context.getPathLocation(path: String): Int {

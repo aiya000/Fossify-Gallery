@@ -866,12 +866,17 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
-    // Inside the folder on screen. The new folder is empty, so it has no row in the cache and
-    // the folder list will not show it until something is in it, the same as a new local
-    // folder once its temporary entry is gone
+    // Inside the folder on screen. The new folder is empty and has no row in the cache, so
+    // it is shown the way a new local folder is: as the temporary tile at the top of the
+    // folder list, until something is moved into it or the app is left
     private fun createNewPCloudFolder() {
         PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
-            writeToPCloud(listOf(mPath), { createFolder(mPath, name) })
+            var newPath = ""
+            writeToPCloud(listOf(mPath), { newPath = createFolder(mPath, name) }) { success ->
+                if (success) {
+                    config.tempFolderPath = newPath
+                }
+            }
         }
     }
 
