@@ -327,7 +327,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
                 findItem(R.id.menu_properties).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
                 findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
-                findItem(R.id.menu_share).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
+                findItem(R.id.menu_share).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
                 findItem(R.id.menu_edit).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
                 findItem(R.id.menu_rename).isVisible = visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
                 findItem(R.id.menu_rotate).isVisible = isLocal && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
@@ -1058,6 +1058,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
         // the same gating as refreshMenuItems(): no file, no file operations
         val isLocal = currentMedium?.path?.isPCloudPath() != true
+        val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
@@ -1070,7 +1071,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             openEditor(getCurrentPath())
         }
 
-        binding.bottomActions.bottomShare.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
+        binding.bottomActions.bottomShare.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
         binding.bottomActions.bottomShare.setOnLongClickListener { toast(org.fossify.commons.R.string.share); true }
         binding.bottomActions.bottomShare.setOnClickListener {
             shareMediumPath(getCurrentPath())
@@ -1145,7 +1146,6 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             setAs(getCurrentPath())
         }
 
-        val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         binding.bottomActions.bottomCopy.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
         binding.bottomActions.bottomCopy.setOnLongClickListener { toast(org.fossify.commons.R.string.copy); true }
         binding.bottomActions.bottomCopy.setOnClickListener {

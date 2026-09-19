@@ -96,7 +96,7 @@ Everything above describes the upstream app. This fork adds the following on top
 - Deleting, renaming and creating folders act on pCloud itself. A deleted file goes to the gallery's own recycle bin on pCloud (a hidden `.gallery-recycle-bin` folder in the root), shown next to the device's bin in the folder list, and can be restored from there to the folder it came from, or to another one, for 30 days. Deleting with "skip the recycle bin", or from the bin, sends the file to the trash on pcloud.com, which the app cannot read: pCloud does not open its trash to OAuth apps
 - Copying and moving cross the line in both directions: device to pCloud, pCloud to device, or within pCloud. Long transfers run as a foreground service with a progress notification, which is what `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `POST_NOTIFICATIONS` are declared for
 - The destination picker narrows its list to this device, pCloud or both with a row of chips, and its "Other folder" picker walks the storages the same way, pCloud included: any pCloud folder can be picked there, empty or not, and a new one created on the spot
-- Favorites, search, slideshows, widgets and virtual folder groups take pCloud media like local media. Editing, rotating, wallpaper and the other tools that want a file on the device stay hidden for it
+- Favorites, search, slideshows, widgets and virtual folder groups take pCloud media like local media. Sharing hands the file itself to the other app, fetched from pCloud first. Editing, rotating, wallpaper and the other tools that want a file on the device stay hidden for it
 
 ### Building with pCloud
 
