@@ -440,6 +440,12 @@ fun BaseSimpleActivity.startPCloudTransfer(fileDirItems: ArrayList<FileDirItem>,
 
     val enqueue = {
         handleNotificationPermission {
+            // a transfer into the temporary folder tile turns it into a real folder, the way
+            // a local copy or move drops the tile; the service rebuilds the folder's row
+            if (destination == config.tempFolderPath) {
+                config.tempFolderPath = ""
+            }
+
             PCloudTransferService.enqueue(this, PCloudTransferService.Job(kind, paths, destination, isCopyOperation))
             toast(R.string.pcloud_transfer_started)
         }
