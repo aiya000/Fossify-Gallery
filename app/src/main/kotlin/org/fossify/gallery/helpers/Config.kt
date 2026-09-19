@@ -555,6 +555,45 @@ class Config(context: Context) : BaseConfig(context) {
         storeFolderGroupMembers(members)
     }
 
+    // pCloud folders hidden in this app, by pseudo path. A local folder is hidden by a .nomedia
+    // file in it; pCloud has no such file to honour, and writing one there would be every
+    // other client's business too, so the choice lives here and goes out with the settings
+    // export. A hidden folder hides everything under it, the way a .nomedia does:
+    // getNoMediaFoldersSync() lists these among the .nomedia folders
+    var pCloudHiddenFolders: MutableSet<String>
+        get() = prefs.getStringSet(PCLOUD_HIDDEN_FOLDERS, HashSet())!!
+        set(pCloudHiddenFolders) = prefs.edit().remove(PCLOUD_HIDDEN_FOLDERS).putStringSet(PCLOUD_HIDDEN_FOLDERS, pCloudHiddenFolders).apply()
+
+    fun addPCloudHiddenFolders(paths: Collection<String>) {
+        val folders = HashSet<String>(pCloudHiddenFolders)
+        folders.addAll(paths)
+        pCloudHiddenFolders = folders.filter { it.isNotEmpty() }.toHashSet()
+    }
+
+    fun removePCloudHiddenFolders(paths: Collection<String>) {
+        val folders = HashSet<String>(pCloudHiddenFolders)
+        folders.removeAll(paths.toSet())
+        pCloudHiddenFolders = folders
+    }
+
+    // after a pCloud folder was renamed: the entries for it and for the folders under it follow
+    fun updatePCloudHiddenFolderPaths(oldPath: String, newPath: String) {
+        val folders = pCloudHiddenFolders
+        val moved = folders.filter { it == oldPath || it.startsWith("$oldPath/") }
+        if (moved.isEmpty()) {
+            return
+        }
+
+        val updated = HashSet<String>(folders)
+        updated.removeAll(moved.toSet())
+        moved.mapTo(updated) { newPath + it.substring(oldPath.length) }
+        pCloudHiddenFolders = updated
+    }
+
+    var wasPCloudHideFolderTooltipShown: Boolean
+        get() = prefs.getBoolean(WAS_PCLOUD_HIDE_FOLDER_TOOLTIP_SHOWN, false)
+        set(wasPCloudHideFolderTooltipShown) = prefs.edit().putBoolean(WAS_PCLOUD_HIDE_FOLDER_TOOLTIP_SHOWN, wasPCloudHideFolderTooltipShown).apply()
+
     var hideSystemUI: Boolean
         get() = prefs.getBoolean(HIDE_SYSTEM_UI, false)
         set(hideSystemUI) = prefs.edit().putBoolean(HIDE_SYSTEM_UI, hideSystemUI).apply()

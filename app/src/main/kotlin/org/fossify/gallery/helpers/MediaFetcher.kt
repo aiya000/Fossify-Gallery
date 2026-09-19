@@ -618,11 +618,13 @@ class MediaFetcher(val context: Context) {
     }
 
     // the cached pCloud folders, for "show all" when the storage filter lets pCloud through.
-    // They join the local folders and are read from the cache like any other pCloud folder
+    // They join the local folders and are read from the cache like any other pCloud folder;
+    // a folder hidden in this app stays out like a .nomedia one does, unless hidden ones are shown
     fun getPCloudFoldersToShow(): List<String> {
         val config = context.config
         return if (config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL) {
-            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME)
+            val showHidden = config.shouldShowHidden
+            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { showHidden || !context.isPCloudFolderHidden(it) }
         } else {
             emptyList()
         }
