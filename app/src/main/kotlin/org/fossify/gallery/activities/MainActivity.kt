@@ -8,8 +8,12 @@ import android.os.Handler
 import android.provider.MediaStore
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
-import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
+import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
+import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import android.widget.Toast
@@ -21,6 +25,7 @@ import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.appLaunched
 import org.fossify.commons.extensions.appLockManager
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
@@ -177,10 +182,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
 
-        // a fling across the folder list has to be this fast to count as a storage switch
-        private const val STORAGE_SWIPE_MIN_VELOCITY_DP_PER_SECOND = 600
-        private const val STORAGE_SWIPE_SLIDE_FRACTION = 6f
-        private const val STORAGE_SWIPE_SLIDE_MILLIS = 220L
+        // a sideways drag of the folder list goes through past this share of the width
+        private const val STORAGE_SWIPE_COMMIT_FRACTION = 3f
+        private const val STORAGE_SWIPE_OUT_MILLIS = 150L
+        private const val STORAGE_SWIPE_IN_MILLIS = 220L
     }
 
     private var mIsPickImageIntent = false
@@ -272,7 +277,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         )
 
         binding.directoriesRefreshLayout.setOnRefreshListener { refreshDirectories() }
-        setupStorageSwipe()
+        binding.directoriesGrid.addOnItemTouchListener(StorageSwipe())
         storeStateVariables()
         checkWhatsNewDialog()
         setupLatestMediaId()
@@ -543,9 +548,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     config.useRecycleBin && !config.showRecycleBinAtFolders
                 findItem(R.id.more_apps_from_us).isVisible =
                     !resources.getBoolean(org.fossify.commons.R.bool.hide_google_relations)
-                findItem(R.id.storage_filter).isVisible = config.isPCloudLoggedIn
+                // the item doubles as the sign of which storage is on screen
+                findItem(R.id.storage_filter).apply {
+                    isVisible = config.isPCloudLoggedIn
+                    setIcon(storageIconRes(config.storageFilter))
+                }
                 findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
             }
+
+            // a freshly set icon has no tint yet
+            updateMenuColors()
         }
 
         binding.mainMenu.requireToolbar().menu.apply {
@@ -780,6 +792,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         config.storageFilter = newFilter
+        refreshMenuItems()
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
         // refreshes the list a second time once it is through
@@ -790,64 +803,174 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    // A fling across the folder list switches the storage without the menu: to the right
-    // brings pCloud, to the left this device; "both" stays a menu choice. The list keeps
-    // handling the touch itself, the detector only watches it, so a vertical scroll or a
-    // tap is unaffected. Nothing happens while the list scrolls horizontally (the fling is
-    // the scroll then), while folders are selected (a drag reorder or a drag selection
-    // ends with a quick move too) or without a pCloud account
-    private fun setupStorageSwipe() {
-        val minDistance = resources.getDimension(R.dimen.storage_swipe_min_distance)
-        val minVelocity = resources.displayMetrics.density * STORAGE_SWIPE_MIN_VELOCITY_DP_PER_SECOND
-        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                val start = e1 ?: return false
-                val dx = e2.x - start.x
-                val dy = e2.y - start.y
-                if (abs(dx) < minDistance || abs(dx) < abs(dy) * 2 || abs(velocityX) < minVelocity) {
-                    return false
-                }
-
-                return switchStorageBySwipe(toTheRight = dx > 0)
-            }
-        })
-
-        binding.directoriesGrid.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                if (canSwipeStorage()) {
-                    detector.onTouchEvent(e)
-                }
-
-                return false
-            }
-        })
+    private fun storageIconRes(storageFilter: Int) = when (storageFilter) {
+        STORAGE_FILTER_PCLOUD -> R.drawable.ic_cloud_vector
+        STORAGE_FILTER_ALL -> R.drawable.ic_devices_vector
+        else -> R.drawable.ic_smartphone_vector
     }
 
-    private fun canSwipeStorage(): Boolean {
-        return config.isPCloudLoggedIn
-            && !config.scrollHorizontally
-            && !binding.directoriesRefreshLayout.isRefreshing
-            && getRecyclerAdapter()?.isSelecting() != true
-    }
+    // Turns the folder list like a page. Dragged sideways it follows the finger and uncovers
+    // a strip naming the storage it is heading for: to the left pCloud, to the right this
+    // device, the order of the storage menu. Let go past a third of the width, or with a
+    // fling that way, it goes there; short of that it slides back. Every other touch stays
+    // with the list: this takes over only once a drag is clearly sideways and the list is
+    // not scrolling, and never while the list scrolls horizontally (a sideways drag is the
+    // scroll then), while folders are selected (a drag reorder or a drag selection ends
+    // with a sideways move too), while the refresh spinner is up, without a pCloud account,
+    // or on the side where nothing lies in that direction
+    private inner class StorageSwipe : RecyclerView.OnItemTouchListener {
+        private val touchSlop = ViewConfiguration.get(this@MainActivity).scaledTouchSlop
+        private val minFlingVelocity = ViewConfiguration.get(this@MainActivity).scaledMinimumFlingVelocity * 4
+        private var startX = 0f
+        private var startY = 0f
+        private var dragging = false
+        private var animating = false
+        private var target = 0
+        private var velocityTracker: VelocityTracker? = null
 
-    private fun switchStorageBySwipe(toTheRight: Boolean): Boolean {
-        val newFilter = if (toTheRight) STORAGE_FILTER_PCLOUD else STORAGE_FILTER_LOCAL
-        if (newFilter == config.storageFilter) {
+        override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = e.x
+                    startY = e.y
+                    dragging = false
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain().apply { addMovement(e) }
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(e)
+                    if (dragging || rv.scrollState != RecyclerView.SCROLL_STATE_IDLE || !canSwipeStorage()) {
+                        return false
+                    }
+
+                    val dx = e.x - startX
+                    val dy = e.y - startY
+                    if (abs(dx) > touchSlop && abs(dx) > abs(dy) * 1.5f) {
+                        target = targetFor(dx)
+                        if (target != 0) {
+                            dragging = true
+                            // the list starts moving from here, not a slop behind the finger
+                            startX = e.x
+                            rv.parent.requestDisallowInterceptTouchEvent(true)
+                            showHint(target, uncoveredOnTheRight = dx < 0)
+                            return true
+                        }
+                    }
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> recycleTracker()
+            }
+
             return false
         }
 
-        switchStorage(newFilter)
-        toast(if (toTheRight) R.string.pcloud else R.string.storage_local)
+        override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+            velocityTracker?.addMovement(e)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_MOVE -> follow(e.x - startX)
 
-        // the new list slides in from the side the finger went to
-        binding.directoriesGrid.apply {
-            animate().cancel()
-            translationX = (if (toTheRight) -width else width) / STORAGE_SWIPE_SLIDE_FRACTION
-            alpha = 0.3f
-            animate().translationX(0f).alpha(1f).setDuration(STORAGE_SWIPE_SLIDE_MILLIS).start()
+                MotionEvent.ACTION_UP -> {
+                    val dx = e.x - startX
+                    velocityTracker?.computeCurrentVelocity(1000)
+                    val velocityX = velocityTracker?.xVelocity ?: 0f
+                    recycleTracker()
+                    dragging = false
+
+                    val towardsTarget = if (target == STORAGE_FILTER_PCLOUD) dx < 0 else dx > 0
+                    val farEnough = abs(dx) >= rv.width / STORAGE_SWIPE_COMMIT_FRACTION
+                    val flungThatWay = abs(velocityX) >= minFlingVelocity && (if (target == STORAGE_FILTER_PCLOUD) velocityX < 0 else velocityX > 0)
+                    if (towardsTarget && (farEnough || flungThatWay)) {
+                        commit(target)
+                    } else {
+                        springBack()
+                    }
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    recycleTracker()
+                    dragging = false
+                    springBack()
+                }
+            }
         }
 
-        return true
+        override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+
+        private fun canSwipeStorage(): Boolean {
+            return config.isPCloudLoggedIn
+                && !animating
+                && !config.scrollHorizontally
+                && !binding.directoriesRefreshLayout.isRefreshing
+                && getRecyclerAdapter()?.isSelecting() != true
+        }
+
+        // the storage a drag in this direction leads to, 0 when the list is there already
+        private fun targetFor(dx: Float): Int {
+            val storage = if (dx < 0) STORAGE_FILTER_PCLOUD else STORAGE_FILTER_LOCAL
+            return if (storage == config.storageFilter) 0 else storage
+        }
+
+        private fun recycleTracker() {
+            velocityTracker?.recycle()
+            velocityTracker = null
+        }
+
+        private fun showHint(storage: Int, uncoveredOnTheRight: Boolean) {
+            val textColor = getProperTextColor()
+            binding.directoriesStorageHintIcon.setImageResource(storageIconRes(storage))
+            binding.directoriesStorageHintIcon.applyColorFilter(textColor)
+            binding.directoriesStorageHintLabel.text = getString(if (storage == STORAGE_FILTER_PCLOUD) R.string.pcloud else R.string.storage_local)
+            binding.directoriesStorageHintLabel.setTextColor(textColor)
+            (binding.directoriesStorageHintContent.layoutParams as FrameLayout.LayoutParams).gravity =
+                (if (uncoveredOnTheRight) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
+            binding.directoriesStorageHintContent.requestLayout()
+            binding.directoriesStorageHint.alpha = 0f
+            binding.directoriesStorageHint.beVisible()
+        }
+
+        // the list follows the finger towards the target only; the hint fades in with the distance
+        private fun follow(dx: Float) {
+            val clamped = if (target == STORAGE_FILTER_PCLOUD) minOf(dx, 0f) else maxOf(dx, 0f)
+            binding.directoriesRefreshLayout.translationX = clamped
+            val commitDistance = binding.directoriesRefreshLayout.width / STORAGE_SWIPE_COMMIT_FRACTION
+            binding.directoriesStorageHint.alpha = minOf(1f, abs(clamped) / commitDistance)
+        }
+
+        // the list leaves on the side it was dragged to, the other storage's list comes in from the opposite one
+        private fun commit(storage: Int) {
+            val list = binding.directoriesRefreshLayout
+            val width = list.width.toFloat()
+            val outX = if (storage == STORAGE_FILTER_PCLOUD) -width else width
+            animating = true
+            list.animate()
+                .translationX(outX)
+                .setDuration(STORAGE_SWIPE_OUT_MILLIS)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    binding.directoriesStorageHint.beGone()
+                    switchStorage(storage)
+                    list.translationX = -outX
+                    list.animate()
+                        .translationX(0f)
+                        .setDuration(STORAGE_SWIPE_IN_MILLIS)
+                        .setInterpolator(DecelerateInterpolator())
+                        .withEndAction { animating = false }
+                        .start()
+                }
+                .start()
+        }
+
+        private fun springBack() {
+            animating = true
+            binding.directoriesStorageHint.animate().alpha(0f).setDuration(STORAGE_SWIPE_OUT_MILLIS).withEndAction { binding.directoriesStorageHint.beGone() }.start()
+            binding.directoriesRefreshLayout.animate()
+                .translationX(0f)
+                .setDuration(STORAGE_SWIPE_OUT_MILLIS)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction { animating = false }
+                .start()
+        }
     }
 
     private fun reloadDirectories() {
