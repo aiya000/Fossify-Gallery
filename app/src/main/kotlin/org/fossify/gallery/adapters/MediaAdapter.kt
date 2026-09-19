@@ -246,7 +246,8 @@ class MediaAdapter(
                 selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
             findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
             findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly
-            findItem(R.id.cab_share).isVisible = isLocal
+            // a pCloud medium is shared as a file too, fetched first; one in the bin is not
+            findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
             findItem(R.id.cab_rotate).isVisible = isLocal
             findItem(R.id.cab_properties).isVisible = isLocal
             // a medium in the pCloud bin is restored or deleted for good, nothing else: copying

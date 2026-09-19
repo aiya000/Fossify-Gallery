@@ -77,6 +77,7 @@
     <string name="pcloud_rescan_on_group_open">グループを開いたときに中の pCloud フォルダを再スキャン</string>
     <string name="pcloud_rescan_folder">このフォルダを再スキャン</string>
     <string name="pcloud_fetch_failed">pCloud からファイルを取得できませんでした</string>
+    <string name="pcloud_fetching">pCloud から取得しています…</string>
     <string name="pcloud_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="pcloud_rescan_interval_always">毎回（間隔を空けない）</string>
     <string name="pcloud_interval_minutes">%d 分</string>
