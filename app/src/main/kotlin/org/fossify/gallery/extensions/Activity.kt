@@ -19,6 +19,7 @@ import android.provider.MediaStore.Images
 import android.provider.Settings
 import android.system.Os
 import android.util.DisplayMetrics
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
 import com.bumptech.glide.Glide
@@ -117,7 +118,10 @@ private fun Activity.sharePCloudMedia(paths: ArrayList<String>) {
                 localPaths.add(link.absolutePath)
             }
         } catch (e: Exception) {
-            toast(R.string.pcloud_fetch_failed)
+            // the reason goes to the log and onto the toast, a bare "could not fetch" left
+            // nothing to go on when it happened once on the device
+            Log.w("PCloudShare", "Could not share ${paths.size} pCloud media", e)
+            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 

@@ -4,6 +4,7 @@ import android.graphics.Point
 import android.provider.MediaStore
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
+import android.util.Log
 import android.view.MotionEvent
 import androidx.exifinterface.media.ExifInterface
 import androidx.fragment.app.Fragment
@@ -124,7 +125,8 @@ abstract class ViewPagerFragment : Fragment() {
             val file = try {
                 PCloudFileCache(context).fetch(medium.path)
             } catch (e: Exception) {
-                context.toast(R.string.pcloud_fetch_failed)
+                Log.w("PCloudShare", "Could not fetch ${medium.path} for the viewer", e)
+                context.toast("${context.getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
                 null
             } ?: return@ensureBackgroundThread
 
