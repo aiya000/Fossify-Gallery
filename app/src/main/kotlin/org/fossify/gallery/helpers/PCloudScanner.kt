@@ -262,6 +262,23 @@ class PCloudScanner(private val context: Context) {
         return Result(directories.size, media.size)
     }
 
+    // The folders directly inside a pCloud folder, as pseudo paths sorted by name, for a picker
+    // walking the tree rather than the cache: a folder with no media in it has no Directory
+    // row, yet is a fine destination. Every folder named gets a pcloud_items row on the way,
+    // so that a write into a folder picked here finds its id; a row already there is kept.
+    // Blocks and throws like scanFolder() does
+    fun listFolders(path: String): List<String> {
+        val folder = fetchFolder(path)
+        val subfolders = folder.children
+            .filter { it.isFolder }
+            .sortedBy { it.name.lowercase() }
+            .map { PCloudItem(null, "$path/${it.name}", it.itemId, true, 0L, false, 0L) }
+
+        val rows = if (path == PCLOUD_PATH_SCHEME) subfolders else subfolders + PCloudItem(null, path, folder.itemId, true, 0L, false, 0L)
+        context.pCloudItemsDB.insertIfMissing(rows)
+        return subfolders.map { it.path }
+    }
+
     // pCloud refuses a recursive listing of the root with 1101 "Invalid request" (seen on a real
     // account, not documented), while a folder below it lists fine that way. So the root is
     // listed flat and each folder in it is fetched as a tree of its own

@@ -95,6 +95,7 @@ Everything above describes the upstream app. This fork adds the following on top
 - Thumbnails, the fullscreen view and video playback stream from pCloud; the file behind a photo is fetched once and kept in a bounded cache on the device
 - Deleting, renaming and creating folders act on pCloud itself. A deleted file goes to the trash on pcloud.com, not to the device's recycle bin
 - Copying and moving cross the line in both directions: device to pCloud, pCloud to device, or within pCloud. Long transfers run as a foreground service with a progress notification, which is what `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `POST_NOTIFICATIONS` are declared for
+- The destination picker narrows its list to this device, pCloud or both with a row of chips, and its "Other folder" picker walks the storages the same way, pCloud included: any pCloud folder can be picked there, empty or not, and a new one created on the spot
 - Favorites, search, slideshows, widgets and virtual folder groups take pCloud media like local media. Editing, rotating, wallpaper and the other tools that want a file on the device stay hidden for it
 
 ### Building with pCloud
