@@ -1168,7 +1168,9 @@ class SettingsActivity : SimpleActivity() {
                 put(USE_24_HOUR_FORMAT, config.use24HourFormat)
                 put(INCLUDED_FOLDERS, TextUtils.join(",", config.includedFolders))
                 put(EXCLUDED_FOLDERS, TextUtils.join(",", config.excludedFolders))
-                put(PCLOUD_HIDDEN_FOLDERS, TextUtils.join(",", config.pCloudHiddenFolders))
+                // a pCloud folder name may hold a comma, which would split it on import, so this
+                // list goes out as a JSON array rather than comma-joined like the two above
+                put(PCLOUD_HIDDEN_FOLDERS, Gson().toJson(config.pCloudHiddenFolders.sorted()))
                 put(SHOW_HIDDEN_MEDIA, config.showHiddenMedia)
                 put(FILE_LOADING_PRIORITY, config.fileLoadingPriority)
                 put(AUTOPLAY_VIDEOS, config.autoplayVideos)
@@ -1321,6 +1323,18 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
+    // the hidden pCloud folders are written as a JSON array, an export from before that was
+    // comma-joined and is still read that way; a folder name with a comma in it came out of the
+    // old form as two broken entries
+    private fun parseExportedPCloudHiddenFolders(value: String): Collection<String> {
+        if (!value.trimStart().startsWith("[")) {
+            return value.toStringSet()
+        }
+
+        val listType = object : TypeToken<List<String>>() {}.type
+        return Gson().fromJson<List<String>>(value, listType) ?: emptyList()
+    }
+
     private fun parseFile(inputStream: InputStream?) {
         if (inputStream == null) {
             toast(org.fossify.commons.R.string.unknown_error_occurred)
@@ -1365,7 +1379,7 @@ class SettingsActivity : SimpleActivity() {
                 USE_24_HOUR_FORMAT -> config.use24HourFormat = value.toBoolean()
                 INCLUDED_FOLDERS -> config.addIncludedFolders(value.toStringSet())
                 EXCLUDED_FOLDERS -> config.addExcludedFolders(value.toStringSet())
-                PCLOUD_HIDDEN_FOLDERS -> config.addPCloudHiddenFolders(value.toStringSet())
+                PCLOUD_HIDDEN_FOLDERS -> config.addPCloudHiddenFolders(parseExportedPCloudHiddenFolders(value.toString()))
                 SHOW_HIDDEN_MEDIA -> config.showHiddenMedia = value.toBoolean()
                 FILE_LOADING_PRIORITY -> config.fileLoadingPriority = value.toInt()
                 AUTOPLAY_VIDEOS -> config.autoplayVideos = value.toBoolean()
