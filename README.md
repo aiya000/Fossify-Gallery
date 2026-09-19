@@ -62,7 +62,7 @@ Everything above describes the upstream app. This fork adds the following on top
 
 - "Grouped by file name, then date taken", and the same for "last modified", keep the files of one batch together: everything whose name is alike up to its first separator (`-` `_` `.` `+`) is one group, ordered by file name and dated by its first file, so the seconds between the files can never tear a batch apart
 - "Use for this folder only" sits at the top of the sorting dialog rather than under the list of sortings, which has grown long enough to need scrolling
-- "Export sorting" and "Import sorting" in the settings write and read every sorting there is, the per folder ones and both drag orders included, which the settings export left out
+- "Export sorting" and "Import sorting" in the settings write and read every sorting there is, the per folder ones, both drag orders and the per storage folder list sortings included, which the settings export left out. The export also records which storages have a sorting of their own, so a storage switched back to the shared sorting before the export is switched back after the import as well
 - The settings export carries the sorting as well unless the switch next to it is turned off, and a file written without it is named `…_excluding_orders`
 - A settings export can be fed into "Import sorting" too: only its sorting lines are taken, so the colours and the rest are left alone
 

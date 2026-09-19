@@ -166,6 +166,8 @@ const val PCLOUD_CATEGORY_VIDEO = 2
 const val STORAGE_FILTER = "storage_filter"
 // the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
 const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
+// in a sorting export only: which storages carry a sorting of their own, see Config.getSortingPreferences()
+const val SORT_FOLDERS_OWN_STORAGES = "sort_folders_own_storages"
 
 // when the pCloud cache is refreshed from the network, see PCloudSyncPolicy. Only launch and
 // storage switch are wired up so far, the other events land with the screens that raise them
