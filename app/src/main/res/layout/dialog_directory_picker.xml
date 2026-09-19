@@ -17,6 +17,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
+        <!-- narrows the list to one storage while picking a copy or move destination with pCloud signed in -->
+        <org.fossify.gallery.views.StorageChips
+            android:id="@+id/directories_storages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_below="@+id/folder_search_view"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/small_margin"
+            android:paddingEnd="@dimen/small_margin"
+            android:paddingBottom="@dimen/small_margin"
+            android:visibility="gone" />
+
         <!-- shown while picking a destination that can be a virtual group, replaces the "Other folder" dialog button -->
         <LinearLayout
             android:id="@+id/directories_group_actions"
@@ -60,7 +72,7 @@
             android:id="@+id/directories_empty_placeholder"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_below="@+id/folder_search_view"
+            android:layout_below="@+id/directories_storages"
             android:alpha="0.8"
             android:gravity="center_horizontal"
             android:paddingStart="@dimen/activity_margin"

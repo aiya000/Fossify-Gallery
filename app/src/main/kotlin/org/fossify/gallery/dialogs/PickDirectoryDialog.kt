@@ -44,7 +44,13 @@ import org.fossify.gallery.extensions.getDirsToShow
 import org.fossify.gallery.extensions.getDistinctPath
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getSortedDirectories
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
+import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
+import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.models.Directory
+import org.fossify.gallery.views.StorageChips
 
 /**
  * Lets the user pick a folder. Virtual folder groups are shown as soon as [navigateGroups] is set or
@@ -84,6 +90,12 @@ class PickDirectoryDialog(
     private val isPickingGroup = groupCallback != null
     private val showGroups = isPickingGroup || navigateGroups
 
+    // A copy or move destination can be on either storage, so the list starts out showing
+    // the storage the folder list is on and can be switched from a row of chips; the
+    // choice lives for this dialog only. Without the chips every folder passes
+    private val showStorageChips = isPickingCopyMoveDestination && config.isPCloudLoggedIn
+    private var storageFilter = if (showStorageChips) config.storageFilter else STORAGE_FILTER_ALL
+
     init {
         (binding.directoriesGrid.layoutManager as MyGridLayoutManager).apply {
             orientation = if (activity.config.scrollHorizontally && isGridViewType) RecyclerView.HORIZONTAL else RecyclerView.VERTICAL
@@ -93,6 +105,7 @@ class PickDirectoryDialog(
         binding.directoriesFastscroller.updateColors(activity.getProperPrimaryColor())
 
         configureSearchView()
+        configureStorageChips()
 
         val builder = activity.getAlertDialogBuilder()
             .setPositiveButton(org.fossify.commons.R.string.ok, null)
@@ -252,6 +265,40 @@ class PickDirectoryDialog(
         setTextSize(TypedValue.COMPLEX_UNIT_PX, resources.getDimension(dimenResId))
     }
 
+    private fun configureStorageChips() = with(binding.directoriesStorages) {
+        beVisibleIf(showStorageChips)
+        if (!showStorageChips) {
+            return@with
+        }
+
+        val chips = listOf(
+            StorageChips.Chip(STORAGE_FILTER_LOCAL, activity.getString(R.string.storage_local)),
+            StorageChips.Chip(STORAGE_FILTER_PCLOUD, activity.getString(R.string.pcloud)),
+            StorageChips.Chip(STORAGE_FILTER_ALL, activity.getString(R.string.storage_local_and_pcloud))
+        )
+        setChips(chips, storageFilter)
+        onChipClicked = { tag ->
+            storageFilter = tag as Int
+            select(tag)
+            if (searchView.isSearchOpen) {
+                filterFolderListBySearchQuery(searchEditText.text.toString())
+            } else {
+                gotDirectories(allDirectories)
+            }
+        }
+    }
+
+    // favorites, the recycle bin and groups belong to no storage and always pass, like they
+    // do for the folder list's own storage filter
+    private fun isShownByStorageChips(directory: Directory): Boolean {
+        return when {
+            !showStorageChips || directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
+            storageFilter == STORAGE_FILTER_PCLOUD -> directory.path.isPCloudPath()
+            storageFilter == STORAGE_FILTER_LOCAL -> !directory.path.isPCloudPath()
+            else -> true
+        }
+    }
+
     private fun configureSearchView() = with(searchView) {
         updateHintText(context.getString(org.fossify.commons.R.string.search_folders))
         searchEditText.imeOptions = EditorInfo.IME_ACTION_DONE
@@ -318,6 +365,8 @@ class PickDirectoryDialog(
         if (query.isNotEmpty()) {
             dirsToShow = dirsToShow.filter { it.name.contains(query, true) }.toMutableList() as ArrayList
         }
+
+        dirsToShow = dirsToShow.filter { isShownByStorageChips(it) }.toMutableList() as ArrayList
         dirsToShow = activity.getSortedDirectories(dirsToShow)
         checkPlaceholderVisibility(dirsToShow)
 
@@ -371,23 +420,45 @@ class PickDirectoryDialog(
         }
     }
 
+    // A copy or move destination is picked with the gallery's own folder picker, which knows
+    // pCloud; everything else (a file to pick, a folder for a widget) keeps commons' picker.
+    // The last destination is remembered whichever storage it was on, the commons default
+    // only knows about folders on the device
     private fun showOtherFolder() {
         activity.hideKeyboard(searchEditText)
-        FilePickerDialog(
-            activity,
-            activity.getDefaultCopyDestinationPath(showHidden, sourcePath),
-            !isPickingCopyMoveDestination && !isPickingFolderForWidget,
-            showHidden,
-            true,
-            true
-        ) {
-            config.lastCopyPath = it
-            activity.handleLockedFolderOpening(it) { success ->
+        val onPicked = { path: String ->
+            config.lastCopyPath = path
+            activity.handleLockedFolderOpening(path) { success ->
                 if (success) {
-                    callback(it)
+                    callback(path)
                 }
             }
         }
+
+        if (isPickingCopyMoveDestination) {
+            val lastCopyPath = config.lastCopyPath
+            val lastCopyPathOnPCloud = lastCopyPath.isPCloudPath() && config.isPCloudLoggedIn
+            // the picker opens on the storage the chips are showing, at the last destination there
+            val startPath = when {
+                showStorageChips && storageFilter == STORAGE_FILTER_PCLOUD -> if (lastCopyPathOnPCloud) lastCopyPath else PCLOUD_PATH_SCHEME
+                showStorageChips && storageFilter == STORAGE_FILTER_LOCAL -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
+                lastCopyPathOnPCloud -> lastCopyPath
+                else -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
+            }
+
+            FolderPickerDialog(activity, startPath, showHidden, showFAB = true, canAddShowHiddenButton = true, callback = onPicked)
+            return
+        }
+
+        FilePickerDialog(
+            activity,
+            activity.getDefaultCopyDestinationPath(showHidden, sourcePath),
+            !isPickingFolderForWidget,
+            showHidden,
+            true,
+            true,
+            callback = onPicked
+        )
     }
 
     private fun gotDirectories(newDirs: ArrayList<Directory>) {
@@ -395,7 +466,9 @@ class PickDirectoryDialog(
             allDirectories = newDirs.clone() as ArrayList<Directory>
         }
 
-        val distinctDirs = newDirs.filter { showFavoritesBin || (!it.isRecycleBin() && !it.areFavorites()) }.distinctBy { it.path.getDistinctPath() }
+        val distinctDirs = newDirs
+            .filter { (showFavoritesBin || (!it.isRecycleBin() && !it.areFavorites())) && isShownByStorageChips(it) }
+            .distinctBy { it.path.getDistinctPath() }
             .toMutableList() as ArrayList<Directory>
         val sortedDirs = activity.getSortedDirectories(distinctDirs)
 
