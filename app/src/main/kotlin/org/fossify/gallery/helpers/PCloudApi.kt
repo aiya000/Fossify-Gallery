@@ -48,9 +48,16 @@ object PCloudApi {
     // Like call(), but the answer is streamed instead of held as one string: listing a whole
     // account recursively runs to megabytes. onValue is handed every top-level key except
     // "result" and "error" and has to consume that key's value from the reader. When pCloud
-    // refused, the body carries no data keys and the exception is thrown once it ends
-    fun stream(apiHost: String, accessToken: String, method: String, params: Map<String, String> = emptyMap(), onValue: (name: String, reader: JsonReader) -> Unit) {
-        client.newCall(buildRequest(apiHost, accessToken, method, params)).execute().use { response ->
+    // refused, the body carries no data keys and the exception is thrown once it ends. onCall
+    // is handed the request before it goes out, so that another thread can cancel it; a
+    // cancelled one ends in an IOException like a lost connection does
+    fun stream(
+        apiHost: String, accessToken: String, method: String, params: Map<String, String> = emptyMap(), onCall: (Call) -> Unit = {},
+        onValue: (name: String, reader: JsonReader) -> Unit
+    ) {
+        val call = client.newCall(buildRequest(apiHost, accessToken, method, params))
+        onCall(call)
+        call.execute().use { response ->
             JsonReader(response.body.charStream()).use { reader ->
                 var result = -1
                 var error = ""
@@ -84,8 +91,11 @@ object PCloudApi {
     // The changes to the account since sinceDiffId, oldest first, at most limit of them; the
     // page's diffId is where to continue when it is full. With last instead of sinceDiffId the
     // newest events come back, which with last = 1 is the cheap way to learn the current diff
-    // id before a full scan. Streamed like a listing is, a backlog of events can run long
-    fun diff(apiHost: String, accessToken: String, sinceDiffId: Long?, last: Int? = null, limit: Int = DIFF_PAGE_SIZE): DiffPage {
+    // id before a full scan. Streamed like a listing is, a backlog of events can run long;
+    // onCall is what stream() does with it
+    fun diff(
+        apiHost: String, accessToken: String, sinceDiffId: Long?, last: Int? = null, limit: Int = DIFF_PAGE_SIZE, onCall: (Call) -> Unit = {}
+    ): DiffPage {
         val params = HashMap<String, String>()
         sinceDiffId?.let { params["diffid"] = it.toString() }
         last?.let { params["last"] = it.toString() }
@@ -93,7 +103,7 @@ object PCloudApi {
 
         var diffId = 0L
         val entries = ArrayList<DiffEntry>()
-        stream(apiHost, accessToken, "diff", params) { name, reader ->
+        stream(apiHost, accessToken, "diff", params, onCall) { name, reader ->
             when (name) {
                 "diffid" -> diffId = reader.nextLong()
                 "entries" -> {

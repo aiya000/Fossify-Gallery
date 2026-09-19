@@ -3,6 +3,7 @@ package org.fossify.gallery.helpers
 import android.content.Context
 import android.util.JsonReader
 import android.util.JsonToken
+import okhttp3.Call
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.isGif
@@ -43,11 +44,72 @@ class PCloudScanner(private val context: Context) {
         // one scan at a time. Context.rescanPCloud() claims this before it starts one
         val isRunning = AtomicBoolean(false)
 
+        // The scan the screens started, while it runs, so that a screen can call it off:
+        // Context.rescanPCloud() and rescanPCloudFolders() register theirs through start()
+        // and finish(). The transfer service holds isRunning on its own without registering,
+        // its refresh after a transfer is not one to interrupt
+        @Volatile
+        private var current: PCloudScanner? = null
+
         // how many diff pages a sync replays before it lists the whole account instead
         private const val MAX_DIFF_PAGES = 20
+
+        // claims the scanner for the given scan, or answers false when one is running
+        fun start(scanner: PCloudScanner): Boolean {
+            if (!isRunning.compareAndSet(false, true)) {
+                return false
+            }
+
+            current = scanner
+            return true
+        }
+
+        fun finish() {
+            current = null
+            isRunning.set(false)
+        }
+
+        // Calls off the registered scan, if one runs: it ends in a PCloudScanAbortedException
+        // at its next check, with the cache as it was and the diff id where it was, and the
+        // request on the wire is cancelled. Nothing happens when no scan is registered
+        fun abortCurrent() {
+            current?.abort()
+        }
     }
 
     class Result(val folderCount: Int, val mediaCount: Int)
+
+    private val aborted = AtomicBoolean(false)
+
+    // the request on the wire, while one is; cancelled by abort()
+    @Volatile
+    private var call: Call? = null
+
+    fun abort() {
+        aborted.set(true)
+        call?.cancel()
+    }
+
+    private fun throwIfAborted() {
+        if (aborted.get()) {
+            throw PCloudScanAbortedException()
+        }
+    }
+
+    // Runs one request to pCloud, handing block the callback that registers its Call, so that
+    // abort() can cancel it. Checked before and after: a cancelled request ends in an
+    // IOException of its own, which is reported as the abort it was
+    private inline fun <T> abortable(block: (onCall: (Call) -> Unit) -> T): T {
+        throwIfAborted()
+        try {
+            return block { call = it }
+        } catch (e: Exception) {
+            throwIfAborted()
+            throw e
+        } finally {
+            call = null
+        }
+    }
 
     // one entry of a listfolder answer, trimmed to what the cache needs. children holds only
     // folders and media files. type is 0 for a folder and for a file that is not media
@@ -64,14 +126,15 @@ class PCloudScanner(private val context: Context) {
     private val dateFormat = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z", Locale.US)
 
     // blocks and talks to the network, so call it off the main thread. Throws PCloudException
-    // when pCloud refused and an IOException when it could not be reached; the cache is left
-    // untouched in both cases, it is only rewritten once the whole tree has arrived
+    // when pCloud refused, an IOException when it could not be reached and a
+    // PCloudScanAbortedException when abort() was called; the cache is left untouched in
+    // every case, it is only rewritten once the whole tree has arrived
     fun scanAll(): Result {
         // the diff id is taken before the tree so that a change made while the tree is on its
         // way is replayed by the next sync rather than lost; replaying it is harmless. Without
         // one, every sync falls back to a full scan
         val diffId = try {
-            PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = null, last = 1).diffId
+            abortable { onCall -> PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = null, last = 1, onCall = onCall).diffId }
         } catch (e: PCloudException) {
             if (e.requiresLogIn) throw e
             0L
@@ -85,6 +148,7 @@ class PCloudScanner(private val context: Context) {
         val collector = Collector(media, directories, items)
         collector.collect(root, PCLOUD_PATH_SCHEME)
 
+        throwIfAborted()
         store(media, directories, items)
         config.pCloudDiffId = diffId
         config.pCloudLastFullScanAt = System.currentTimeMillis()
@@ -98,7 +162,8 @@ class PCloudScanner(private val context: Context) {
     // names a folder the cache does not know, it is a full scan instead. The counts are those
     // of the folders listed again. Blocks like scanAll() does and throws the same way; the
     // diff id moves on only once every touched folder is through, so a sync that broke off
-    // replays its events next time
+    // or was aborted replays its events next time. What an event wrote to the cache by then
+    // stays, replaying it changes nothing
     fun sync(): Result {
         var diffId = config.pCloudDiffId
         if (diffId <= 0L) {
@@ -108,7 +173,7 @@ class PCloudScanner(private val context: Context) {
         val touchedFolderIds = LinkedHashSet<Long>()
         var pages = 0
         while (true) {
-            val page = PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = diffId)
+            val page = abortable { onCall -> PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = diffId, onCall = onCall) }
             page.entries.forEach { entry ->
                 if (!apply(entry, touchedFolderIds)) {
                     return scanAll()
@@ -143,6 +208,7 @@ class PCloudScanner(private val context: Context) {
             }
         }
 
+        throwIfAborted()
         config.pCloudDiffId = diffId
         config.pCloudLastFullScanAt = System.currentTimeMillis()
         return Result(folderCount, mediaCount)
@@ -266,6 +332,7 @@ class PCloudScanner(private val context: Context) {
         val keptItemPaths = HashSet<String>()
         media.mapTo(keptItemPaths) { it.path }
         unlistedFolders.mapTo(keptItemPaths) { it.path }
+        throwIfAborted()
         storeFolder(path, media, directories, items, unlistedFolders, keptItemPaths)
         return Result(directories.size, media.size)
     }
@@ -321,11 +388,13 @@ class PCloudScanner(private val context: Context) {
     private fun fetchFolder(path: String, recursive: Boolean = false): Entry {
         var folder: Entry? = null
         val params = mapOf("path" to path.toPCloudRemotePath(), "recursive" to if (recursive) "1" else "0")
-        PCloudApi.stream(config.pCloudApiHost, config.pCloudAccessToken, "listfolder", params) { name, reader ->
-            if (name == "metadata") {
-                folder = readEntry(reader)
-            } else {
-                reader.skipValue()
+        abortable { onCall ->
+            PCloudApi.stream(config.pCloudApiHost, config.pCloudAccessToken, "listfolder", params, onCall) { name, reader ->
+                if (name == "metadata") {
+                    folder = readEntry(reader)
+                } else {
+                    reader.skipValue()
+                }
             }
         }
 
@@ -558,3 +627,7 @@ class PCloudScanner(private val context: Context) {
         }
     }
 }
+
+// thrown out of a scan that PCloudScanner.abort() called off; nothing went wrong, so nothing
+// is reported for it
+class PCloudScanAbortedException : Exception("pCloud scan aborted")

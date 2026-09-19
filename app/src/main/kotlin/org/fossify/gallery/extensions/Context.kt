@@ -98,6 +98,7 @@ import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCLOUD_RESULT_ALREADY_EXISTS
 import org.fossify.gallery.helpers.PCloudException
+import org.fossify.gallery.helpers.PCloudScanAbortedException
 import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PCloudWriter
@@ -716,64 +717,69 @@ fun Context.isShownByStorageFilter(directory: Directory): Boolean {
 // Brings the pCloud cache up to date off the main thread and tells the user in a toast how it
 // went: the counts when asked for, otherwise only what failed. What is fetched is the changes
 // since the last scan (PCloudScanner.sync()); full lists the whole account again instead. A
-// token pCloud no longer accepts signs the account out. onDone runs in every case, also when
-// a scan was already running and this one was skipped; it is called on whatever thread the
-// scan ended on, so hop to the UI thread in it
+// token pCloud no longer accepts signs the account out. onDone runs in every case but one,
+// also when a scan was already running and this one was skipped; it is called on whatever
+// thread the scan ended on, so hop to the UI thread in it. The one case is a scan that
+// PCloudScanner.abortCurrent() called off: the screen that did so is reloading on its own,
+// and the reload onDone would do is the very thing it wanted to be spared
 fun Context.rescanPCloud(reportCounts: Boolean, full: Boolean = false, onDone: () -> Unit = {}) {
-    if (!config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
+    if (!config.isPCloudLoggedIn) {
         onDone()
         return
     }
 
-    ensureBackgroundThread {
-        try {
-            val scanner = PCloudScanner(this)
-            val result = if (full) scanner.scanAll() else scanner.sync()
-            if (reportCounts) {
-                toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
-            }
-        } catch (e: PCloudException) {
-            if (e.requiresLogIn) {
-                config.clearPCloudAccount()
-                toast(R.string.pcloud_log_in_required)
-            } else {
-                showErrorToast(e)
-            }
-        } catch (e: Exception) {
-            showErrorToast(e)
-        } finally {
-            PCloudScanner.isRunning.set(false)
+    runPCloudScan(onDone) { scanner ->
+        val result = if (full) scanner.scanAll() else scanner.sync()
+        if (reportCounts) {
+            toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
         }
-
-        onDone()
     }
 }
 
 // Refreshes the given pCloud folders one by one, non-recursively, the way rescanPCloud()
 // refreshes the whole account; the counts toast sums them up. It shares the scanner's lock
-// with the full scan, so nothing happens while either is running. onDone runs in every case,
-// on whatever thread the scan ended on
+// with the full scan, so nothing happens while either is running. onDone runs the way it
+// does for rescanPCloud()
 fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, onDone: () -> Unit = {}) {
-    if (paths.isEmpty() || !config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
+    if (paths.isEmpty() || !config.isPCloudLoggedIn) {
+        onDone()
+        return
+    }
+
+    runPCloudScan(onDone) { scanner ->
+        var folderCount = 0
+        var mediaCount = 0
+        paths.forEach { path ->
+            scanner.scanFolder(path)?.let {
+                folderCount += it.folderCount
+                mediaCount += it.mediaCount
+            }
+        }
+
+        if (reportCounts) {
+            toast(getString(R.string.pcloud_rescan_done, folderCount, mediaCount))
+        }
+    }
+}
+
+// Claims the scanner for scan and runs it off the main thread, registered so that a screen
+// can call it off; failure is toasted, a dead token signs the account out, and a scan that
+// was called off is neither reported nor followed by onDone. The scanner is claimed here,
+// before the thread starts, so that an abort cannot slip in between the claim and the
+// registration
+private fun Context.runPCloudScan(onDone: () -> Unit, scan: (PCloudScanner) -> Unit) {
+    val scanner = PCloudScanner(this)
+    if (!PCloudScanner.start(scanner)) {
         onDone()
         return
     }
 
     ensureBackgroundThread {
+        var aborted = false
         try {
-            val scanner = PCloudScanner(this)
-            var folderCount = 0
-            var mediaCount = 0
-            paths.forEach { path ->
-                scanner.scanFolder(path)?.let {
-                    folderCount += it.folderCount
-                    mediaCount += it.mediaCount
-                }
-            }
-
-            if (reportCounts) {
-                toast(getString(R.string.pcloud_rescan_done, folderCount, mediaCount))
-            }
+            scan(scanner)
+        } catch (e: PCloudScanAbortedException) {
+            aborted = true
         } catch (e: PCloudException) {
             if (e.requiresLogIn) {
                 config.clearPCloudAccount()
@@ -784,10 +790,12 @@ fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, onDo
         } catch (e: Exception) {
             showErrorToast(e)
         } finally {
-            PCloudScanner.isRunning.set(false)
+            PCloudScanner.finish()
         }
 
-        onDone()
+        if (!aborted) {
+            onDone()
+        }
     }
 }
 
