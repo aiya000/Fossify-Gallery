@@ -96,7 +96,10 @@ import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.PCloudWriter
+import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
@@ -363,16 +366,17 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         binding.mediaMenu.requireToolbar().menu.apply {
             findItem(R.id.group).isVisible = !config.scrollHorizontally
 
-            findItem(R.id.empty_recycle_bin).isVisible = mPath == RECYCLE_BIN
+            // the pCloud bin has the same two actions, minus disabling: that is the device bin's setting
+            findItem(R.id.empty_recycle_bin).isVisible = mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN
             findItem(R.id.empty_disable_recycle_bin).isVisible = mPath == RECYCLE_BIN
-            findItem(R.id.restore_all_files).isVisible = mPath == RECYCLE_BIN
+            findItem(R.id.restore_all_files).isVisible = mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN
 
             findItem(R.id.folder_view).isVisible = mShowAll
             findItem(R.id.open_camera).isVisible = mShowAll
             findItem(R.id.about).isVisible = mShowAll
             findItem(R.id.create_new_folder).isVisible =
-                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
-            findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
+                !mShowAll && mPath != RECYCLE_BIN && mPath != PCLOUD_RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
+            findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
             findItem(R.id.temporarily_show_hidden).isVisible = !config.shouldShowHidden
@@ -495,6 +499,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             val dirName = when (mPath) {
                 FAVORITES -> getString(org.fossify.commons.R.string.favorites)
                 RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
+                PCLOUD_RECYCLE_BIN -> getString(R.string.pcloud_recycle_bin)
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
                 PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
                 else -> getHumanizedFilename(mPath)
@@ -618,8 +623,14 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     private fun emptyRecycleBin() {
         showRecycleBinEmptyingDialog {
-            emptyTheRecycleBin {
-                finish()
+            if (mPath == PCLOUD_RECYCLE_BIN) {
+                writeToPCloud(emptyList(), { this.emptyRecycleBin() }) {
+                    runOnUiThread { finish() }
+                }
+            } else {
+                emptyTheRecycleBin {
+                    finish()
+                }
             }
         }
     }
@@ -634,12 +645,35 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     private fun restoreAllFiles() {
         val paths = mMedia.filter { it is Medium }.map { (it as Medium).path } as ArrayList<String>
+        if (mPath == PCLOUD_RECYCLE_BIN) {
+            restoreAllPCloudFiles(paths)
+            return
+        }
+
         showRestoreConfirmationDialog(paths.size) {
             restoreRecycleBinPaths(paths) {
                 ensureBackgroundThread {
                     directoryDB.deleteDirPath(RECYCLE_BIN)
                 }
                 finish()
+            }
+        }
+    }
+
+    // the dialog names where the first one goes back to, and can send the lot somewhere else
+    private fun restoreAllPCloudFiles(paths: ArrayList<String>) {
+        if (paths.isEmpty()) {
+            return
+        }
+
+        ensureBackgroundThread {
+            val (folder, exists) = PCloudWriter(this).restoreDestinationOf(paths.first())
+            runOnUiThread {
+                PCloudRestoreDialog(this, paths.size, folder, !exists) { destination ->
+                    writeToPCloud(emptyList(), { restoreFromRecycleBin(paths, destination) }) {
+                        runOnUiThread { finish() }
+                    }
+                }
             }
         }
     }
@@ -718,7 +752,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // a pull refreshes a pCloud folder from the network first; the cache is what the list is
     // read from either way
     private fun refreshMedia() {
-        if (mPath.isPCloudPath() && config.isPCloudLoggedIn) {
+        if (mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn) {
             rescanPCloudFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
         } else {
             getMedia()
@@ -735,7 +769,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // waiting. The folder is refreshed from pCloud when the setting asks for it and the
     // folder's own throttle allows it; only this folder, not its subfolders
     private fun rescanPCloudFolderIfDue() {
-        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
+        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || mPath == PCLOUD_RECYCLE_BIN || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
             return
         }
 
@@ -798,7 +832,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 }
             }
 
-            if (mPath == RECYCLE_BIN) {
+            if (mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN) {
                 binding.mediaEmptyTextPlaceholder.setText(org.fossify.commons.R.string.no_items_found)
                 binding.mediaEmptyTextPlaceholder.beVisible()
                 binding.mediaEmptyTextPlaceholder2.beGone()

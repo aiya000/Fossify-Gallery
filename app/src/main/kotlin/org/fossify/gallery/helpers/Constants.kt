@@ -133,6 +133,16 @@ const val UPSTREAM_APP_ID = "org.fossify.gallery"
 const val PCLOUD_PATH_SCHEME = "pcloud:"
 const val PCLOUD_PATH_PREFIX = "$PCLOUD_PATH_SCHEME/"
 
+// The app's own recycle bin on pCloud: a folder in the root that deleted media are moved
+// into, see PCloudWriter.moveToRecycleBin(). The folder is a real one, but the rows of the
+// media in it keep their original layout under this pseudo path, e.g.
+// "pcloud:/.gallery-recycle-bin/Camera/IMG_0001.jpg" for a file that was in "pcloud:/Camera",
+// so that a restore knows where the file came from; where the file lies inside the folder
+// on pCloud never matters, every operation on it goes by its file id. The folder list shows
+// the bin as a folder with this pseudo path, like RECYCLE_BIN for the device's bin
+const val PCLOUD_RECYCLE_BIN_FOLDER_NAME = ".gallery-recycle-bin"
+const val PCLOUD_RECYCLE_BIN = "$PCLOUD_PATH_PREFIX$PCLOUD_RECYCLE_BIN_FOLDER_NAME"
+
 const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
 const val PCLOUD_API_HOST = "pcloud_api_host"
 const val PCLOUD_ACCOUNT_EMAIL = "pcloud_account_email"

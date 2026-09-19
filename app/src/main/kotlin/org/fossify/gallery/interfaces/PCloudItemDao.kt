@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.models.PCloudItem
 
 @Dao
@@ -43,6 +44,8 @@ interface PCloudItemDao {
     @Query("DELETE FROM pcloud_items WHERE path = :path")
     fun deleteItemPath(path: String)
 
-    @Query("DELETE FROM pcloud_items")
-    fun deleteAll()
+    // Before a full scan rewrites the rows: the recycle bin's own row and the rows of the
+    // media in it stay, the scan does not list the bin (see PCLOUD_RECYCLE_BIN)
+    @Query("DELETE FROM pcloud_items WHERE path != '$PCLOUD_RECYCLE_BIN' AND path NOT LIKE '$PCLOUD_RECYCLE_BIN/%'")
+    fun deleteAllOutsideRecycleBin()
 }

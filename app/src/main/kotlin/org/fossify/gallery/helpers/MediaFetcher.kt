@@ -37,7 +37,10 @@ class MediaFetcher(val context: Context) {
         }
 
         val curMedia = ArrayList<Medium>()
-        if (curPath.isPCloudPath()) {
+        if (curPath == PCLOUD_RECYCLE_BIN) {
+            // the deleted pCloud rows, wherever they were deleted from
+            curMedia.addAll(filterPCloudMedia(context.mediaDB.getPCloudDeletedMedia(), isPickImage, isPickVideo, filterMedia, favoritePaths))
+        } else if (curPath.isPCloudPath()) {
             // the cache is the only source there is, the network is touched by a rescan alone
             curMedia.addAll(getMediaOnPCloud(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths))
         } else if (context.isPathOnOTG(curPath)) {
@@ -624,7 +627,7 @@ class MediaFetcher(val context: Context) {
         val config = context.config
         return if (config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL) {
             val showHidden = config.shouldShowHidden
-            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { showHidden || !context.isPCloudFolderHidden(it) }
+            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it != PCLOUD_RECYCLE_BIN && (showHidden || !context.isPCloudFolderHidden(it)) }
         } else {
             emptyList()
         }
@@ -638,6 +641,10 @@ class MediaFetcher(val context: Context) {
             emptyList()
         }
 
+        return filterPCloudMedia(cached, isPickImage, isPickVideo, filterMedia, favoritePaths)
+    }
+
+    private fun filterPCloudMedia(cached: List<Medium>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
         val showHidden = context.config.shouldShowHidden
         val media = cached.filter { medium ->
             val isWanted = when (medium.type) {

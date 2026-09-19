@@ -67,12 +67,14 @@ import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
 import org.fossify.gallery.extensions.loadImage
@@ -92,6 +94,7 @@ import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -239,13 +242,16 @@ class MediaAdapter(
             findItem(R.id.cab_set_as).isVisible = isLocal && isOneItemSelected
             findItem(R.id.cab_resize).isVisible = isLocal && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
-            findItem(R.id.cab_restore_recycle_bin_files).isVisible = selectedPaths.all { it.startsWith(activity.recycleBinPath) }
+            findItem(R.id.cab_restore_recycle_bin_files).isVisible =
+                selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
             findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
             findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly
             findItem(R.id.cab_share).isVisible = isLocal
             findItem(R.id.cab_rotate).isVisible = isLocal
             findItem(R.id.cab_properties).isVisible = isLocal
-            findItem(R.id.cab_copy_to).isVisible = isLocal || isPCloudOnly
+            // a medium in the pCloud bin is restored or deleted for good, nothing else: copying
+            // it would go by a remote path the bin does not keep
+            findItem(R.id.cab_copy_to).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -551,6 +557,11 @@ class MediaAdapter(
 
     private fun restoreFiles() {
         val paths = getSelectedPaths()
+        if (paths.firstOrNull()?.isPCloudRecycleBinPath() == true) {
+            restorePCloudFiles(paths)
+            return
+        }
+
         if (paths.size > 1) {
             activity.showRestoreConfirmationDialog(paths.size) {
                 doRestoreFiles(paths)
@@ -564,6 +575,24 @@ class MediaAdapter(
         activity.restoreRecycleBinPaths(paths) {
             listener?.refreshItems()
             finishActMode()
+        }
+    }
+
+    // the dialog names where the first one goes back to, as the example for the selection,
+    // and can send the lot somewhere else
+    private fun restorePCloudFiles(paths: ArrayList<String>) {
+        ensureBackgroundThread {
+            val (folder, exists) = PCloudWriter(activity).restoreDestinationOf(paths.first())
+            activity.runOnUiThread {
+                PCloudRestoreDialog(activity, paths.size, folder, !exists) { destination ->
+                    activity.writeToPCloud(emptyList(), { restoreFromRecycleBin(paths, destination) }) {
+                        activity.runOnUiThread {
+                            listener?.refreshItems()
+                            finishActMode()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -752,14 +781,16 @@ class MediaAdapter(
         }
     }
 
-    // pCloud media go to pCloud's own trash, so the recycle bin and its "skip" option do not
-    // come into it; the delete password and the "skip confirmation" setting do. No media
-    // management prompt either, there is no MediaStore entry to touch
+    // pCloud media go to the app's recycle bin on pCloud, with the same "skip the bin" option
+    // local files get, or for good when the bin is off, skipped, or they are in it already.
+    // The delete password and the "skip confirmation" setting apply like for local files. No
+    // media management prompt, there is no MediaStore entry to touch
     private fun checkPCloudDeleteConfirmation() {
-        val deleteConfirmed = { deletePCloudFiles() }
+        val isInBin = getSelectedItems().firstOrNull()?.getIsInRecycleBin() == true
+        val useBin = config.useRecycleBin && !isInBin
         when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection(deleteConfirmed)
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteConfirmed()
+            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deletePCloudFiles(config.tempSkipRecycleBin) }
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deletePCloudFiles(config.tempSkipRecycleBin)
             else -> {
                 val itemsCnt = selectedKeys.size
                 val items = if (itemsCnt == 1) {
@@ -768,8 +799,19 @@ class MediaAdapter(
                     resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
                 }
 
-                ConfirmationDialog(activity, activity.getString(R.string.pcloud_delete_confirmation, items)) {
-                    deleteConfirmed()
+                val question = if (useBin && !config.tempSkipRecycleBin) {
+                    activity.getString(R.string.pcloud_move_to_recycle_bin_confirmation, items)
+                } else {
+                    activity.getString(R.string.pcloud_delete_confirmation, items)
+                }
+
+                DeleteWithRememberDialog(activity, question, useBin) { remember, skipRecycleBin ->
+                    config.tempSkipDeleteConfirmation = remember
+                    if (remember) {
+                        config.tempSkipRecycleBin = skipRecycleBin
+                    }
+
+                    deletePCloudFiles(skipRecycleBin)
                 }
             }
         }
@@ -778,12 +820,14 @@ class MediaAdapter(
     // The items leave the grid right away and the write follows; the list is read again once
     // it is through, which also brings a refused item back. The folder is not closed when it
     // ends up empty, the way a local one is: the write may still be on its way
-    private fun deletePCloudFiles() {
+    private fun deletePCloudFiles(skipRecycleBin: Boolean) {
         val selectedItems = getSelectedItems()
         if (selectedItems.isEmpty()) {
             return
         }
 
+        val isInBin = selectedItems.first().getIsInRecycleBin()
+        val toBin = config.useRecycleBin && !skipRecycleBin && !isInBin
         val paths = selectedItems.map { it.path }
         val positions = getSelectedItemPositions()
         media.removeAll(selectedItems)
@@ -791,8 +835,18 @@ class MediaAdapter(
         removeSelectedItems(positions)
         currentMediaHash = media.hashCode()
 
-        activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
-        activity.writeToPCloud(paths.map { it.getParentPath() }.distinct(), { deleteFiles(paths) }) {
+        val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
+        activity.toast(resources.getQuantityString(progress, paths.size, paths.size))
+        val foldersToRescan = if (isInBin) emptyList() else paths.map { it.getParentPath() }.distinct()
+        val write: PCloudWriter.() -> Unit = {
+            when {
+                toBin -> moveToRecycleBin(paths)
+                isInBin -> deleteFromRecycleBin(paths)
+                else -> deleteFiles(paths)
+            }
+        }
+
+        activity.writeToPCloud(foldersToRescan, write) {
             activity.runOnUiThread {
                 listener?.refreshItems()
             }

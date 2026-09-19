@@ -1,6 +1,7 @@
 package org.fossify.gallery.interfaces
 
 import androidx.room.*
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.models.Medium
 
 @Dao
@@ -14,18 +15,33 @@ interface MediumDao {
     @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts = 0 AND is_favorite = 1")
     fun getFavoritesCount(): Long
 
-    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0")
+    // The device's recycle bin: the deleted rows whose file lies in the app's own files
+    // directory. The pCloud ones, with a "pcloud:" path, belong to the pCloud bin below
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getDeletedMedia(): List<Medium>
 
-    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0")
+    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getDeletedMediaCount(): Long
+
+    // the app's recycle bin on pCloud, see PCLOUD_RECYCLE_BIN
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
+    fun getPCloudDeletedMedia(): List<Medium>
+
+    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
+    fun getPCloudDeletedMediaCount(): Long
+
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestamp AND deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
+    fun getOldPCloudRecycleBinItems(timestamp: Long): List<Medium>
+
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE full_path = :path COLLATE NOCASE")
+    fun getMediumByPath(path: String): Medium?
 
     // the pCloud scanner uses this to find the rows pCloud no longer has; the prefix carries no
     // LIKE wildcards of its own
     @Query("SELECT full_path FROM media WHERE full_path LIKE :prefix || '%'")
     fun getPathsWithPrefix(prefix: String): List<String>
 
-    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestmap AND deleted_ts != 0")
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestmap AND deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getOldRecycleBinItems(timestmap: Long): List<Medium>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -46,6 +62,10 @@ interface MediumDao {
     @Query("UPDATE OR REPLACE media SET full_path = :newPath, deleted_ts = :deletedTS WHERE full_path = :oldPath COLLATE NOCASE")
     fun updateDeleted(newPath: String, deletedTS: Long, oldPath: String)
 
+    // a pCloud medium back out of the bin, to a folder that may not be the one it came from
+    @Query("UPDATE OR REPLACE media SET full_path = :newPath, parent_path = :newParentPath, filename = :newFilename, deleted_ts = 0 WHERE full_path = :oldPath COLLATE NOCASE")
+    fun restoreDeleted(oldPath: String, newPath: String, newParentPath: String, newFilename: String)
+
     // after a pCloud folder was renamed: every medium under it, at any depth, gets the folder's
     // new path in place of the old one, in the full path and in the parent path alike
     @Query("UPDATE OR REPLACE media SET full_path = :newFolder || substr(full_path, length(:oldFolder) + 1), parent_path = :newFolder || substr(parent_path, length(:oldFolder) + 1) WHERE full_path LIKE :oldFolder || '/%'")
@@ -60,6 +80,7 @@ interface MediumDao {
     @Query("UPDATE media SET is_favorite = 0")
     fun clearFavorites()
 
-    @Query("DELETE FROM media WHERE deleted_ts != 0")
+    // the device's bin only, the pCloud one is emptied through PCloudWriter
+    @Query("DELETE FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun clearRecycleBin()
 }

@@ -101,6 +101,7 @@ import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
@@ -113,6 +114,7 @@ import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
@@ -161,6 +163,8 @@ import org.fossify.gallery.helpers.IS_VIEW_INTENT
 import org.fossify.gallery.helpers.MAX_PRINT_SIDE_SIZE
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PORTRAIT_PATH
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
+import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROTATE_BY_ASPECT_RATIO
 import org.fossify.gallery.helpers.ROTATE_BY_DEVICE_ROTATION
@@ -312,6 +316,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // stays hidden. Deleting, renaming, copying and moving go through the pCloud API;
         // favorites and the slideshow work
         val isLocal = !currentMedium.path.isPCloudPath()
+        // a medium in the pCloud bin is restored or deleted for good, nothing else; copying it
+        // would go by a remote path the bin does not keep
+        val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
 
         runOnUiThread {
             val rotationDegrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
@@ -326,8 +333,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_rotate).isVisible = isLocal && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
                 findItem(R.id.menu_set_as).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = isLocal && currentMedium.isImage()
-                findItem(R.id.menu_copy_to).isVisible = visibleBottomActions and BOTTOM_ACTION_COPY == 0
-                findItem(R.id.menu_move_to).isVisible = visibleBottomActions and BOTTOM_ACTION_MOVE == 0
+                findItem(R.id.menu_copy_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
+                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = isLocal && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
@@ -344,7 +351,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_remove_from_favorites).isVisible =
                     currentMedium.isFavorite && visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE == 0 && !currentMedium.getIsInRecycleBin()
 
-                findItem(R.id.menu_restore_file).isVisible = currentMedium.path.startsWith(recycleBinPath)
+                findItem(R.id.menu_restore_file).isVisible = currentMedium.path.startsWith(recycleBinPath) || isInPCloudBin
                 findItem(R.id.menu_create_shortcut).isVisible = isLocal
                 findItem(R.id.menu_change_orientation).isVisible = rotationDegrees == 0 && visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION == 0
                 findItem(R.id.menu_rotate).setShowAsAction(
@@ -583,6 +590,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         mDirectory = when {
             isShowingFavorites -> FAVORITES
             isShowingRecycleBin -> RECYCLE_BIN
+            // a medium in the pCloud bin is listed with the bin, not with the folder its pseudo path names
+            mPath.isPCloudRecycleBinPath() -> PCLOUD_RECYCLE_BIN
             else -> mPath.getParentPath()
         }
         binding.mediumViewerToolbar.title = mPath.getFilenameFromPath()
@@ -1136,13 +1145,14 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             setAs(getCurrentPath())
         }
 
-        binding.bottomActions.bottomCopy.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_COPY != 0)
+        val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
+        binding.bottomActions.bottomCopy.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
         binding.bottomActions.bottomCopy.setOnLongClickListener { toast(org.fossify.commons.R.string.copy); true }
         binding.bottomActions.bottomCopy.setOnClickListener {
             checkMediaManagementAndCopy(true)
         }
 
-        binding.bottomActions.bottomMove.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
+        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
         binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()
@@ -1247,8 +1257,28 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun restoreFile() {
-        restoreRecycleBinPath(getCurrentPath()) {
+        val path = getCurrentPath()
+        if (path.isPCloudRecycleBinPath()) {
+            restorePCloudFile(path)
+            return
+        }
+
+        restoreRecycleBinPath(path) {
             refreshViewPager()
+        }
+    }
+
+    // the dialog names where the file goes back to, and can send it somewhere else
+    private fun restorePCloudFile(path: String) {
+        ensureBackgroundThread {
+            val (folder, exists) = PCloudWriter(this).restoreDestinationOf(path)
+            runOnUiThread {
+                PCloudRestoreDialog(this, 1, folder, !exists) { destination ->
+                    writeToPCloud(emptyList(), { restoreFromRecycleBin(listOf(path), destination) }) {
+                        runOnUiThread { refreshViewPager(refetchPosition = true) }
+                    }
+                }
+            }
         }
     }
 
@@ -1358,24 +1388,42 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
-    // A pCloud medium goes to pCloud's own trash, so the recycle bin and its "skip" option do
-    // not come into it; the delete password and the "skip confirmation" setting do, like for
-    // a local file. No media management prompt either, there is no MediaStore entry to touch
+    // A pCloud medium goes to the app's recycle bin on pCloud, with the same "skip the bin"
+    // option a local file gets, or for good when the bin is off, skipped, or the medium is
+    // in it already. The delete password and the "skip confirmation" setting apply like for
+    // a local file. No media management prompt, there is no MediaStore entry to touch
     private fun checkPCloudDeleteConfirmation(medium: Medium) {
-        val deleteConfirmed = { deletePCloudMedium(medium) }
+        val isInBin = medium.getIsInRecycleBin()
+        val useBin = config.useRecycleBin && !isInBin
         when {
-            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection(deleteConfirmed)
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteConfirmed()
-            else -> ConfirmationDialog(this, getString(R.string.pcloud_delete_confirmation, "\"${medium.name}\"")) {
-                deleteConfirmed()
+            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection { deletePCloudMedium(medium, config.tempSkipRecycleBin) }
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deletePCloudMedium(medium, config.tempSkipRecycleBin)
+            else -> {
+                val name = "\"${medium.name}\""
+                val message = if (useBin && !config.tempSkipRecycleBin) {
+                    getString(R.string.pcloud_move_to_recycle_bin_confirmation, name)
+                } else {
+                    getString(R.string.pcloud_delete_confirmation, name)
+                }
+
+                DeleteWithRememberDialog(this, message, useBin) { remember, skipRecycleBin ->
+                    config.tempSkipDeleteConfirmation = remember
+                    if (remember) {
+                        config.tempSkipRecycleBin = skipRecycleBin
+                    }
+
+                    deletePCloudMedium(medium, skipRecycleBin)
+                }
             }
         }
     }
 
     // the same as handleDeletion(): the page goes right away, the write follows, and the view
     // closes when it was the last one. A refused write brings the page back
-    private fun deletePCloudMedium(medium: Medium) {
+    private fun deletePCloudMedium(medium: Medium, skipRecycleBin: Boolean) {
         val path = medium.path
+        val isInBin = medium.getIsInRecycleBin()
+        val toBin = config.useRecycleBin && !skipRecycleBin && !isInBin
         mIgnoredPaths.add(path)
         dropFromSelection(path)
         val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
@@ -1389,7 +1437,16 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             onPageSelected(0)
         }
 
-        writeToPCloud(listOf(path.getParentPath()), { deleteFiles(listOf(path)) }) { success ->
+        val foldersToRescan = if (isInBin) emptyList() else listOf(path.getParentPath())
+        val write: PCloudWriter.() -> Unit = {
+            when {
+                toBin -> moveToRecycleBin(listOf(path))
+                isInBin -> deleteFromRecycleBin(listOf(path))
+                else -> deleteFiles(listOf(path))
+            }
+        }
+
+        writeToPCloud(foldersToRescan, write) { success ->
             mIgnoredPaths.remove(path)
             runOnUiThread {
                 if (!success) {

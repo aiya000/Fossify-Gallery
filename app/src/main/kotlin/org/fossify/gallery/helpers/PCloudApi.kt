@@ -198,6 +198,24 @@ object PCloudApi {
         call(apiHost, accessToken, "deletefile", mapOf("path" to remotePath))
     }
 
+    // the same by id, for a file whose remote path the cache does not track, such as one in
+    // the app's recycle bin
+    fun deleteFileById(apiHost: String, accessToken: String, fileId: Long) {
+        call(apiHost, accessToken, "deletefile", mapOf("fileid" to fileId.toString()))
+    }
+
+    // moves the file into the folder with the given id under the given name, by id; pCloud
+    // refuses (2004) a name that is taken there rather than overwriting
+    fun moveFileById(apiHost: String, accessToken: String, fileId: Long, toFolderId: Long, toName: String) {
+        call(apiHost, accessToken, "renamefile", mapOf("fileid" to fileId.toString(), "tofolderid" to toFolderId.toString(), "toname" to toName))
+    }
+
+    // the id of the folder with that name inside the given one, created when there is none
+    fun createFolderIfNotExists(apiHost: String, accessToken: String, parentFolderId: Long, name: String): Long {
+        val json = call(apiHost, accessToken, "createfolderifnotexists", mapOf("folderid" to parentFolderId.toString(), "name" to name))
+        return json.getJSONObject("metadata").getLong("folderid")
+    }
+
     // the folder and everything under it go to pCloud's trash together
     fun deleteFolderRecursive(apiHost: String, accessToken: String, remotePath: String) {
         call(apiHost, accessToken, "deletefolderrecursive", mapOf("path" to remotePath))
