@@ -684,10 +684,11 @@ class DirectoryAdapter(
     }
 
     private fun copyFilesTo() {
-        handleLockedFolderOpeningForFolders(getSelectedRealPaths()) {
-            val fileDirItems = getMediaFileDirItems(it)
-            activity.tryCopyMoveFilesTo(fileDirItems, true) { destinationPath ->
-                onFilesCopiedMoved(fileDirItems, destinationPath)
+        handleLockedFolderOpeningForFolders(getSelectedRealPaths()) { folders ->
+            getMediaFileDirItems(folders) { fileDirItems ->
+                activity.tryCopyMoveFilesTo(fileDirItems, true) { destinationPath ->
+                    onFilesCopiedMoved(fileDirItems, destinationPath)
+                }
             }
         }
     }
@@ -703,28 +704,29 @@ class DirectoryAdapter(
                     return@handleLockedFolderOpeningForFolders
                 }
 
-                val fileDirItems = getMediaFileDirItems(folderPaths)
-                val source = folderPaths.firstOrNull() ?: ""
-                PickDirectoryDialog(
-                    activity = activity,
-                    sourcePath = source,
-                    showOtherFolderButton = groupIds.isEmpty(),
-                    showFavoritesBin = false,
-                    isPickingCopyMoveDestination = true,
-                    isPickingFolderForWidget = false,
-                    excludedGroupIds = groupIds,
-                    allowFolderDestination = groupIds.isEmpty(),
-                    groupCallback = { destinationGroupId ->
-                        moveToGroup(folderPaths, groupIds, destinationGroupId)
-                    }
-                ) { destinationPath ->
-                    if (fileDirItems.isEmpty()) {
-                        activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
-                        return@PickDirectoryDialog
-                    }
+                getMediaFileDirItems(folderPaths) { fileDirItems ->
+                    val source = folderPaths.firstOrNull() ?: ""
+                    PickDirectoryDialog(
+                        activity = activity,
+                        sourcePath = source,
+                        showOtherFolderButton = groupIds.isEmpty(),
+                        showFavoritesBin = false,
+                        isPickingCopyMoveDestination = true,
+                        isPickingFolderForWidget = false,
+                        excludedGroupIds = groupIds,
+                        allowFolderDestination = groupIds.isEmpty(),
+                        groupCallback = { destinationGroupId ->
+                            moveToGroup(folderPaths, groupIds, destinationGroupId)
+                        }
+                    ) { destinationPath ->
+                        if (fileDirItems.isEmpty()) {
+                            activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                            return@PickDirectoryDialog
+                        }
 
-                    activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
-                        onFilesCopiedMoved(fileDirItems, it)
+                        activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
+                            onFilesCopiedMoved(fileDirItems, it)
+                        }
                     }
                 }
             }
@@ -746,31 +748,35 @@ class DirectoryAdapter(
         listener?.refreshGroups()
     }
 
-    // the media files directly inside the given folders, respecting the current filter
-    // the media directly inside the folders, from the disk for local ones and from the cache
-    // for pCloud ones, which is all there is of them on the device
-    private fun getMediaFileDirItems(folderPaths: Collection<String>): ArrayList<FileDirItem> {
-        val paths = ArrayList<String>()
+    // The media directly inside the folders, from the disk for local ones and from the cache
+    // for pCloud ones, which is all there is of them on the device. Read off the main thread:
+    // the cache is a Room database, which refuses to be read on it, and a folder on disk can
+    // be large. callback runs on the main thread
+    private fun getMediaFileDirItems(folderPaths: Collection<String>, callback: (ArrayList<FileDirItem>) -> Unit) {
         val showHidden = config.shouldShowHidden
-        folderPaths.forEach {
-            if (it.isPCloudPath()) {
-                activity.mediaDB.getMediaFromPath(it).mapTo(paths) { medium -> medium.path }
-                return@forEach
+        val filter = config.filterMedia
+        ensureBackgroundThread {
+            val paths = ArrayList<String>()
+            folderPaths.forEach {
+                if (it.isPCloudPath()) {
+                    activity.mediaDB.getMediaFromPath(it).mapTo(paths) { medium -> medium.path }
+                    return@forEach
+                }
+
+                File(it).listFiles()?.filter {
+                    !File(it.absolutePath).isDirectory &&
+                        it.absolutePath.isMediaFile() && (showHidden || !it.name.startsWith('.')) &&
+                        ((it.isImageFast() && filter and TYPE_IMAGES != 0) ||
+                            (it.isVideoFast() && filter and TYPE_VIDEOS != 0) ||
+                            (it.isGif() && filter and TYPE_GIFS != 0) ||
+                            (it.isRawFast() && filter and TYPE_RAWS != 0) ||
+                            (it.isSvg() && filter and TYPE_SVGS != 0))
+                }?.mapTo(paths) { it.absolutePath }
             }
 
-            val filter = config.filterMedia
-            File(it).listFiles()?.filter {
-                !File(it.absolutePath).isDirectory &&
-                    it.absolutePath.isMediaFile() && (showHidden || !it.name.startsWith('.')) &&
-                    ((it.isImageFast() && filter and TYPE_IMAGES != 0) ||
-                        (it.isVideoFast() && filter and TYPE_VIDEOS != 0) ||
-                        (it.isGif() && filter and TYPE_GIFS != 0) ||
-                        (it.isRawFast() && filter and TYPE_RAWS != 0) ||
-                        (it.isSvg() && filter and TYPE_SVGS != 0))
-            }?.mapTo(paths) { it.absolutePath }
+            val fileDirItems = paths.map { FileDirItem(it, it.getFilenameFromPath()) } as ArrayList<FileDirItem>
+            activity.runOnUiThread { callback(fileDirItems) }
         }
-
-        return paths.map { FileDirItem(it, it.getFilenameFromPath()) } as ArrayList<FileDirItem>
     }
 
     private fun onFilesCopiedMoved(fileDirItems: ArrayList<FileDirItem>, destinationPath: String) {
