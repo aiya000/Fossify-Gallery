@@ -395,11 +395,12 @@ class PickDirectoryDialog(
     }
 
     private fun fetchDirectories(forceShowHiddenAndExcluded: Boolean) {
-        // files can be copied to pCloud whichever storage the folder list is showing
+        // a copy or move can go to either storage whichever one the folder list is showing;
+        // the chips narrow the list here, so the storage filter must not narrow it first
         activity.getCachedDirectories(
             forceShowHidden = forceShowHiddenAndExcluded,
             forceShowExcluded = forceShowHiddenAndExcluded,
-            forceShowPCloud = isPickingCopyMoveDestination
+            forceShowAllStorages = isPickingCopyMoveDestination
         ) {
             if (it.isNotEmpty()) {
                 it.forEach {
