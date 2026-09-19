@@ -79,6 +79,7 @@ import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
 import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.isPCloudFolderHidden
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.directoryDB
@@ -222,7 +223,7 @@ class DirectoryAdapter(
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
 
-            checkHideBtnVisibility(this, ArrayList(realPaths.filter { !it.isPCloudPath() }))
+            checkHideBtnVisibility(this, ArrayList(realPaths))
             checkPinBtnVisibility(this, selectedPaths)
         }
     }
@@ -304,12 +305,21 @@ class DirectoryAdapter(
         else -> TYPE_IMAGES
     }
 
+    // a pCloud folder is hidden by a setting rather than a .nomedia file, so no storage
+    // permission comes into it, see Config.pCloudHiddenFolders. Only a folder hidden by
+    // itself is offered for unhiding, one under a hidden folder is hidden by its parent
     private fun checkHideBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
+        val (pCloudPaths, localPaths) = selectedPaths.partition { it.isPCloudPath() }
+        val canTouchLocalFolders = !isRPlus() || isExternalStorageManager()
+        val hiddenPCloudFolders = config.pCloudHiddenFolders
+
         menu.findItem(R.id.cab_hide).isVisible =
-            (!isRPlus() || isExternalStorageManager()) && selectedPaths.any { !it.doesThisOrParentHaveNoMedia(HashMap(), null) }
+            (canTouchLocalFolders && localPaths.any { !it.doesThisOrParentHaveNoMedia(HashMap(), null) })
+                || pCloudPaths.any { !activity.isPCloudFolderHidden(it) }
 
         menu.findItem(R.id.cab_unhide).isVisible =
-            (!isRPlus() || isExternalStorageManager()) && selectedPaths.any { it.doesThisOrParentHaveNoMedia(HashMap(), null) }
+            (canTouchLocalFolders && localPaths.any { it.doesThisOrParentHaveNoMedia(HashMap(), null) })
+                || pCloudPaths.any { hiddenPCloudFolders.contains(it) }
     }
 
     private fun checkPinBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
@@ -467,22 +477,32 @@ class DirectoryAdapter(
             }
         }
 
+        // a pCloud folder is hidden by a setting rather than a .nomedia file
+        val (pCloudPaths, localPaths) = selectedPaths.partition { it.isPCloudPath() }
+        if (pCloudPaths.isNotEmpty()) {
+            togglePCloudFoldersVisibility(pCloudPaths, hide)
+        }
+
+        if (localPaths.isEmpty()) {
+            return
+        }
+
         if (hide) {
             if (config.wasHideFolderTooltipShown) {
-                hideFolders(selectedPaths)
+                hideFolders(ArrayList(localPaths))
             } else {
                 config.wasHideFolderTooltipShown = true
                 ConfirmationDialog(activity, activity.getString(R.string.hide_folder_description)) {
-                    hideFolders(selectedPaths)
+                    hideFolders(ArrayList(localPaths))
                 }
             }
         } else {
-            if (selectedPaths.any { it.isThisOrParentFolderHidden() }) {
+            if (localPaths.any { it.isThisOrParentFolderHidden() }) {
                 ConfirmationDialog(activity, "", R.string.cant_unhide_folder, org.fossify.commons.R.string.ok, 0) {}
                 return
             }
 
-            selectedPaths.filter { it != FAVORITES && it != RECYCLE_BIN && (selectedPaths.size == 1 || !config.isFolderProtected(it)) }.forEach {
+            localPaths.filter { it != FAVORITES && it != RECYCLE_BIN && (localPaths.size == 1 || !config.isFolderProtected(it)) }.forEach {
                 val path = it
                 activity.handleLockedFolderOpening(path) { success ->
                     if (success) {
@@ -511,6 +531,47 @@ class DirectoryAdapter(
                     hideFolder(path)
                 }
             }
+        }
+    }
+
+    // Nothing is written anywhere for a pCloud folder, the setting changes and the list is
+    // read again. Unhiding a folder under a hidden one is refused the way it is for a folder
+    // under a dot folder: it is the parent that hides it
+    private fun togglePCloudFoldersVisibility(paths: List<String>, hide: Boolean) {
+        if (hide) {
+            val hideConfirmed = {
+                config.addPCloudHiddenFolders(paths)
+                onPCloudFolderVisibilityChanged()
+            }
+
+            if (config.wasPCloudHideFolderTooltipShown) {
+                hideConfirmed()
+            } else {
+                config.wasPCloudHideFolderTooltipShown = true
+                ConfirmationDialog(activity, activity.getString(R.string.pcloud_hide_folder_description)) {
+                    hideConfirmed()
+                }
+            }
+        } else {
+            val hiddenFolders = config.pCloudHiddenFolders
+            if (paths.any { !hiddenFolders.contains(it) && activity.isPCloudFolderHidden(it) }) {
+                ConfirmationDialog(activity, activity.getString(R.string.pcloud_cant_unhide_folder), 0, org.fossify.commons.R.string.ok, 0) {}
+                return
+            }
+
+            config.removePCloudHiddenFolders(paths)
+            onPCloudFolderVisibilityChanged()
+        }
+    }
+
+    private fun onPCloudFolderVisibilityChanged() {
+        if (config.shouldShowHidden) {
+            ensureBackgroundThread {
+                updateFolderNames()
+            }
+        } else {
+            listener?.refreshItems()
+            finishActMode()
         }
     }
 
@@ -549,8 +610,10 @@ class DirectoryAdapter(
     private fun updateFolderNames() {
         val includedFolders = config.includedFolders
         val hidden = activity.getString(R.string.hidden)
+        // a local folder is checked for its .nomedia on the spot, a pCloud one is hidden by the setting
+        val hiddenPCloudFolders = ArrayList(config.pCloudHiddenFolders)
         dirs.filter { !it.isGroup() }.forEach {
-            it.name = activity.checkAppendingHidden(it.path, hidden, includedFolders, ArrayList())
+            it.name = activity.checkAppendingHidden(it.path, hidden, includedFolders, hiddenPCloudFolders)
         }
         listener?.updateDirectories(dirs.toMutableList() as ArrayList)
         activity.runOnUiThread {

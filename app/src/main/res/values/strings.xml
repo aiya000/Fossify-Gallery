@@ -88,6 +88,8 @@
     <string name="pcloud_delete_confirmation">Move %1$s to the pCloud trash? It can be brought back from the trash on pcloud.com, not from this app.</string>
     <string name="pcloud_delete_folder_confirmation">Move %1$s to the pCloud trash, with everything inside? It can be brought back from the trash on pcloud.com, not from this app.</string>
     <string name="pcloud_already_exists">pCloud already has a file or folder with that name</string>
+    <string name="pcloud_hide_folder_description">This hides the folder and everything under it in this app, on this device only: nothing is written to pCloud, other pCloud apps are not affected. Hidden folders can be shown again with \'Show hidden items\' in Settings or \'Temporarily show hidden\' in the menu, and the choice goes out with the settings export. Continue?</string>
+    <string name="pcloud_cant_unhide_folder">A folder above this one is hidden, so this one is hidden with it. Unhide that folder instead.</string>
     <string name="pcloud_transfer_channel">pCloud transfers</string>
     <string name="pcloud_transfer_started">Transfer started, the notification shows its progress</string>
     <string name="pcloud_uploading">Uploading to pCloud (%1$d/%2$d)</string>

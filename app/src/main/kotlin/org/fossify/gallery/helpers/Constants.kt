@@ -178,6 +178,9 @@ const val PCLOUD_RESCAN_ON_GROUP_OPEN = "pcloud_rescan_on_group_open"
 const val PCLOUD_RESCAN_AFTER_WRITE = "pcloud_rescan_after_write"
 const val PCLOUD_RESCAN_INTERVAL_MINUTES = "pcloud_rescan_interval_minutes"
 const val PCLOUD_RESCAN_ON_UNMETERED_ONLY = "pcloud_rescan_on_unmetered_only"
+// pCloud folders hidden in this app, see Config.pCloudHiddenFolders
+const val PCLOUD_HIDDEN_FOLDERS = "pcloud_hidden_folders"
+const val WAS_PCLOUD_HIDE_FOLDER_TOOLTIP_SHOWN = "was_pcloud_hide_folder_tooltip_shown"
 const val PCLOUD_LAST_FULL_SCAN_AT = "pcloud_last_full_scan_at"
 // where the diff sync left off, see PCloudScanner.sync(). 0 means the next sync is a full scan
 const val PCLOUD_DIFF_ID = "pcloud_diff_id"

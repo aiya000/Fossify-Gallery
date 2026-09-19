@@ -523,7 +523,18 @@ fun Context.getNoMediaFoldersSync(): ArrayList<String> {
         cursor?.close()
     }
 
+    // a pCloud folder hidden in this app counts as one with a .nomedia in it, so that
+    // everything that hides, names and shows folders by that file treats it the same way
+    if (config.isPCloudLoggedIn) {
+        folders.addAll(config.pCloudHiddenFolders)
+    }
+
     return folders
+}
+
+// whether the pCloud folder, or one above it, is hidden in this app, see Config.pCloudHiddenFolders
+fun Context.isPCloudFolderHidden(path: String): Boolean {
+    return config.pCloudHiddenFolders.any { path == it || path.startsWith("$it/") }
 }
 
 fun Context.rescanFolderMedia(path: String) {

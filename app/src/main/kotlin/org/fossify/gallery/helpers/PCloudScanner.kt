@@ -212,6 +212,7 @@ class PCloudScanner(private val context: Context) {
         }
 
         config.updateFolderGroupMemberPath(oldPath, newPath)
+        config.updatePCloudHiddenFolderPaths(oldPath, newPath)
     }
 
     // the pseudo path of a folder id, or null for one the cache has no row for. The root is
