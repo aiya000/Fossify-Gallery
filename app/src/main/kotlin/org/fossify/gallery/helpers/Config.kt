@@ -46,6 +46,12 @@ class Config(context: Context) : BaseConfig(context) {
 
     private fun getStorageDirectorySortingKey(storageFilter: Int) = "$SORT_FOLDERS_STORAGE_PREFIX$storageFilter"
 
+    // the storages whose folder list has a sorting of its own, in the order of their STORAGE_FILTER_* values
+    fun getStoragesWithOwnDirectorySorting(): List<Int> = prefs.all.keys
+        .filter { it.startsWith(SORT_FOLDERS_STORAGE_PREFIX) }
+        .mapNotNull { it.removePrefix(SORT_FOLDERS_STORAGE_PREFIX).toIntOrNull() }
+        .sorted()
+
     fun saveFolderGrouping(path: String, value: Int) {
         if (path.isEmpty()) {
             groupBy = value
@@ -879,6 +885,13 @@ class Config(context: Context) : BaseConfig(context) {
         items[GROUP_BY] = groupBy
         items[CUSTOM_FOLDERS_ORDER] = customFoldersOrder
 
+        // "apply to this storage only" is the presence of that storage's key, and an import
+        // only ever writes keys. This line names the storages that have one ("" when none
+        // does), so that the import can drop the ones the export did not have and a sorting
+        // switched off before the export is off after the import too. An export written
+        // before this line existed carries none and leaves them alone
+        items[SORT_FOLDERS_OWN_STORAGES] = getStoragesWithOwnDirectorySorting().joinToString(",")
+
         prefs.all.toSortedMap().forEach { (key, value) ->
             if (value != null && isPerFolderSortingKey(key)) {
                 items[key] = value
@@ -896,6 +909,15 @@ class Config(context: Context) : BaseConfig(context) {
             key == DIRECTORY_SORT_ORDER -> globalDirectorySorting = value.toInt()
             key == GROUP_BY -> groupBy = value.toInt()
             key == CUSTOM_FOLDERS_ORDER -> customFoldersOrder = value
+            // the storages not named lose their own sorting; the named ones keep theirs, or
+            // get it from their own line, whichever side of this one that line is on
+            key == SORT_FOLDERS_OWN_STORAGES -> {
+                val storagesWithOwnSorting = value.split(',').mapNotNull { it.trim().toIntOrNull() }
+                getStoragesWithOwnDirectorySorting()
+                    .filter { it !in storagesWithOwnSorting }
+                    .forEach { removeStorageDirectorySorting(it) }
+            }
+
             key.startsWith(CUSTOM_MEDIA_ORDER_PREFIX) -> prefs.edit().putString(key, value).apply()
             key.startsWith(SORT_FOLDER_PREFIX) || key.startsWith(GROUP_FOLDER_PREFIX) || key.startsWith(SORT_FOLDERS_STORAGE_PREFIX) ->
                 prefs.edit().putInt(key, value.toInt()).apply()
