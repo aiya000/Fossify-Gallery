@@ -78,6 +78,11 @@ class MediaFetcher(val context: Context) {
                 }
                 curMedia.addAll(newMedia)
             }
+
+            // the favorites on pCloud have no file to list, they come from the cache
+            if (curPath == FAVORITES) {
+                curMedia.addAll(getPCloudFavorites(favoritePaths, isPickImage, isPickVideo, filterMedia))
+            }
         }
 
         sortMedia(curMedia, context.config.getFolderSorting(curPath), curPath)
@@ -308,7 +313,8 @@ class MediaFetcher(val context: Context) {
         val fileSizes = if (checkProperFileSize || checkFileExistence) getFolderSizes(folder) else HashMap()
 
         val files = when (folder) {
-            FAVORITES -> favoritePaths.filter { showHidden || !it.contains("/.") }.map { File(it) }.toMutableList() as ArrayList<File>
+            // a pCloud favorite is no file, getFilesFrom() adds it from the cache
+            FAVORITES -> favoritePaths.filter { !it.isPCloudPath() && (showHidden || !it.contains("/.")) }.map { File(it) }.toMutableList() as ArrayList<File>
             RECYCLE_BIN -> deletedMedia.map { File(it.path) }.toMutableList() as ArrayList<File>
             else -> File(folder).listFiles()?.toMutableList() ?: return media
         }
@@ -643,6 +649,18 @@ class MediaFetcher(val context: Context) {
 
         media.forEach { it.isFavorite = favoritePaths.contains(it.path) }
         return media.toMutableList() as ArrayList<Medium>
+    }
+
+    // the pCloud part of the Favorites folder: the cache rows of the favorites, read folder by folder
+    // the way any pCloud folder is, so the media type filter and the hidden files rule apply the same
+    private fun getPCloudFavorites(favoritePaths: ArrayList<String>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int): ArrayList<Medium> {
+        val wanted = favoritePaths.filter { it.isPCloudPath() }.toHashSet()
+        val media = ArrayList<Medium>()
+        wanted.map { it.getParentPath() }.distinct().forEach { folder ->
+            media.addAll(getMediaOnPCloud(folder, isPickImage, isPickVideo, filterMedia, favoritePaths).filter { it.path in wanted })
+        }
+
+        return media
     }
 
     fun getFolderDateTakens(folder: String): HashMap<String, Long> {

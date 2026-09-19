@@ -458,7 +458,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // one when the setting asks for it, each under its own throttle. The cached folders are on
     // screen before this runs
     private fun rescanPCloudFoldersOfGroupIfDue(groupId: Long?) {
-        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(config).rescanOnGroupOpen) {
+        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(this).rescanOnGroupOpen) {
             return
         }
 
@@ -764,7 +764,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             // the cache is on screen right away; a rescan, when the settings ask for one,
             // refreshes the list a second time once it is through
             reloadDirectories()
-            val policy = PCloudSyncPolicy(config)
+            val policy = PCloudSyncPolicy(this)
             if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
                 rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
             }
@@ -790,10 +790,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // the menu item lists the whole account again: it is the way out when the diff sync
+    // behind every other rescan has gone astray, and its counts toast means the whole account
     private fun rescanPCloudManually() {
         toast(R.string.pcloud_rescanning)
         binding.directoriesRefreshLayout.isRefreshing = true
-        rescanPCloud(reportCounts = true) { runOnUiThread { getDirectories() } }
+        rescanPCloud(reportCounts = true, full = true) { runOnUiThread { getDirectories() } }
     }
 
     // the cached folders are on screen before this runs, so the scan never keeps the user waiting
@@ -803,7 +805,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mShouldRescanPCloudOnLaunch = false
-        val policy = PCloudSyncPolicy(config)
+        val policy = PCloudSyncPolicy(this)
         if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
             rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
         }
@@ -1706,7 +1708,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // applies the virtual folder groups on top of the "Group direct subfolders" logic for the currently opened group level
     private fun getDirsToShowWithGroups(sortedDirs: ArrayList<Directory>): ArrayList<Directory> {
-        val grouped = getGroupedDirectories(sortedDirs, mCurrentGroupId)
+        val grouped = getGroupedDirectories(sortedDirs, mCurrentGroupId, hideGroupsWithoutVisibleFolders = true)
         val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
         val realDirsToShow = getDirsToShow(
             dirs = ArrayList(realDirs),

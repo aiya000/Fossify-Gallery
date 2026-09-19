@@ -70,7 +70,9 @@
     <string name="storage_filter">Storage</string>
     <string name="storage_local">This device</string>
     <string name="storage_local_and_pcloud">This device and pCloud</string>
-    <string name="pcloud_rescan_on_launch">Rescan pCloud when the app starts</string>
+    <string name="pcloud_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only, never on a metered network</string>
+    <string name="pcloud_rescan_on_launch">Rescan pCloud when the app starts (only what changed since the last scan)</string>
+    <string name="use_for_this_storage_only">Apply to this storage only</string>
     <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
     <string name="pcloud_rescan_on_folder_open">Rescan a pCloud folder when opening it</string>
     <string name="pcloud_rescan_on_group_open">Rescan the pCloud folders of a group when opening it</string>

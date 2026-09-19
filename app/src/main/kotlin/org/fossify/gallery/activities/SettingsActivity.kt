@@ -192,12 +192,19 @@ class SettingsActivity : SimpleActivity() {
     // without an account
     private fun setupPCloudRescanPolicy() {
         val isLoggedIn = config.isPCloudLoggedIn
+        binding.settingsPcloudRescanOnUnmeteredOnlyHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnLaunchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnStorageSwitchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnFolderOpenHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnGroupOpenHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanAfterWriteHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanIntervalHolder.beVisibleIf(isLoggedIn)
+
+        binding.settingsPcloudRescanOnUnmeteredOnly.isChecked = config.pCloudRescanOnUnmeteredOnly
+        binding.settingsPcloudRescanOnUnmeteredOnlyHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnUnmeteredOnly.toggle()
+            config.pCloudRescanOnUnmeteredOnly = binding.settingsPcloudRescanOnUnmeteredOnly.isChecked
+        }
 
         binding.settingsPcloudRescanOnLaunch.isChecked = config.pCloudRescanOnLaunch
         binding.settingsPcloudRescanOnLaunchHolder.setOnClickListener {
@@ -1202,7 +1209,7 @@ class SettingsActivity : SimpleActivity() {
                 put(SHOW_RECYCLE_BIN_AT_FOLDERS, config.showRecycleBinAtFolders)
                 put(SHOW_RECYCLE_BIN_LAST, config.showRecycleBinLast)
                 put(SORT_ORDER, config.sorting)
-                put(DIRECTORY_SORT_ORDER, config.directorySorting)
+                put(DIRECTORY_SORT_ORDER, config.globalDirectorySorting)
                 put(GROUP_BY, config.groupBy)
                 put(GROUP_DIRECT_SUBFOLDERS, config.groupDirectSubfolders)
                 put(PINNED_FOLDERS, TextUtils.join(",", config.pinnedFolders))
@@ -1398,7 +1405,7 @@ class SettingsActivity : SimpleActivity() {
                 SHOW_RECYCLE_BIN_AT_FOLDERS -> config.showRecycleBinAtFolders = value.toBoolean()
                 SHOW_RECYCLE_BIN_LAST -> config.showRecycleBinLast = value.toBoolean()
                 SORT_ORDER -> config.sorting = value.toInt()
-                DIRECTORY_SORT_ORDER -> config.directorySorting = value.toInt()
+                DIRECTORY_SORT_ORDER -> config.globalDirectorySorting = value.toInt()
                 GROUP_BY -> config.groupBy = value.toInt()
                 GROUP_DIRECT_SUBFOLDERS -> config.groupDirectSubfolders = value.toBoolean()
                 PINNED_FOLDERS -> config.addPinnedFolders(value.toStringSet())

@@ -89,6 +89,24 @@ Everything above describes the upstream app. This fork adds the following on top
 - What is not free is the service on the other end. pCloud is a hosted, proprietary service, so in F-Droid's vocabulary a build of this fork carries the [`NonFreeNet`](https://f-droid.org/en/docs/Anti-Features/) antifeature: a feature that depends on a network service that is not free software
 - Nothing about it is forced on anyone. Local folders keep working exactly as they did, and the pCloud side stays asleep until it is signed in to
 
+### What pCloud looks like from the gallery
+
+- Once signed in (Settings → pCloud account), the storage switch in the folder list's menu shows the folders of this device, of pCloud, or both. pCloud folders are listed from a cache that is filled by "Rescan pCloud" and kept up to date by cheap diff syncs afterwards: when the app starts, when the storage is switched, when a folder is opened, after a write, each of them a switch in the settings with a minimum interval between them
+- Thumbnails, the fullscreen view and video playback stream from pCloud; the file behind a photo is fetched once and kept in a bounded cache on the device
+- Deleting, renaming and creating folders act on pCloud itself. A deleted file goes to the trash on pcloud.com, not to the device's recycle bin
+- Copying and moving cross the line in both directions: device to pCloud, pCloud to device, or within pCloud. Long transfers run as a foreground service with a progress notification, which is what `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` and `POST_NOTIFICATIONS` are declared for
+- Favorites, search, slideshows, widgets and virtual folder groups take pCloud media like local media. Editing, rotating, wallpaper and the other tools that want a file on the device stay hidden for it
+
+### Building with pCloud
+
+The pCloud side needs a client id of your own, which does not ship with this repository:
+
+1. Register an app under "My apps" at [docs.pcloud.com](https://docs.pcloud.com/) and add the redirect URIs `pcloud-oauth://io.github.aiya000.fossify.gallery` (release builds) and `pcloud-oauth://io.github.aiya000.fossify.gallery.debug` (debug builds)
+2. Put the client id into `local.properties` next to the SDK path: `PCLOUD_CLIENT_ID=your_client_id`
+3. Build as usual. The id is compiled into `BuildConfig` and never committed, `local.properties` is ignored by git
+
+No client secret is involved: the app signs in with the implicit grant, so the token comes straight back to it from the browser. A build without a client id still works for local folders and says so when the pCloud sign-in is tried.
+
 ### Builds
 
 - This fork builds under the application id `io.github.aiya000.fossify.gallery`, so it installs next to the official Fossify Gallery instead of replacing it

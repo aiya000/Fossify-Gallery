@@ -214,53 +214,38 @@ fun Context.getSortedDirectories(source: ArrayList<Directory>): ArrayList<Direct
         return newDirsOrdered
     }
 
+    // the folders' own fields are compared rather than their stored sort_value: that value was
+    // computed under the sorting in force when the folder was scanned, and the folder list can
+    // be sorted per storage now, so it may belong to another sorting than the one applied here
     dirs.sortWith { o1, o2 ->
         o1 as Directory
         o2 as Directory
 
         var result = when {
             sorting and SORT_BY_NAME != 0 -> {
-                if (o1.sortValue.isEmpty()) {
-                    o1.sortValue = o1.name.lowercase(Locale.getDefault())
-                }
-
-                if (o2.sortValue.isEmpty()) {
-                    o2.sortValue = o2.name.lowercase(Locale.getDefault())
-                }
-
+                val name1 = o1.name.normalizeString().lowercase(Locale.getDefault())
+                val name2 = o2.name.normalizeString().lowercase(Locale.getDefault())
                 if (sorting and SORT_USE_NUMERIC_VALUE != 0) {
-                    AlphanumericComparator().compare(
-                        string1 = o1.sortValue.normalizeString().lowercase(Locale.getDefault()),
-                        string2 = o2.sortValue.normalizeString().lowercase(Locale.getDefault())
-                    )
+                    AlphanumericComparator().compare(name1, name2)
                 } else {
-                    o1.sortValue.normalizeString().lowercase(Locale.getDefault())
-                        .compareTo(o2.sortValue.normalizeString().lowercase(Locale.getDefault()))
+                    name1.compareTo(name2)
                 }
             }
 
             sorting and SORT_BY_PATH != 0 -> {
-                if (o1.sortValue.isEmpty()) {
-                    o1.sortValue = o1.path.lowercase(Locale.getDefault())
-                }
-
-                if (o2.sortValue.isEmpty()) {
-                    o2.sortValue = o2.path.lowercase(Locale.getDefault())
-                }
-
+                val path1 = o1.path.lowercase(Locale.getDefault())
+                val path2 = o2.path.lowercase(Locale.getDefault())
                 if (sorting and SORT_USE_NUMERIC_VALUE != 0) {
-                    AlphanumericComparator().compare(
-                        string1 = o1.sortValue.lowercase(Locale.getDefault()),
-                        string2 = o2.sortValue.lowercase(Locale.getDefault())
-                    )
+                    AlphanumericComparator().compare(path1, path2)
                 } else {
-                    o1.sortValue.lowercase(Locale.getDefault())
-                        .compareTo(o2.sortValue.lowercase(Locale.getDefault()))
+                    path1.compareTo(path2)
                 }
             }
 
-            // SORT_BY_SIZE, SORT_BY_COUNT, SORT_BY_DATE_MODIFIED are numerical
-            else -> (o1.sortValue.toLongOrNull() ?: 0).compareTo(o2.sortValue.toLongOrNull() ?: 0)
+            sorting and SORT_BY_SIZE != 0 -> o1.size.compareTo(o2.size)
+            sorting and SORT_BY_COUNT != 0 -> o1.mediaCnt.compareTo(o2.mediaCnt)
+            sorting and SORT_BY_DATE_MODIFIED != 0 -> o1.modified.compareTo(o2.modified)
+            else -> o1.taken.compareTo(o2.taken)
         }
 
         if (sorting and SORT_DESCENDING != 0) {
@@ -701,11 +686,13 @@ fun Context.isShownByStorageFilter(directory: Directory): Boolean {
     }
 }
 
-// Runs a full pCloud scan off the main thread and tells the user in a toast how it went: the
-// counts when asked for, otherwise only what failed. A token pCloud no longer accepts signs the
-// account out. onDone runs in every case, also when a scan was already running and this one was
-// skipped; it is called on whatever thread the scan ended on, so hop to the UI thread in it
-fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
+// Brings the pCloud cache up to date off the main thread and tells the user in a toast how it
+// went: the counts when asked for, otherwise only what failed. What is fetched is the changes
+// since the last scan (PCloudScanner.sync()); full lists the whole account again instead. A
+// token pCloud no longer accepts signs the account out. onDone runs in every case, also when
+// a scan was already running and this one was skipped; it is called on whatever thread the
+// scan ended on, so hop to the UI thread in it
+fun Context.rescanPCloud(reportCounts: Boolean, full: Boolean = false, onDone: () -> Unit = {}) {
     if (!config.isPCloudLoggedIn || !PCloudScanner.isRunning.compareAndSet(false, true)) {
         onDone()
         return
@@ -713,7 +700,8 @@ fun Context.rescanPCloud(reportCounts: Boolean, onDone: () -> Unit = {}) {
 
     ensureBackgroundThread {
         try {
-            val result = PCloudScanner(this).scanAll()
+            val scanner = PCloudScanner(this)
+            val result = if (full) scanner.scanAll() else scanner.sync()
             if (reportCounts) {
                 toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
             }
@@ -809,7 +797,7 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
             false
         }
 
-        if (success && PCloudSyncPolicy(config).rescanAfterWrite) {
+        if (success && PCloudSyncPolicy(this).rescanAfterWrite) {
             rescanPCloudFolders(foldersToRescan, reportCounts = false) { onDone(true) }
         } else {
             onDone(success)
@@ -821,7 +809,7 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
 // the throttle is per folder, see PCloudSyncPolicy.isFolderScanDue(). Reads the database, so
 // call it off the main thread
 fun Context.getPCloudFoldersDueForRescan(paths: List<String>): List<String> {
-    val policy = PCloudSyncPolicy(config)
+    val policy = PCloudSyncPolicy(this)
     return paths.filter { policy.isFolderScanDue(pCloudItemsDB.getItem(it)?.lastScannedAt ?: 0L) }
 }
 
@@ -1244,6 +1232,13 @@ fun Context.updateFavorite(path: String, isFavorite: Boolean) {
             favoritesDB.insert(getFavoriteFromPath(path))
         } else {
             favoritesDB.deleteFavoritePath(path)
+        }
+
+        // a local row is rewritten with its flag the next time its folder is listed, a pCloud row
+        // only by a rescan, so the flag is set right away: the favorites count and the cached
+        // Favorites folder read it
+        if (path.isPCloudPath()) {
+            mediaDB.updateFavorite(path, isFavorite)
         }
     } catch (e: Exception) {
         toast(org.fossify.commons.R.string.unknown_error_occurred)

@@ -21,10 +21,14 @@ const val GROUP_COLLAGE_SIZE = 4
 
 // Returns the items to display at the given group level: the real folders assigned to that level plus its direct subgroups.
 // Any pseudo group items in the input are dropped and regenerated, so it is safe to pass an already grouped list in.
+// With hideGroupsWithoutVisibleFolders, a group whose folders are all missing from dirs (the storage filter, hidden or
+// excluded folders) is left out like its folders are; a group with no folder assigned at all stays, so that a group made
+// a moment ago can be seen and filled. The folder picker keeps every group, a folder may be headed for one that is out of view
 fun Context.getGroupedDirectories(
     dirs: ArrayList<Directory>,
     currentGroupId: Long?,
-    excludedGroupIds: Collection<Long> = emptyList()
+    excludedGroupIds: Collection<Long> = emptyList(),
+    hideGroupsWithoutVisibleFolders: Boolean = false
 ): ArrayList<Directory> {
     val realDirs = dirs.filter { !it.isGroup() }
     val groups = config.parseFolderGroups()
@@ -50,11 +54,17 @@ fun Context.getGroupedDirectories(
     groups
         .filter { !hiddenGroupIds.contains(it.id) }
         .filter { (it.parentId?.takeIf { id -> validGroupIds.contains(id) }) == currentGroupId }
+        .filter { !hideGroupsWithoutVisibleFolders || hasNoFoldersOrVisibleOnes(it, groups, members, realDirs) }
         .forEach { group ->
             result.add(createGroupDirectory(group, groups, members, realDirs))
         }
 
     return result
+}
+
+private fun Context.hasNoFoldersOrVisibleOnes(group: FolderGroup, groups: List<FolderGroup>, members: Map<String, Long>, dirs: List<Directory>): Boolean {
+    val hasFolders = members.values.any { config.isFolderGroupDescendantOrSelf(it, group.id, groups) }
+    return !hasFolders || collectFolderGroupContents(group.id, groups, members, dirs).isNotEmpty()
 }
 
 // Collects every real folder inside the group, including the ones in nested subgroups
@@ -152,10 +162,12 @@ private fun Context.createGroupDirectory(
 
 // Drops memberships of folders which no longer exist on the filesystem, keeps the stored JSON small.
 // Hidden or excluded folders are not shown in the folder list but still exist, so they keep their group.
+// A pCloud folder has no filesystem to check and may be out of view while logged out, so it keeps its group;
+// PCloudWriter moves the membership along on a rename
 fun Context.pruneFolderGroupMembers() {
     val members = config.parseFolderGroupMembers()
     val OTGPath = config.OTGPath
-    val stalePaths = members.keys.filter { !getDoesFilePathExist(it, OTGPath) }
+    val stalePaths = members.keys.filter { !it.isPCloudPath() && !getDoesFilePathExist(it, OTGPath) }
     if (stalePaths.isNotEmpty()) {
         stalePaths.forEach { members.remove(it) }
         config.storeFolderGroupMembers(members)

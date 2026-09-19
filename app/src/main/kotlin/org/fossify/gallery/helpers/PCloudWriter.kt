@@ -96,19 +96,11 @@ class PCloudWriter(private val context: Context) {
     }
 
     // Answers the new path. Every row under the folder follows it, at any depth, and so does
-    // the folder's place in a virtual group. Per-folder settings keyed by path (sorting, the
-    // cover image, pinning) stay with the old path, as they do for a local folder
+    // the folder's place in a virtual group, see PCloudScanner.moveFolderRows()
     fun renameFolder(path: String, newName: String): String {
         val newPath = "${path.getParentPath()}/$newName"
         PCloudApi.renameFolder(apiHost, accessToken, path.toPCloudRemotePath(), newName)
-        GalleryDatabase.getInstance(context).runInTransaction {
-            context.mediaDB.updatePathsUnderFolder(path, newPath)
-            context.favoritesDB.updatePathsUnderFolder(path, newPath)
-            context.directoryDB.updatePathsUnderFolder(path, newPath, newName)
-            context.pCloudItemsDB.updatePaths(path, newPath)
-        }
-
-        config.updateFolderGroupMemberPath(path, newPath)
+        PCloudScanner(context).moveFolderRows(path, newPath)
         return newPath
     }
 

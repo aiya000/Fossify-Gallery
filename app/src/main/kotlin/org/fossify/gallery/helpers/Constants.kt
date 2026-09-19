@@ -149,6 +149,8 @@ const val PCLOUD_AUTHORIZE_URL = "https://my.pcloud.com/oauth2/authorize"
 // longer good, there is no other notice that it expired
 const val PCLOUD_RESULT_LOG_IN_FAILED = 1000
 const val PCLOUD_RESULT_LOG_IN_REQUIRED = 2000
+// undocumented; seen for a recursive listfolder of the root, which pCloud refuses
+const val PCLOUD_RESULT_INVALID_REQUEST = 1101
 
 // listfolder answers this for a folder that has been deleted or moved since it was scanned
 const val PCLOUD_RESULT_DIRECTORY_NOT_FOUND = 2005
@@ -162,6 +164,8 @@ const val PCLOUD_RESULT_ALREADY_EXISTS = 2004
 const val PCLOUD_CATEGORY_IMAGE = 1
 const val PCLOUD_CATEGORY_VIDEO = 2
 const val STORAGE_FILTER = "storage_filter"
+// the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
+const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
 
 // when the pCloud cache is refreshed from the network, see PCloudSyncPolicy. Only launch and
 // storage switch are wired up so far, the other events land with the screens that raise them
@@ -171,7 +175,10 @@ const val PCLOUD_RESCAN_ON_FOLDER_OPEN = "pcloud_rescan_on_folder_open"
 const val PCLOUD_RESCAN_ON_GROUP_OPEN = "pcloud_rescan_on_group_open"
 const val PCLOUD_RESCAN_AFTER_WRITE = "pcloud_rescan_after_write"
 const val PCLOUD_RESCAN_INTERVAL_MINUTES = "pcloud_rescan_interval_minutes"
+const val PCLOUD_RESCAN_ON_UNMETERED_ONLY = "pcloud_rescan_on_unmetered_only"
 const val PCLOUD_LAST_FULL_SCAN_AT = "pcloud_last_full_scan_at"
+// where the diff sync left off, see PCloudScanner.sync(). 0 means the next sync is a full scan
+const val PCLOUD_DIFF_ID = "pcloud_diff_id"
 
 // the choices offered for the interval, in minutes. 0 means no minimum interval at all
 val PCLOUD_RESCAN_INTERVAL_CHOICES = arrayListOf(0, 5, 15, 60, 360, 1440)

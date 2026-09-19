@@ -735,7 +735,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // waiting. The folder is refreshed from pCloud when the setting asks for it and the
     // folder's own throttle allows it; only this folder, not its subfolders
     private fun rescanPCloudFolderIfDue() {
-        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(config).rescanOnFolderOpen) {
+        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
             return
         }
 
@@ -769,7 +769,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                         .mapNotNull { it as? Medium }
                         .filter { !newPaths.contains(it.path) }
                         .forEach {
-                            if (mPath == FAVORITES && getDoesFilePathExist(it.path)) {
+                            // a pCloud favorite that dropped out of the list was unfavorited, its cache row stays
+                            if (mPath == FAVORITES && (it.path.isPCloudPath() || getDoesFilePathExist(it.path))) {
                                 favoritesDB.deleteFavoritePath(it.path)
                                 mediaDB.updateFavorite(it.path, false)
                             } else {

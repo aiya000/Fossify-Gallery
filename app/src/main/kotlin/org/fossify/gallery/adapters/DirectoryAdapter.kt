@@ -101,6 +101,7 @@ import org.fossify.gallery.helpers.FOLDER_STYLE_ROUNDED_CORNERS
 import org.fossify.gallery.helpers.FOLDER_STYLE_SQUARE
 import org.fossify.gallery.helpers.GROUP_PATH_PREFIX
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
+import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -1177,6 +1178,7 @@ class DirectoryAdapter(
                     when {
                         // mark virtual groups with a folders icon where the SD card / USB icon would be
                         directory.isGroup() -> R.drawable.ic_folders_vector
+                        directory.location == LOCATION_PCLOUD -> R.drawable.ic_cloud_vector
                         directory.location == LOCATION_SD -> org.fossify.commons.R.drawable.ic_sd_card_vector
                         else -> org.fossify.commons.R.drawable.ic_usb_vector
                     }
