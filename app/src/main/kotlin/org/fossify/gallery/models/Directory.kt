@@ -6,6 +6,7 @@ import com.bumptech.glide.signature.ObjectKey
 import org.fossify.commons.extensions.formatDate
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.helpers.*
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.RECYCLE_BIN
 
 @Entity(tableName = "directories", indices = [Index(value = ["path"], unique = true)])
@@ -45,6 +46,10 @@ data class Directory(
     fun areFavorites() = path == FAVORITES
 
     fun isRecycleBin() = path == RECYCLE_BIN
+
+    // the app's recycle bin on pCloud, see PCLOUD_RECYCLE_BIN; a pCloud path, so the storage
+    // filter and everything else that tells the storages apart already treat it as pCloud
+    fun isPCloudRecycleBin() = path == PCLOUD_RECYCLE_BIN
 
     fun isGroup() = path.isFolderGroupPath()
 

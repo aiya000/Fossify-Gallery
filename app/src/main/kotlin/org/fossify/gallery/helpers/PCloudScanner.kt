@@ -19,6 +19,7 @@ import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.getFavoritePaths
 import org.fossify.gallery.extensions.getNoMediaFoldersSync
+import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.extensions.toPCloudRemotePath
@@ -236,8 +237,14 @@ class PCloudScanner(private val context: Context) {
     // Refreshes one folder from a non-recursive listfolder: its media rows, its Directory row
     // and its pcloud_items rows are replaced, subfolders are left as they are. A folder pCloud
     // no longer has is dropped from the cache, with everything under it, and null comes back.
+    // The app's recycle bin is never listed: its rows are the writer's, not a listing's, and
+    // the layout of its files on pCloud is not the one the rows show (see PCLOUD_RECYCLE_BIN).
     // Blocks like scanAll() does and throws the same way
     fun scanFolder(path: String): Result? {
+        if (path == PCLOUD_RECYCLE_BIN || path.isPCloudRecycleBinPath()) {
+            return null
+        }
+
         val folder = try {
             fetchFolder(path)
         } catch (e: PCloudException) {
@@ -271,7 +278,7 @@ class PCloudScanner(private val context: Context) {
     fun listFolders(path: String): List<String> {
         val folder = fetchFolder(path)
         val subfolders = folder.children
-            .filter { it.isFolder }
+            .filter { it.isFolder && !isRecycleBinFolder(path, it) }
             .sortedBy { it.name.lowercase() }
             .map { PCloudItem(null, "$path/${it.name}", it.itemId, true, 0L, false, 0L) }
 
@@ -285,10 +292,14 @@ class PCloudScanner(private val context: Context) {
     // listed flat and each folder in it is fetched as a tree of its own
     private fun fetchTree(): Entry {
         val root = fetchFolder(PCLOUD_PATH_SCHEME)
-        return root.withChildren(root.children.map { child ->
+        return root.withChildren(root.children.filter { !isRecycleBinFolder(PCLOUD_PATH_SCHEME, it) }.map { child ->
             if (child.isFolder) fetchSubtree("$PCLOUD_PATH_SCHEME/${child.name}") else child
         })
     }
+
+    // the app's recycle bin, a folder in the root, is left out of every listing
+    private fun isRecycleBinFolder(parentPath: String, entry: Entry) =
+        parentPath == PCLOUD_PATH_SCHEME && entry.isFolder && entry.name == PCLOUD_RECYCLE_BIN_FOLDER_NAME
 
     // one recursive listing, or, should pCloud refuse that for this folder too, a flat one
     // with every folder in it fetched the same way
@@ -479,21 +490,22 @@ class PCloudScanner(private val context: Context) {
 
     // replaces the pCloud rows in one transaction, so a folder list read in between never sees
     // half of a scan. Rows pCloud no longer has are dropped one by one: the list is short, and
-    // a NOT IN over thousands of paths would trip SQLite's argument limit
+    // a NOT IN over thousands of paths would trip SQLite's argument limit. The rows of the
+    // app's recycle bin are not a listing's to drop, the tree never holds them
     private fun store(media: List<Medium>, directories: List<Directory>, items: List<PCloudItem>) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val keptMediaPaths = media.map { it.path }.toHashSet()
-            context.mediaDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptMediaPaths }.forEach { path ->
+            context.mediaDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptMediaPaths && !it.isPCloudRecycleBinPath() }.forEach { path ->
                 context.mediaDB.deleteMediumPath(path)
                 context.favoritesDB.deleteFavoritePath(path)
             }
 
             val keptDirectoryPaths = directories.map { it.path }.toHashSet()
-            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptDirectoryPaths }.forEach { path ->
+            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptDirectoryPaths && it != PCLOUD_RECYCLE_BIN }.forEach { path ->
                 context.directoryDB.deleteDirPath(path)
             }
 
-            context.pCloudItemsDB.deleteAll()
+            context.pCloudItemsDB.deleteAllOutsideRecycleBin()
             context.pCloudItemsDB.insertAll(items)
             context.mediaDB.insertAll(media)
             context.directoryDB.insertAll(directories)

@@ -105,6 +105,7 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -203,27 +204,29 @@ class DirectoryAdapter(
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
-            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) &&
+            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !selectedPaths.contains(PCLOUD_RECYCLE_BIN) &&
                 (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected))
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
             findItem(R.id.cab_unlock).isVisible = selectedPaths.any { config.isFolderProtected(it) }
 
-            findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
+            // the pCloud bin can be emptied like the device's one; disabling is the device bin's setting
+            findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && (selectedPaths.first() == RECYCLE_BIN || selectedPaths.first() == PCLOUD_RECYCLE_BIN)
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
             findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && !isAnyPCloudSelected
 
             // filesystem operations make no sense for virtual groups
             findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
-            findItem(R.id.cab_move_to).isVisible = !isAnyPCloudSelected || isPCloudOnly
+            val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
+            findItem(R.id.cab_move_to).isVisible = (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
 
-            checkHideBtnVisibility(this, ArrayList(realPaths))
+            checkHideBtnVisibility(this, ArrayList(realPaths.filter { it != PCLOUD_RECYCLE_BIN }))
             checkPinBtnVisibility(this, selectedPaths)
         }
     }
@@ -586,11 +589,25 @@ class DirectoryAdapter(
     }
 
     private fun emptyRecycleBin() {
+        if (getSelectedRealPaths().firstOrNull() == PCLOUD_RECYCLE_BIN) {
+            emptyPCloudRecycleBin()
+            return
+        }
+
         activity.handleLockedFolderOpening(RECYCLE_BIN) { success ->
             if (success) {
                 activity.emptyTheRecycleBin {
                     listener?.refreshItems()
                 }
+            }
+        }
+    }
+
+    private fun emptyPCloudRecycleBin() {
+        activity.writeToPCloud(emptyList(), { this.emptyRecycleBin() }) {
+            activity.runOnUiThread {
+                finishActMode()
+                listener?.refreshItems()
             }
         }
     }
@@ -762,7 +779,7 @@ class DirectoryAdapter(
         activity.handleDeletePasswordProtection {
             handleLockedFolderOpeningForFolders(getSelectedPaths()) { paths ->
                 val groupIds = paths.mapNotNull { it.toFolderGroupId() }
-                val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN }
+                val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN && it != PCLOUD_RECYCLE_BIN }
                 if (groupIds.isEmpty() && folderPaths.isEmpty()) {
                     return@handleLockedFolderOpeningForFolders
                 }
@@ -935,11 +952,18 @@ class DirectoryAdapter(
         }
     }
 
-    // pCloud folders go to pCloud's own trash with everything in them, so the recycle bin does
-    // not come into it; the delete password and the "skip confirmation" setting do. The
-    // warning line is the same red one a local folder gets
+    // The media in pCloud folders go to the app's recycle bin on pCloud when the bin is in
+    // use, like a local folder's do, and the folders themselves to pCloud's own trash; the
+    // delete password and the "skip confirmation" setting apply. The warning line is the
+    // same red one a local folder gets. The pCloud bin's own tile means emptying it
     private fun askConfirmPCloudDelete() {
-        val deleteConfirmed = { deletePCloudFolders() }
+        if (isOneItemSelected() && getSelectedRealPaths().firstOrNull() == PCLOUD_RECYCLE_BIN) {
+            tryEmptyRecycleBin(true)
+            return
+        }
+
+        val toRecycleBin = config.useRecycleBin && !config.tempSkipRecycleBin
+        val deleteConfirmed = { deletePCloudFolders(toRecycleBin) }
         when {
             config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection(deleteConfirmed)
             config.skipDeleteConfirmation -> deleteConfirmed()
@@ -951,7 +975,8 @@ class DirectoryAdapter(
                     resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
                 }
 
-                val question = activity.getString(R.string.pcloud_delete_folder_confirmation, items)
+                val questionId = if (toRecycleBin) R.string.pcloud_move_folder_to_recycle_bin_confirmation else R.string.pcloud_delete_folder_confirmation
+                val question = activity.getString(questionId, items)
                 val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
                 ConfirmDeleteFolderDialog(activity, question, warning) {
                     deleteConfirmed()
@@ -962,7 +987,7 @@ class DirectoryAdapter(
 
     // a locked folder is skipped, like deleteFolders() skips it; the parents are rescanned so
     // that a folder pCloud kept after all comes back
-    private fun deletePCloudFolders() {
+    private fun deletePCloudFolders(toRecycleBin: Boolean) {
         val paths = getSelectedRealPaths().filter { it.isPCloudPath() }
         handleLockedFolderOpeningForFolders(paths) { folders ->
             if (folders.isEmpty()) {
@@ -971,7 +996,7 @@ class DirectoryAdapter(
 
             activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
             val parents = folders.map { it.getParentPath() }.distinct()
-            activity.writeToPCloud(parents, { deleteFolders(folders.toList()) }) {
+            activity.writeToPCloud(parents, { deleteFolders(folders.toList(), toRecycleBin) }) {
                 activity.runOnUiThread {
                     finishActMode()
                     listener?.refreshItems()

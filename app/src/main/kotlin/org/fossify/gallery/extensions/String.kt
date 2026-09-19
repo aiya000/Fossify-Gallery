@@ -5,6 +5,7 @@ import org.fossify.commons.extensions.isExternalStorageManager
 import org.fossify.commons.helpers.NOMEDIA
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -18,6 +19,16 @@ fun String.toPCloudRemotePath() = if (isPCloudPath()) "/${removePrefix(PCLOUD_PA
 
 // the other way round: "/Camera/IMG_0001.jpg" -> "pcloud:/Camera/IMG_0001.jpg", "/" -> "pcloud:"
 fun String.toPCloudPseudoPath() = "$PCLOUD_PATH_SCHEME${trimEnd('/')}"
+
+// a medium in the app's recycle bin on pCloud, see PCLOUD_RECYCLE_BIN. The bin folder itself
+// is not one of them
+fun String.isPCloudRecycleBinPath() = startsWith("$PCLOUD_RECYCLE_BIN/")
+
+// "pcloud:/Camera/IMG_0001.jpg" -> "pcloud:/.gallery-recycle-bin/Camera/IMG_0001.jpg"
+fun String.toPCloudRecycleBinPath() = "$PCLOUD_RECYCLE_BIN${removePrefix(PCLOUD_PATH_SCHEME)}"
+
+// and back: the path the medium had before it went into the bin
+fun String.fromPCloudRecycleBinPath() = "$PCLOUD_PATH_SCHEME${removePrefix(PCLOUD_RECYCLE_BIN)}"
 
 fun String.isThisOrParentIncluded(includedPaths: MutableSet<String>) =
     includedPaths.any { equals(it, true) } || includedPaths.any { "$this/".startsWith("$it/", true) }
