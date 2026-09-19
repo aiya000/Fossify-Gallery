@@ -816,8 +816,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // with the list: this takes over only once a drag is clearly sideways and the list is
     // not scrolling, and never while the list scrolls horizontally (a sideways drag is the
     // scroll then), while folders are selected (a drag reorder or a drag selection ends
-    // with a sideways move too), while the refresh spinner is up, without a pCloud account,
-    // or on the side where nothing lies in that direction
+    // with a sideways move too), without a pCloud account, or on the side where nothing lies
+    // in that direction
     private inner class StorageSwipe : RecyclerView.OnItemTouchListener {
         private val touchSlop = ViewConfiguration.get(this@MainActivity).scaledTouchSlop
         private val minFlingVelocity = ViewConfiguration.get(this@MainActivity).scaledMinimumFlingVelocity * 4
@@ -897,11 +897,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
 
+        // the refresh spinner is no reason to wait: it stands for the recheck of the folders on
+        // screen, which a switch stops anyway (reloadDirectories() raises mShouldStopFetching),
+        // or for a pCloud scan, which runs on in the background and only fills the cache
         private fun canSwipeStorage(): Boolean {
             return config.isPCloudLoggedIn
                 && !animating
                 && !config.scrollHorizontally
-                && !binding.directoriesRefreshLayout.isRefreshing
                 && getRecyclerAdapter()?.isSelecting() != true
         }
 
