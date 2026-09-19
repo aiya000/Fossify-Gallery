@@ -1023,6 +1023,8 @@ class DirectoryAdapter(
 
     private fun getSelectedItems() = selectedKeys.mapNotNull { getItemWithKey(it) } as ArrayList<Directory>
 
+    fun isSelecting() = selectedKeys.isNotEmpty()
+
     private fun getSelectedPaths() = getSelectedItems().map { it.path } as ArrayList<String>
 
     // selected paths without virtual folder groups
