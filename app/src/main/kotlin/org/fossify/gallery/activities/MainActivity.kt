@@ -183,7 +183,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
 
         // a sideways drag of the folder list goes through past this share of the width
-        private const val STORAGE_SWIPE_COMMIT_FRACTION = 3f
+        private const val STORAGE_SWIPE_COMMIT_FRACTION = 5f
         private const val STORAGE_SWIPE_OUT_MILLIS = 150L
         private const val STORAGE_SWIPE_IN_MILLIS = 220L
     }
@@ -811,7 +811,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // Turns the folder list like a page. Dragged sideways it follows the finger and uncovers
     // a strip naming the storage it is heading for: to the left pCloud, to the right this
-    // device, the order of the storage menu. Let go past a third of the width, or with a
+    // device, the order of the storage menu. Let go past a fifth of the width, or with a
     // fling that way, it goes there; short of that it slides back. Every other touch stays
     // with the list: this takes over only once a drag is clearly sideways and the list is
     // not scrolling, and never while the list scrolls horizontally (a sideways drag is the
