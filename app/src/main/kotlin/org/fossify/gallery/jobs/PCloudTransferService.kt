@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.extensions.deleteFromMediaStore
@@ -20,6 +21,7 @@ import org.fossify.commons.extensions.getMimeType
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getSomeDocumentFile
 import org.fossify.commons.extensions.rescanPaths
+import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.tryFastDocumentDelete
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -30,11 +32,11 @@ import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
-import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudFileCache
+import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudWriter
 import java.io.File
 import java.io.IOException
@@ -63,9 +65,15 @@ class PCloudTransferService : Service() {
     class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String, val isCopy: Boolean)
 
     companion object {
+        private const val TAG = "PCloudTransfer"
         private const val CHANNEL_ID = "pcloud_transfer"
         private const val PROGRESS_NOTIFICATION_ID = 7001
         private const val RESULT_NOTIFICATION_ID = 7002
+
+        // how long a job waits for another scan to let go of the scanner before it gives up
+        // on refreshing the folders it touched
+        private const val SCAN_LOCK_WAIT_MILLIS = 60_000L
+        private const val SCAN_LOCK_POLL_MILLIS = 250L
 
         private val queue = ConcurrentLinkedQueue<Job>()
         private val isWorking = AtomicBoolean(false)
@@ -90,6 +98,9 @@ class PCloudTransferService : Service() {
         }
     }
 
+    // why the last file of a run failed, for the result notification
+    private var lastFailure: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -111,6 +122,7 @@ class PCloudTransferService : Service() {
     private fun work() {
         var transferred = 0
         var failed = 0
+        lastFailure = null
         try {
             while (true) {
                 val job = synchronized(queue) {
@@ -185,6 +197,8 @@ class PCloudTransferService : Service() {
                 done++
             } catch (e: PCloudException) {
                 failed++
+                lastFailure = e.message
+                Log.w(TAG, "$path: $e")
                 if (e.requiresLogIn) {
                     config.clearPCloudAccount()
                     toast(R.string.pcloud_log_in_required)
@@ -192,7 +206,11 @@ class PCloudTransferService : Service() {
                     break
                 }
             } catch (e: Exception) {
+                // the file may well have arrived all the same, an upload answers only after
+                // the whole body went out; the log says what happened, the notification shows it
                 failed++
+                lastFailure = e.toString()
+                Log.w(TAG, "$path failed", e)
             }
         }
 
@@ -228,10 +246,48 @@ class PCloudTransferService : Service() {
         }
     }
 
+    // Refreshes the folders here rather than through Context.rescanPCloudFolders(), which
+    // steps aside when another scan holds the scanner: a folder just written to has to reach
+    // the cache, or what was transferred stays out of sight until the next sync. So this
+    // waits for the scanner instead, within reason. What goes wrong here is logged and
+    // toasted, the transfer itself is through by now
     private fun rescanPCloudFoldersAndWait(paths: List<String>) {
-        val latch = CountDownLatch(1)
-        rescanPCloudFolders(paths, reportCounts = false) { latch.countDown() }
-        latch.await()
+        if (!config.isPCloudLoggedIn) {
+            return
+        }
+
+        val deadline = System.currentTimeMillis() + SCAN_LOCK_WAIT_MILLIS
+        while (!PCloudScanner.isRunning.compareAndSet(false, true)) {
+            if (System.currentTimeMillis() >= deadline) {
+                Log.w(TAG, "another scan kept the scanner busy, not refreshed: ${paths.joinToString()}")
+                return
+            }
+
+            Thread.sleep(SCAN_LOCK_POLL_MILLIS)
+        }
+
+        try {
+            val scanner = PCloudScanner(this)
+            paths.forEach { path ->
+                try {
+                    scanner.scanFolder(path)
+                } catch (e: PCloudException) {
+                    Log.w(TAG, "refreshing $path: $e")
+                    if (e.requiresLogIn) {
+                        config.clearPCloudAccount()
+                        toast(R.string.pcloud_log_in_required)
+                        return
+                    }
+
+                    showErrorToast(e)
+                } catch (e: Exception) {
+                    Log.w(TAG, "refreshing $path failed", e)
+                    showErrorToast(e)
+                }
+            }
+        } finally {
+            PCloudScanner.isRunning.set(false)
+        }
     }
 
     // Streams the file into the destination folder, from the local copy when the fullscreen
@@ -338,6 +394,14 @@ class PCloudTransferService : Service() {
             .setSmallIcon(R.drawable.ic_cloud_vector)
             .setContentTitle(text)
             .setAutoCancel(true)
+            .apply {
+                // the reason of the last failure, where the toast has no room for it
+                val failure = lastFailure
+                if (failed > 0 && failure != null) {
+                    setContentText(failure)
+                    setStyle(NotificationCompat.BigTextStyle().bigText(failure))
+                }
+            }
             .build()
         getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
     }
