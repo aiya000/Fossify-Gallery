@@ -144,6 +144,7 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -793,6 +794,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         config.storageFilter = newFilter
         refreshMenuItems()
+
+        // a pCloud scan still running is of no use to a list of local folders, and the reload
+        // it would end in only sends the local folders through their recheck once more. A
+        // switch to pCloud lets it run, that list wants its result
+        if (newFilter == STORAGE_FILTER_LOCAL) {
+            PCloudScanner.abortCurrent()
+        }
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
         // refreshes the list a second time once it is through
