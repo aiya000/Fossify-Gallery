@@ -299,6 +299,19 @@ class PickDirectoryDialog(
         }
     }
 
+    // Which folder paths belong to the storage the chips are on, for leaving out the groups
+    // whose folders all live on the other one: they would show up empty, and a pCloud folder
+    // is rarely headed for a group of local folders. The chip for both storages shows every
+    // group, so one of those can still be picked. Null when the chips are not narrowing
+    private fun storageChipsPathMatcher(): ((String) -> Boolean)? {
+        return when {
+            !showStorageChips -> null
+            storageFilter == STORAGE_FILTER_PCLOUD -> { path -> path.isPCloudPath() }
+            storageFilter == STORAGE_FILTER_LOCAL -> { path -> !path.isPCloudPath() }
+            else -> null
+        }
+    }
+
     private fun configureSearchView() = with(searchView) {
         updateHintText(context.getString(org.fossify.commons.R.string.search_folders))
         searchEditText.imeOptions = EditorInfo.IME_ACTION_DONE
@@ -474,7 +487,7 @@ class PickDirectoryDialog(
         val sortedDirs = activity.getSortedDirectories(distinctDirs)
 
         val dirs = if (showGroups) {
-            val grouped = activity.getGroupedDirectories(sortedDirs, currentGroupId, excludedGroupIds)
+            val grouped = activity.getGroupedDirectories(sortedDirs, currentGroupId, excludedGroupIds, hideGroupsWithoutFoldersMatching = storageChipsPathMatcher())
             val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
             val realDirsToShow = activity.getDirsToShow(ArrayList(realDirs), allDirectories, currentPathPrefix)
             if (currentPathPrefix.isEmpty()) {
