@@ -23,12 +23,15 @@ const val GROUP_COLLAGE_SIZE = 4
 // Any pseudo group items in the input are dropped and regenerated, so it is safe to pass an already grouped list in.
 // With hideGroupsWithoutVisibleFolders, a group whose folders are all missing from dirs (the storage filter, hidden or
 // excluded folders) is left out like its folders are; a group with no folder assigned at all stays, so that a group made
-// a moment ago can be seen and filled. The folder picker keeps every group, a folder may be headed for one that is out of view
+// a moment ago can be seen and filled. The folder picker keeps every group instead, a folder may be headed for one that
+// is out of view, and narrows them only by storage: with hideGroupsWithoutFoldersMatching, a group whose folders all
+// have a path the predicate refuses is left out, whether those folders are in dirs or not
 fun Context.getGroupedDirectories(
     dirs: ArrayList<Directory>,
     currentGroupId: Long?,
     excludedGroupIds: Collection<Long> = emptyList(),
-    hideGroupsWithoutVisibleFolders: Boolean = false
+    hideGroupsWithoutVisibleFolders: Boolean = false,
+    hideGroupsWithoutFoldersMatching: ((path: String) -> Boolean)? = null
 ): ArrayList<Directory> {
     val realDirs = dirs.filter { !it.isGroup() }
     val groups = config.parseFolderGroups()
@@ -55,6 +58,7 @@ fun Context.getGroupedDirectories(
         .filter { !hiddenGroupIds.contains(it.id) }
         .filter { (it.parentId?.takeIf { id -> validGroupIds.contains(id) }) == currentGroupId }
         .filter { !hideGroupsWithoutVisibleFolders || hasNoFoldersOrVisibleOnes(it, groups, members, realDirs) }
+        .filter { hideGroupsWithoutFoldersMatching == null || hasNoFoldersOrOneMatching(it, groups, members, hideGroupsWithoutFoldersMatching) }
         .forEach { group ->
             result.add(createGroupDirectory(group, groups, members, realDirs))
         }
@@ -65,6 +69,12 @@ fun Context.getGroupedDirectories(
 private fun Context.hasNoFoldersOrVisibleOnes(group: FolderGroup, groups: List<FolderGroup>, members: Map<String, Long>, dirs: List<Directory>): Boolean {
     val hasFolders = members.values.any { config.isFolderGroupDescendantOrSelf(it, group.id, groups) }
     return !hasFolders || collectFolderGroupContents(group.id, groups, members, dirs).isNotEmpty()
+}
+
+// the folders counted are the ones assigned to the group and to the groups under it, by path alone
+private fun Context.hasNoFoldersOrOneMatching(group: FolderGroup, groups: List<FolderGroup>, members: Map<String, Long>, matches: (String) -> Boolean): Boolean {
+    val paths = members.filterValues { config.isFolderGroupDescendantOrSelf(it, group.id, groups) }.keys
+    return paths.isEmpty() || paths.any(matches)
 }
 
 // Collects every real folder inside the group, including the ones in nested subgroups

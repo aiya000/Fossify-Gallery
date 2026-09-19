@@ -984,14 +984,15 @@ fun Context.tryLoadingWithPicasso(
     }
 }
 
-// forceShowPCloud lets the pCloud folders through whatever the storage filter says, for a
-// picker that offers them as a copy destination; without an account there are none to show
+// forceShowAllStorages lets the folders of every storage through whatever the storage filter
+// says, for a picker that offers both as a copy destination and narrows them itself; without
+// an account the pCloud folders stay out, like they do for the filter
 fun Context.getCachedDirectories(
     getVideosOnly: Boolean = false,
     getImagesOnly: Boolean = false,
     forceShowHidden: Boolean = false,
     forceShowExcluded: Boolean = false,
-    forceShowPCloud: Boolean = false,
+    forceShowAllStorages: Boolean = false,
     callback: (ArrayList<Directory>) -> Unit,
 ) {
     ensureBackgroundThread {
@@ -1050,8 +1051,9 @@ fun Context.getCachedDirectories(
             }
         }) as ArrayList<Directory>
 
-        val showPCloud = forceShowPCloud && config.isPCloudLoggedIn
-        filteredDirectories = filteredDirectories.filter { (showPCloud && it.path.isPCloudPath()) || isShownByStorageFilter(it) } as ArrayList<Directory>
+        filteredDirectories = filteredDirectories.filter {
+            (forceShowAllStorages && (config.isPCloudLoggedIn || !it.path.isPCloudPath())) || isShownByStorageFilter(it)
+        } as ArrayList<Directory>
 
         if (shouldShowHidden) {
             val hiddenString = resources.getString(R.string.hidden)
