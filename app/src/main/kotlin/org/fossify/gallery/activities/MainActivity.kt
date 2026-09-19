@@ -8,10 +8,13 @@ import android.os.Handler
 import android.provider.MediaStore
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
+import kotlin.math.abs
 import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
@@ -173,6 +176,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_MEDIA = 2
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
+
+        // a fling across the folder list has to be this fast to count as a storage switch
+        private const val STORAGE_SWIPE_MIN_VELOCITY_DP_PER_SECOND = 600
+        private const val STORAGE_SWIPE_SLIDE_FRACTION = 6f
+        private const val STORAGE_SWIPE_SLIDE_MILLIS = 220L
     }
 
     private var mIsPickImageIntent = false
@@ -264,6 +272,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         )
 
         binding.directoriesRefreshLayout.setOnRefreshListener { refreshDirectories() }
+        setupStorageSwipe()
         storeStateVariables()
         checkWhatsNewDialog()
         setupLatestMediaId()
@@ -761,21 +770,84 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         )
 
         RadioGroupDialog(this, items, config.storageFilter) {
-            val newFilter = it as Int
-            if (newFilter == config.storageFilter) {
-                return@RadioGroupDialog
-            }
-
-            config.storageFilter = newFilter
-
-            // the cache is on screen right away; a rescan, when the settings ask for one,
-            // refreshes the list a second time once it is through
-            reloadDirectories()
-            val policy = PCloudSyncPolicy(this)
-            if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
-                rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
-            }
+            switchStorage(it as Int)
         }
+    }
+
+    private fun switchStorage(newFilter: Int) {
+        if (newFilter == config.storageFilter) {
+            return
+        }
+
+        config.storageFilter = newFilter
+
+        // the cache is on screen right away; a rescan, when the settings ask for one,
+        // refreshes the list a second time once it is through
+        reloadDirectories()
+        val policy = PCloudSyncPolicy(this)
+        if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
+            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+        }
+    }
+
+    // A fling across the folder list switches the storage without the menu: to the right
+    // brings pCloud, to the left this device; "both" stays a menu choice. The list keeps
+    // handling the touch itself, the detector only watches it, so a vertical scroll or a
+    // tap is unaffected. Nothing happens while the list scrolls horizontally (the fling is
+    // the scroll then), while folders are selected (a drag reorder or a drag selection
+    // ends with a quick move too) or without a pCloud account
+    private fun setupStorageSwipe() {
+        val minDistance = resources.getDimension(R.dimen.storage_swipe_min_distance)
+        val minVelocity = resources.displayMetrics.density * STORAGE_SWIPE_MIN_VELOCITY_DP_PER_SECOND
+        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                val start = e1 ?: return false
+                val dx = e2.x - start.x
+                val dy = e2.y - start.y
+                if (abs(dx) < minDistance || abs(dx) < abs(dy) * 2 || abs(velocityX) < minVelocity) {
+                    return false
+                }
+
+                return switchStorageBySwipe(toTheRight = dx > 0)
+            }
+        })
+
+        binding.directoriesGrid.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                if (canSwipeStorage()) {
+                    detector.onTouchEvent(e)
+                }
+
+                return false
+            }
+        })
+    }
+
+    private fun canSwipeStorage(): Boolean {
+        return config.isPCloudLoggedIn
+            && !config.scrollHorizontally
+            && !binding.directoriesRefreshLayout.isRefreshing
+            && getRecyclerAdapter()?.isSelecting() != true
+    }
+
+    private fun switchStorageBySwipe(toTheRight: Boolean): Boolean {
+        val newFilter = if (toTheRight) STORAGE_FILTER_PCLOUD else STORAGE_FILTER_LOCAL
+        if (newFilter == config.storageFilter) {
+            return false
+        }
+
+        switchStorage(newFilter)
+        toast(if (toTheRight) R.string.pcloud else R.string.storage_local)
+
+        // the new list slides in from the side the finger went to
+        binding.directoriesGrid.apply {
+            animate().cancel()
+            translationX = (if (toTheRight) -width else width) / STORAGE_SWIPE_SLIDE_FRACTION
+            alpha = 0.3f
+            animate().translationX(0f).alpha(1f).setDuration(STORAGE_SWIPE_SLIDE_MILLIS).start()
+        }
+
+        return true
     }
 
     private fun reloadDirectories() {
