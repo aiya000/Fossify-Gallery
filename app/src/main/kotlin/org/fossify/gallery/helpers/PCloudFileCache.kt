@@ -54,8 +54,18 @@ class PCloudFileCache(private val context: Context) {
                     throw IOException("pCloud answered HTTP ${response.code}")
                 }
 
-                partial.outputStream().use { out ->
+                val expected = response.body.contentLength()
+                val written = partial.outputStream().use { out ->
                     response.body.byteStream().copyTo(out)
+                }
+
+                // A connection that drops part way through just ends the stream, so a short
+                // read has to be caught here. Renaming one into place would cache a truncated
+                // image under a name that only changes when the file changes on pCloud, so the
+                // torn copy would be served for good, and an edit made from it would be
+                // written back over the whole file
+                if (expected >= 0 && written != expected) {
+                    throw IOException("pCloud sent $written bytes of $expected for $path")
                 }
             }
 

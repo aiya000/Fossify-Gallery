@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Process
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
+import android.util.Log
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.Priority
@@ -824,6 +825,9 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
             PCloudWriter(this).write()
             true
         } catch (e: PCloudException) {
+            // a toast is gone the moment it is read, and a write that failed is exactly what
+            // someone comes back to look into later, so every failure goes to the log too
+            Log.w("PCloudTransfer", "A write to pCloud failed", e)
             when {
                 e.requiresLogIn -> {
                     config.clearPCloudAccount()
@@ -835,6 +839,7 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
             }
             false
         } catch (e: Exception) {
+            Log.w("PCloudTransfer", "A write to pCloud failed", e)
             showErrorToast(e)
             false
         }

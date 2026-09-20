@@ -13,6 +13,7 @@ import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.io.InputStream
+import java.io.StringReader
 import java.util.concurrent.TimeUnit
 
 // The pCloud HTTP API, as much of it as the gallery needs. Every call goes to the host that came
@@ -303,9 +304,61 @@ object PCloudApi {
             throw PCloudException(result, json.optString("error"))
         }
 
-        val metadata = json.optJSONArray("metadata")?.optJSONObject(0) ?: return null
-        val hash = metadata.opt("hash")?.toString() ?: return null
-        return UploadedFile(metadata.getLong("fileid"), java.lang.Long.parseUnsignedLong(hash))
+        return readUploadedFile(responseBody)
+    }
+
+    // The metadata is read a second time, through JsonReader rather than the JSONObject above,
+    // for the content hash alone: it is an unsigned 64 bit number, and JSONObject turns one
+    // that does not fit a signed long into a Double, which drops digits and no longer parses.
+    // The scanner reads a hash through JsonReader for the same reason
+    private fun readUploadedFile(responseBody: String): UploadedFile? {
+        var uploaded: UploadedFile? = null
+        JsonReader(StringReader(responseBody)).use { reader ->
+            reader.beginObject()
+            while (reader.hasNext()) {
+                if (reader.nextName() == "metadata" && reader.peek() == JsonToken.BEGIN_ARRAY) {
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        val entry = readUploadedEntry(reader)
+                        if (uploaded == null) {
+                            uploaded = entry
+                        }
+                    }
+                    reader.endArray()
+                } else {
+                    reader.skipValue()
+                }
+            }
+            reader.endObject()
+        }
+
+        return uploaded
+    }
+
+    private fun readUploadedEntry(reader: JsonReader): UploadedFile? {
+        var fileId: Long? = null
+        var hash: Long? = null
+
+        reader.beginObject()
+        while (reader.hasNext()) {
+            when (reader.nextName()) {
+                "fileid" -> fileId = reader.nextLong()
+                // nextString() gives a number's own text, so the bit pattern survives whole
+                "hash" -> hash = if (reader.peek() == JsonToken.NULL) {
+                    reader.nextNull()
+                    null
+                } else {
+                    java.lang.Long.parseUnsignedLong(reader.nextString())
+                }
+
+                else -> reader.skipValue()
+            }
+        }
+        reader.endObject()
+
+        val id = fileId ?: return null
+        val contentHash = hash ?: return null
+        return UploadedFile(id, contentHash)
     }
 
     // what uploadfile says about the file it wrote; the hash is unsigned, like everywhere

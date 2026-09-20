@@ -80,6 +80,7 @@
     <string name="pcloud_fetching">pCloud から取得しています…</string>
     <string name="pcloud_writing_back">pCloud に書き戻しています…</string>
     <string name="pcloud_edit_kept_at">編集した画像はこの端末の %s に残してあります</string>
+    <string name="pcloud_edit_not_written">エディタが別の場所に保存したため、pCloud には書き戻していません</string>
     <string name="pcloud_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="pcloud_rescan_interval_always">毎回（間隔を空けない）</string>
     <string name="pcloud_interval_minutes">%d 分</string>

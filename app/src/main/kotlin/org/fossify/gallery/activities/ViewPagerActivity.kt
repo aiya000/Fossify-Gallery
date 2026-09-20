@@ -22,6 +22,7 @@ import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
+import android.util.Log
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
@@ -504,9 +505,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             val edit = mPCloudEdit
             mPCloudEdit = null
             if (edit != null) {
-                // whether the editor reported anything or not, what counts is whether the
-                // copy it was handed came back changed
-                writeEditBackToPCloud(edit)
+                // what counts is whether the copy the editor was handed came back changed; the
+                // result code only says whether it thinks it saved anything at all
+                writeEditBackToPCloud(edit, resultCode == Activity.RESULT_OK)
             } else if (resultCode == Activity.RESULT_OK && resultData != null) {
                 mPos = -1
                 mPrevHashcode = 0
@@ -1002,10 +1003,16 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     // Runs when the editor comes back. The copy is left where it is whatever happens: it is
     // the only place the edit exists until pCloud has taken it, and when pCloud will not take
     // it the user is told where it is rather than losing the work
-    private fun writeEditBackToPCloud(edit: PCloudEdit) {
+    private fun writeEditBackToPCloud(edit: PCloudEdit, editorSaidItSaved: Boolean) {
         val copy = File(edit.localPath)
         if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
-            // the editor was left without saving
+            // the editor was left without saving. When it says it saved and the copy is
+            // untouched all the same, it wrote somewhere else, and going quiet here is what
+            // makes that look like the write back did nothing at all
+            if (editorSaidItSaved) {
+                Log.w("PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
+                toast(R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
+            }
             return
         }
 
