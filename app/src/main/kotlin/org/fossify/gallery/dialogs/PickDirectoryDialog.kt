@@ -59,6 +59,10 @@ import org.fossify.gallery.views.StorageChips
  * the OK button confirms the currently opened group (or the top level). Groups listed in
  * [excludedGroupIds], and their subgroups, are not offered. Set [allowFolderDestination] to false to
  * accept only groups.
+ *
+ * [localDestinationOnly] leaves pCloud out of the list and out of the "Other folder" picker, for a
+ * caller that can only write to the device. [onCancelled] tells a caller that nothing was picked,
+ * so that a screen standing on this dialog alone can close itself.
  */
 class PickDirectoryDialog(
     val activity: BaseSimpleActivity,
@@ -70,7 +74,9 @@ class PickDirectoryDialog(
     val excludedGroupIds: Collection<Long> = emptyList(),
     val allowFolderDestination: Boolean = true,
     navigateGroups: Boolean = false,
+    val localDestinationOnly: Boolean = false,
     val groupCallback: ((groupId: Long?) -> Unit)? = null,
+    val onCancelled: (() -> Unit)? = null,
     val callback: (path: String) -> Unit
 ) {
     private var dialog: AlertDialog? = null
@@ -92,9 +98,15 @@ class PickDirectoryDialog(
 
     // A copy or move destination can be on either storage, so the list starts out showing
     // the storage the folder list is on and can be switched from a row of chips; the
-    // choice lives for this dialog only. Without the chips every folder passes
-    private val showStorageChips = isPickingCopyMoveDestination && config.isPCloudLoggedIn
-    private var storageFilter = if (showStorageChips) config.storageFilter else STORAGE_FILTER_ALL
+    // choice lives for this dialog only. Without the chips every folder passes, unless the
+    // caller takes the device only: then the list is narrowed with no chips to switch it
+    private val showStorageChips = isPickingCopyMoveDestination && config.isPCloudLoggedIn && !localDestinationOnly
+    private val narrowsStorage = showStorageChips || localDestinationOnly
+    private var storageFilter = when {
+        localDestinationOnly -> STORAGE_FILTER_LOCAL
+        showStorageChips -> config.storageFilter
+        else -> STORAGE_FILTER_ALL
+    }
 
     init {
         (binding.directoriesGrid.layoutManager as MyGridLayoutManager).apply {
@@ -109,7 +121,7 @@ class PickDirectoryDialog(
 
         val builder = activity.getAlertDialogBuilder()
             .setPositiveButton(org.fossify.commons.R.string.ok, null)
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .setNegativeButton(org.fossify.commons.R.string.cancel) { _, _ -> onCancelled?.invoke() }
 
         // while picking groups the "Other folder" action lives in the action row above the list instead
         if (showOtherFolderButton && !showGroups) {
@@ -119,6 +131,9 @@ class PickDirectoryDialog(
         builder.apply {
             activity.setupDialogStuff(binding.root, this, org.fossify.commons.R.string.select_destination) { alertDialog ->
                 dialog = alertDialog
+                // only a cancel, never a dismiss(): picking a folder and opening the "Other
+                // folder" picker both dismiss this dialog, and neither is "nothing was picked"
+                alertDialog.setOnCancelListener { onCancelled?.invoke() }
                 compactDialogChrome(alertDialog)
                 binding.directoriesShowHidden.beVisibleIf(!context.config.shouldShowHidden)
                 binding.directoriesShowHidden.setOnClickListener {
@@ -292,7 +307,7 @@ class PickDirectoryDialog(
     // do for the folder list's own storage filter
     private fun isShownByStorageChips(directory: Directory): Boolean {
         return when {
-            !showStorageChips || directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
+            !narrowsStorage || directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
             storageFilter == STORAGE_FILTER_PCLOUD -> directory.path.isPCloudPath()
             storageFilter == STORAGE_FILTER_LOCAL -> !directory.path.isPCloudPath()
             else -> true
@@ -305,7 +320,7 @@ class PickDirectoryDialog(
     // group, so one of those can still be picked. Null when the chips are not narrowing
     private fun storageChipsPathMatcher(): ((String) -> Boolean)? {
         return when {
-            !showStorageChips -> null
+            !narrowsStorage -> null
             storageFilter == STORAGE_FILTER_PCLOUD -> { path -> path.isPCloudPath() }
             storageFilter == STORAGE_FILTER_LOCAL -> { path -> !path.isPCloudPath() }
             else -> null
@@ -451,7 +466,7 @@ class PickDirectoryDialog(
 
         if (isPickingCopyMoveDestination) {
             val lastCopyPath = config.lastCopyPath
-            val lastCopyPathOnPCloud = lastCopyPath.isPCloudPath() && config.isPCloudLoggedIn
+            val lastCopyPathOnPCloud = lastCopyPath.isPCloudPath() && config.isPCloudLoggedIn && !localDestinationOnly
             // the picker opens on the storage the chips are showing, at the last destination there
             val startPath = when {
                 showStorageChips && storageFilter == STORAGE_FILTER_PCLOUD -> if (lastCopyPathOnPCloud) lastCopyPath else PCLOUD_PATH_SCHEME
@@ -460,7 +475,16 @@ class PickDirectoryDialog(
                 else -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
             }
 
-            FolderPickerDialog(activity, startPath, showHidden, showFAB = true, canAddShowHiddenButton = true, callback = onPicked)
+            FolderPickerDialog(
+                activity = activity,
+                currPath = startPath,
+                showHidden = showHidden,
+                showFAB = true,
+                canAddShowHiddenButton = true,
+                localStorageOnly = localDestinationOnly,
+                onCancelled = onCancelled,
+                callback = onPicked
+            )
             return
         }
 

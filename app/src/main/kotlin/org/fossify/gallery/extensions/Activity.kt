@@ -440,7 +440,16 @@ fun BaseSimpleActivity.toggleFileVisibility(oldPath: String, hide: Boolean, call
     }
 }
 
-fun BaseSimpleActivity.tryCopyMoveFilesTo(fileDirItems: ArrayList<FileDirItem>, isCopyOperation: Boolean, callback: (destinationPath: String) -> Unit) {
+// [localDestinationOnly] keeps pCloud out of the picker, for a caller whose files can only go
+// to the device. [onCancelled] fires when the picker is left without a destination, for a
+// caller that has nothing else on screen
+fun BaseSimpleActivity.tryCopyMoveFilesTo(
+    fileDirItems: ArrayList<FileDirItem>,
+    isCopyOperation: Boolean,
+    localDestinationOnly: Boolean = false,
+    onCancelled: (() -> Unit)? = null,
+    callback: (destinationPath: String) -> Unit
+) {
     if (fileDirItems.isEmpty()) {
         toast(org.fossify.commons.R.string.unknown_error_occurred)
         return
@@ -454,7 +463,9 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(fileDirItems: ArrayList<FileDirItem>, 
         showFavoritesBin = false,
         isPickingCopyMoveDestination = true,
         isPickingFolderForWidget = false,
-        navigateGroups = true
+        navigateGroups = true,
+        localDestinationOnly = localDestinationOnly,
+        onCancelled = onCancelled
     ) {
         copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, callback)
     }
