@@ -92,6 +92,7 @@ import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
+import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PCloudWriter
@@ -237,9 +238,11 @@ class MediaAdapter(
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
             findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
             findItem(R.id.cab_move_to).isVisible = (isLocal || isPCloudOnly) && !isInRecycleBin
-            findItem(R.id.cab_open_with).isVisible = isLocal && isOneItemSelected
+            // a pCloud medium is fetched into a file before it is handed to another app,
+            // the same as the fullscreen view does it
+            findItem(R.id.cab_open_with).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
             findItem(R.id.cab_edit).isVisible = isLocal && isOneItemSelected
-            findItem(R.id.cab_set_as).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_set_as).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
             findItem(R.id.cab_resize).isVisible = isLocal && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible =
@@ -495,12 +498,12 @@ class MediaAdapter(
 
     private fun openPath() {
         val path = getFirstSelectedItemPath() ?: return
-        activity.openPath(path, true)
+        activity.withLocalMediaFile(path) { activity.openPath(it, true) }
     }
 
     private fun setAs() {
         val path = getFirstSelectedItemPath() ?: return
-        activity.setAs(path)
+        activity.withLocalMediaFile(path) { activity.setAs(it) }
     }
 
     private fun resize() {

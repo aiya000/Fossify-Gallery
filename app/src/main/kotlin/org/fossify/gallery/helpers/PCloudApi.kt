@@ -236,6 +236,12 @@ object PCloudApi {
         call(apiHost, accessToken, "renamefile", mapOf("path" to remotePath, "toname" to newName))
     }
 
+    // the same by id, for a file whose remote path the cache does not track, or one that is
+    // being moved aside and back again while its path is taken by something else
+    fun renameFileById(apiHost: String, accessToken: String, fileId: Long, newName: String) {
+        call(apiHost, accessToken, "renamefile", mapOf("fileid" to fileId.toString(), "toname" to newName))
+    }
+
     fun renameFolder(apiHost: String, accessToken: String, remotePath: String, newName: String) {
         call(apiHost, accessToken, "renamefolder", mapOf("path" to remotePath, "toname" to newName))
     }
@@ -262,12 +268,23 @@ object PCloudApi {
     // streamed, so a video does not have to fit in memory. A name that is taken there gets
     // a number appended by pCloud rather than being overwritten, and nopartial keeps a file
     // whose upload broke off from appearing at all. mtime keeps the file's modification time
-    fun upload(apiHost: String, accessToken: String, toFolderId: Long, name: String, body: RequestBody, modifiedSeconds: Long) {
+    // renameIfExists = false lets the upload replace a file of that name instead, which is
+    // what writing an edited medium back over its original needs. Answers the uploaded
+    // file's id and content hash, so the caller can keep its cached row in step
+    fun upload(
+        apiHost: String,
+        accessToken: String,
+        toFolderId: Long,
+        name: String,
+        body: RequestBody,
+        modifiedSeconds: Long,
+        renameIfExists: Boolean = true
+    ): UploadedFile? {
         val params = mapOf(
             "folderid" to toFolderId.toString(),
             "filename" to name,
             "nopartial" to "1",
-            "renameifexists" to "1",
+            "renameifexists" to if (renameIfExists) "1" else "0",
             "mtime" to modifiedSeconds.toString()
         )
         val multipart = MultipartBody.Builder()
@@ -285,7 +302,15 @@ object PCloudApi {
         if (result != 0) {
             throw PCloudException(result, json.optString("error"))
         }
+
+        val metadata = json.optJSONArray("metadata")?.optJSONObject(0) ?: return null
+        val hash = metadata.opt("hash")?.toString() ?: return null
+        return UploadedFile(metadata.getLong("fileid"), java.lang.Long.parseUnsignedLong(hash))
     }
+
+    // what uploadfile says about the file it wrote; the hash is unsigned, like everywhere
+    // else pCloud reports one
+    data class UploadedFile(val fileId: Long, val contentHash: Long)
 
     // link answers carry a list of hosts and a path, any host serves the path
     private fun toLink(json: JSONObject): String {

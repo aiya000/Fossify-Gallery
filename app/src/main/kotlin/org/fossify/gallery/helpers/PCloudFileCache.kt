@@ -77,6 +77,13 @@ class PCloudFileCache(private val context: Context) {
         return target.takeIf { it.isFile && it.length() > 0 }
     }
 
+    // whether a copy named after this file id and content hash is still here, whatever its
+    // extension. A hard link made from a copy keeps its bytes alive after the cache has let
+    // go of it, so the links are cleared out by asking this
+    fun holds(idAndHash: String): Boolean {
+        return dir.listFiles()?.any { it.isFile && it.nameWithoutExtension == idAndHash } == true
+    }
+
     private fun trim(keep: File) {
         val files = dir.listFiles()?.filter { it.isFile && it != keep } ?: return
         var total = files.sumOf { it.length() } + keep.length()

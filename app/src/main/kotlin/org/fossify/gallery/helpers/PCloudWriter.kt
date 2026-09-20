@@ -45,6 +45,10 @@ class PCloudWriter(private val context: Context) {
     companion object {
         // how many "name (n)" variants are tried before a taken name is given up on
         private const val MAX_NAME_ATTEMPTS = 100
+
+        // what the original is called while an overwrite is in flight. It is visible on
+        // pcloud.com for those few seconds, so it says what it is
+        private const val STASH_SUFFIX = "being-replaced"
     }
 
     private val config = context.config
@@ -308,11 +312,43 @@ class PCloudWriter(private val context: Context) {
         return newPath
     }
 
+    // Writes a local file over an existing pCloud file, without ever leaving the medium
+    // missing. The original is renamed aside first -- one API call, nothing is downloaded or
+    // uploaded again for it -- then the new content goes in under the original name, and
+    // only once that has landed is the stashed original dropped. When the upload fails the
+    // stash is renamed back, so what is on pCloud afterwards is either the old file or the
+    // new one, never neither. The caller keeps the local file it handed in, so nothing the
+    // user made is lost even when the stash cannot be put back
+    fun overwriteFile(path: String, localPath: String) {
+        val item = context.pCloudItemsDB.getItem(path) ?: throw IllegalStateException("$path is not in the pCloud cache")
+        val name = path.getFilenameFromPath()
+        val stashName = "$name.$STASH_SUFFIX"
+        PCloudApi.renameFileById(apiHost, accessToken, item.itemId, stashName)
+
+        val uploaded = try {
+            uploadFile(localPath, path.getParentPath(), name, overwrite = true)
+        } catch (e: Exception) {
+            // put the original back under its own name; the medium is whole again
+            PCloudApi.renameFileById(apiHost, accessToken, item.itemId, name)
+            throw e
+        }
+
+        PCloudApi.deleteFileById(apiHost, accessToken, item.itemId)
+        if (uploaded != null) {
+            // the id and hash name the cached copy and the thumbnail, so the new content is
+            // shown instead of the old one from here on
+            context.pCloudItemsDB.insertAll(listOf(item.copy(itemId = uploaded.fileId, contentHash = uploaded.contentHash)))
+        }
+    }
+
     // Sends one local file into a pCloud folder. The cache learns of it when the destination
     // is rescanned, which the caller does once its batch is through
     fun uploadFile(localPath: String, destinationFolder: String) {
+        uploadFile(localPath, destinationFolder, localPath.getFilenameFromPath(), overwrite = false)
+    }
+
+    private fun uploadFile(localPath: String, destinationFolder: String, name: String, overwrite: Boolean): PCloudApi.UploadedFile? {
         val file = File(localPath)
-        val name = localPath.getFilenameFromPath()
         val body: RequestBody = if (file.isFile) {
             file.asRequestBody(localPath.getMimeType().toMediaTypeOrNull())
         } else {
@@ -323,7 +359,15 @@ class PCloudWriter(private val context: Context) {
         }
 
         val modifiedSeconds = (if (file.isFile) file.lastModified() else System.currentTimeMillis()) / 1000
-        PCloudApi.upload(apiHost, accessToken, folderIdOf(destinationFolder), name, body, modifiedSeconds)
+        return PCloudApi.upload(
+            apiHost = apiHost,
+            accessToken = accessToken,
+            toFolderId = folderIdOf(destinationFolder),
+            name = name,
+            body = body,
+            modifiedSeconds = modifiedSeconds,
+            renameIfExists = !overwrite
+        )
     }
 
     // the id the API wants for a folder: the root is folder 0, everything else has a row
