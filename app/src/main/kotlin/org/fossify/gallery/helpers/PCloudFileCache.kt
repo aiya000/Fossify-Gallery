@@ -54,8 +54,18 @@ class PCloudFileCache(private val context: Context) {
                     throw IOException("pCloud answered HTTP ${response.code}")
                 }
 
-                partial.outputStream().use { out ->
+                val expected = response.body.contentLength()
+                val written = partial.outputStream().use { out ->
                     response.body.byteStream().copyTo(out)
+                }
+
+                // A connection that drops part way through just ends the stream, so a short
+                // read has to be caught here. Renaming one into place would cache a truncated
+                // image under a name that only changes when the file changes on pCloud, so the
+                // torn copy would be served for good, and an edit made from it would be
+                // written back over the whole file
+                if (expected >= 0 && written != expected) {
+                    throw IOException("pCloud sent $written bytes of $expected for $path")
                 }
             }
 
@@ -75,6 +85,13 @@ class PCloudFileCache(private val context: Context) {
         val item = context.pCloudItemsDB.getItem(path) ?: return null
         val target = File(dir, "${item.itemId}-${java.lang.Long.toUnsignedString(item.contentHash)}.${path.getFilenameExtension()}")
         return target.takeIf { it.isFile && it.length() > 0 }
+    }
+
+    // whether a copy named after this file id and content hash is still here, whatever its
+    // extension. A hard link made from a copy keeps its bytes alive after the cache has let
+    // go of it, so the links are cleared out by asking this
+    fun holds(idAndHash: String): Boolean {
+        return dir.listFiles()?.any { it.isFile && it.nameWithoutExtension == idAndHash } == true
     }
 
     private fun trim(keep: File) {

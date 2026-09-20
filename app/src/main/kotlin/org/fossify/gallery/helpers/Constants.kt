@@ -143,6 +143,15 @@ const val PCLOUD_PATH_PREFIX = "$PCLOUD_PATH_SCHEME/"
 const val PCLOUD_RECYCLE_BIN_FOLDER_NAME = ".gallery-recycle-bin"
 const val PCLOUD_RECYCLE_BIN = "$PCLOUD_PATH_PREFIX$PCLOUD_RECYCLE_BIN_FOLDER_NAME"
 
+// under the cache directory: the pCloud media handed to the rest of the app as real files,
+// each a link to its cached copy under the name the medium has on pCloud
+const val PCLOUD_WORK_DIR = "pcloud-work"
+
+// under the cache directory: the copy an editor is working on. A copy, not a link, so that a
+// half-written edit cannot reach the cache, and a directory of its own so that the editor
+// can tell it is editing a pCloud medium and offer to save it back rather than beside itself
+const val PCLOUD_EDIT_DIR = "pcloud-edit"
+
 const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
 const val PCLOUD_API_HOST = "pcloud_api_host"
 const val PCLOUD_ACCOUNT_EMAIL = "pcloud_account_email"

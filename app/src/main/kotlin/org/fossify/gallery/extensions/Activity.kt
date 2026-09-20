@@ -47,6 +47,8 @@ import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
+import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
@@ -66,71 +68,135 @@ fun Activity.sharePaths(paths: ArrayList<String>) {
 }
 
 fun Activity.shareMediumPath(path: String) {
-    if (path.isPCloudPath()) {
-        sharePCloudMedia(arrayListOf(path))
-        return
+    withLocalMediaFile(path) { localPath ->
+        sharePath(localPath)
     }
-
-    sharePath(path)
 }
 
 fun Activity.shareMediaPaths(paths: ArrayList<String>) {
-    if (paths.any { it.isPCloudPath() }) {
-        sharePCloudMedia(paths)
+    withLocalMediaFiles(paths) { localPaths ->
+        if (localPaths.size == 1) {
+            sharePath(localPaths.first())
+        } else {
+            sharePaths(localPaths)
+        }
+    }
+}
+
+// Most of what the app does with a medium wants a real file on the device: sharing it,
+// printing it, setting it as the wallpaper, opening it in another app, editing it. A pCloud
+// medium has none, so it is fetched into the device cache first (once, the fullscreen view's
+// copy is reused) and handed over under its own name. A local path is passed straight
+// through, so a caller never has to know which storage the medium is on.
+//
+// The name matters: the cached copy is named by file id and content hash, and whatever
+// receives the file shows the name it is given, so what is handed over is a hard link to the
+// copy under the medium's own name (a symlink would not do, the provider resolves it to the
+// copy's name); where a link cannot be made, a plain copy.
+//
+// Fetching runs off the main thread with a toast, and a failure is toasted instead of acted
+// on. The callback runs on the main thread, on a local path that exists.
+fun Activity.withLocalMediaFile(path: String, callback: (localPath: String) -> Unit) {
+    withLocalMediaFiles(arrayListOf(path)) { localPaths ->
+        callback(localPaths.first())
+    }
+}
+
+fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: ArrayList<String>) -> Unit) {
+    if (paths.none { it.isPCloudPath() }) {
+        callback(ArrayList(paths))
         return
     }
 
-    sharePaths(paths)
-}
-
-// A pCloud medium is shared as the file it is, not as a link: the original is fetched into
-// the device cache first (once, the fullscreen view's copy is reused) and the share intent
-// carries that copy. The cached copy is named by id and hash, and the receiving app shows
-// the name of the file it is handed, so what goes out is a hard link to the copy under the
-// medium's own name (a symlink would not do, the provider resolves it to the copy's name);
-// where a link cannot be made, a plain copy. The links of the last share are dropped first,
-// they would keep the bytes of a trimmed cache copy alive. Fetching runs off the main
-// thread with a toast, and a failure is toasted instead of shared
-private fun Activity.sharePCloudMedia(paths: ArrayList<String>) {
     toast(R.string.pcloud_fetching)
     ensureBackgroundThread {
-        val cache = PCloudFileCache(this)
-        val shareDir = File(cacheDir, "pcloud-share")
-        shareDir.deleteRecursively()
-        val localPaths = ArrayList<String>()
-        try {
-            paths.forEach { path ->
-                if (!path.isPCloudPath()) {
-                    localPaths.add(path)
-                    return@forEach
-                }
-
-                val cached = cache.fetch(path)
-                val linkDir = File(shareDir, cached.nameWithoutExtension)
-                linkDir.mkdirs()
-                val link = File(linkDir, path.getFilenameFromPath())
-                try {
-                    Os.link(cached.absolutePath, link.absolutePath)
-                } catch (e: Exception) {
-                    cached.copyTo(link, overwrite = true)
-                }
-
-                localPaths.add(link.absolutePath)
-            }
+        val localPaths = try {
+            fetchPCloudMediaAsFiles(paths)
         } catch (e: Exception) {
             // the reason goes to the log and onto the toast, a bare "could not fetch" left
             // nothing to go on when it happened once on the device
-            Log.w("PCloudShare", "Could not share ${paths.size} pCloud media", e)
+            Log.w("PCloudFetch", "Could not fetch ${paths.size} pCloud media", e)
             toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
         runOnUiThread {
-            if (localPaths.size == 1) {
-                sharePath(localPaths.first())
-            } else {
-                sharePaths(localPaths)
+            callback(localPaths)
+        }
+    }
+}
+
+// The same for an action that is going to write to the file it is given, the editor above
+// all. It gets a copy of its own rather than the link the reading actions get: a link shares
+// its bytes with the cached copy, so an edit written over it would make the cache serve the
+// edited image for the original even when the write back to pCloud never lands. Only one
+// edit is in flight at a time, so the previous copy goes first
+fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -> Unit) {
+    if (!path.isPCloudPath()) {
+        callback(path)
+        return
+    }
+
+    toast(R.string.pcloud_fetching)
+    ensureBackgroundThread {
+        val copy = try {
+            val cached = PCloudFileCache(this).fetch(path)
+            val editDir = File(cacheDir, PCLOUD_EDIT_DIR)
+            editDir.deleteRecursively()
+            editDir.mkdirs()
+            File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }
+        } catch (e: Exception) {
+            Log.w("PCloudFetch", "Could not fetch $path for editing", e)
+            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+            return@ensureBackgroundThread
+        }
+
+        runOnUiThread {
+            callback(copy.absolutePath)
+        }
+    }
+}
+
+// Talks to the network, so it belongs off the main thread
+private fun Activity.fetchPCloudMediaAsFiles(paths: List<String>): ArrayList<String> {
+    val cache = PCloudFileCache(this)
+    val workDir = File(cacheDir, PCLOUD_WORK_DIR)
+    val localPaths = ArrayList<String>()
+    paths.forEach { path ->
+        if (!path.isPCloudPath()) {
+            localPaths.add(path)
+            return@forEach
+        }
+
+        val cached = cache.fetch(path)
+        val linkDir = File(workDir, cached.nameWithoutExtension)
+        linkDir.mkdirs()
+        val link = File(linkDir, path.getFilenameFromPath())
+        if (!link.isFile || link.length() != cached.length()) {
+            link.delete()
+            try {
+                Os.link(cached.absolutePath, link.absolutePath)
+            } catch (e: Exception) {
+                cached.copyTo(link, overwrite = true)
             }
+        }
+
+        localPaths.add(link.absolutePath)
+    }
+
+    dropOrphanedPCloudLinks(workDir, cache)
+    return localPaths
+}
+
+// A link keeps the bytes of its cache copy alive after the cache has trimmed the copy away,
+// so every link whose copy is gone is dropped whenever a new one is made. The links in use
+// are kept: an editor may still be holding one
+private fun Activity.dropOrphanedPCloudLinks(workDir: File, cache: PCloudFileCache) {
+    // the links of the older, share-only version of this lived here
+    File(cacheDir, "pcloud-share").deleteRecursively()
+    workDir.listFiles()?.forEach { linkDir ->
+        if (linkDir.isDirectory && !cache.holds(linkDir.name)) {
+            linkDir.deleteRecursively()
         }
     }
 }

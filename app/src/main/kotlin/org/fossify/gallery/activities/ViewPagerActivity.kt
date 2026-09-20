@@ -22,6 +22,7 @@ import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
+import android.util.Log
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
@@ -133,6 +134,8 @@ import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
+import org.fossify.gallery.extensions.withEditableMediaFile
+import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
@@ -221,6 +224,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private var mIsOrientationLocked = false
 
     private var mMediaFiles = ArrayList<Medium>()
+
+    // the pCloud medium an editor is working on, and the copy it was handed, kept from the
+    // moment the editor is started until it comes back with the copy changed. null while no
+    // pCloud medium is being edited, which is also the case for every local one
+    private var mPCloudEdit: PCloudEdit? = null
+
+    private data class PCloudEdit(val pCloudPath: String, val localPath: String, val size: Long, val lastModified: Long)
 
     // null while the viewer was not opened from a selection in the media grid, which is what the
     // selection toggle in the toolbar hangs off
@@ -312,33 +322,35 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         currentMedium.isFavorite = mFavoritePaths.contains(currentMedium.path)
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
 
-        // a pCloud medium has no file behind it, so everything that reads one on the device
-        // stays hidden. Deleting, renaming, copying and moving go through the pCloud API;
-        // favorites and the slideshow work
+        // a pCloud medium has no file on the device, but it is fetched into one before
+        // anything that needs a file, so those actions are offered for it like they are for a
+        // local medium. What stays hidden is what the device's own file system is part of:
+        // hiding with a .nomedia and pinning a shortcut to a path
         val isLocal = !currentMedium.path.isPCloudPath()
         // a medium in the pCloud bin is restored or deleted for good, nothing else; copying it
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
+        val hasFile = !isInPCloudBin
 
         runOnUiThread {
             val rotationDegrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
             binding.mediumViewerToolbar.menu.apply {
-                findItem(R.id.menu_show_on_map).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP == 0
+                findItem(R.id.menu_show_on_map).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP == 0
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
                 findItem(R.id.menu_properties).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
                 findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
                 findItem(R.id.menu_share).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
-                findItem(R.id.menu_edit).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
+                findItem(R.id.menu_edit).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
                 findItem(R.id.menu_rename).isVisible = visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
-                findItem(R.id.menu_rotate).isVisible = isLocal && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
-                findItem(R.id.menu_set_as).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
-                findItem(R.id.menu_copy_to_clipboard).isVisible = isLocal && currentMedium.isImage()
+                findItem(R.id.menu_rotate).isVisible = hasFile && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
+                findItem(R.id.menu_set_as).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
+                findItem(R.id.menu_copy_to_clipboard).isVisible = hasFile && currentMedium.isImage()
                 findItem(R.id.menu_copy_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
                 findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
-                findItem(R.id.menu_print).isVisible = isLocal && (currentMedium.isImage() || currentMedium.isRaw())
+                findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
-                findItem(R.id.menu_open_with).isVisible = isLocal
+                findItem(R.id.menu_open_with).isVisible = hasFile
                 findItem(R.id.menu_hide).isVisible =
                     isLocal && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
 
@@ -445,20 +457,20 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
 
             when (menuItem.itemId) {
-                R.id.menu_set_as -> setAs(getCurrentPath())
+                R.id.menu_set_as -> setCurrentAs()
                 R.id.menu_slideshow -> initSlideshow()
                 R.id.menu_copy_to -> checkMediaManagementAndCopy(true)
                 R.id.menu_move_to -> moveFileTo()
-                R.id.menu_open_with -> openPath(getCurrentPath(), true)
+                R.id.menu_open_with -> openCurrentWith()
                 R.id.menu_hide -> toggleFileVisibility(true)
                 R.id.menu_unhide -> toggleFileVisibility(false)
                 R.id.menu_share -> shareMediumPath(getCurrentPath())
                 R.id.menu_delete -> checkDeleteConfirmation()
                 R.id.menu_rename -> checkMediaManagementAndRename()
                 R.id.menu_print -> printFile()
-                R.id.menu_edit -> openEditor(getCurrentPath())
+                R.id.menu_edit -> editCurrentMedium()
                 R.id.menu_properties -> showProperties()
-                R.id.menu_show_on_map -> showFileOnMap(getCurrentPath())
+                R.id.menu_show_on_map -> showCurrentOnMap()
                 R.id.menu_rotate_right -> rotateImage(90)
                 R.id.menu_rotate_left -> rotateImage(-90)
                 R.id.menu_rotate_one_eighty -> rotateImage(180)
@@ -489,10 +501,18 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
-        if (requestCode == REQUEST_EDIT_IMAGE && resultCode == Activity.RESULT_OK && resultData != null) {
-            mPos = -1
-            mPrevHashcode = 0
-            refreshViewPager()
+        if (requestCode == REQUEST_EDIT_IMAGE) {
+            val edit = mPCloudEdit
+            mPCloudEdit = null
+            if (edit != null) {
+                // what counts is whether the copy the editor was handed came back changed; the
+                // result code only says whether it thinks it saved anything at all
+                writeEditBackToPCloud(edit, resultCode == Activity.RESULT_OK)
+            } else if (resultCode == Activity.RESULT_OK && resultData != null) {
+                mPos = -1
+                mPrevHashcode = 0
+                refreshViewPager()
+            }
         } else if (requestCode == REQUEST_SET_AS && resultCode == Activity.RESULT_OK) {
             toast(R.string.wallpaper_set_successfully)
         } else if (requestCode == REQUEST_VIEW_VIDEO && resultCode == Activity.RESULT_OK && resultData != null) {
@@ -963,8 +983,62 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
+    // The editor, and the write back for a pCloud medium. A local medium is edited in place
+    // as it always was; a pCloud one is edited through a copy of its own and written back
+    // over the original once the editor says it changed it
+    private fun editCurrentMedium() {
+        val path = getCurrentPath()
+        if (!path.isPCloudPath()) {
+            openEditor(path)
+            return
+        }
+
+        withEditableMediaFile(path) { localPath ->
+            val copy = File(localPath)
+            mPCloudEdit = PCloudEdit(path, localPath, copy.length(), copy.lastModified())
+            openEditor(localPath)
+        }
+    }
+
+    // Runs when the editor comes back. The copy is left where it is whatever happens: it is
+    // the only place the edit exists until pCloud has taken it, and when pCloud will not take
+    // it the user is told where it is rather than losing the work
+    private fun writeEditBackToPCloud(edit: PCloudEdit, editorSaidItSaved: Boolean) {
+        val copy = File(edit.localPath)
+        if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
+            // the editor was left without saving. When it says it saved and the copy is
+            // untouched all the same, it wrote somewhere else, and going quiet here is what
+            // makes that look like the write back did nothing at all
+            if (editorSaidItSaved) {
+                Log.w("PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
+                toast(R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
+            }
+            return
+        }
+
+        toast(R.string.pcloud_writing_back)
+        writeToPCloud(listOf(edit.pCloudPath.getParentPath()), { overwriteFile(edit.pCloudPath, edit.localPath) }) { success ->
+            runOnUiThread {
+                if (success) {
+                    toast(org.fossify.commons.R.string.file_saved)
+                    mPos = -1
+                    mPrevHashcode = 0
+                    refreshViewPager()
+                } else {
+                    // writeToPCloud already said what went wrong; this says what is left
+                    toast(getString(R.string.pcloud_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
+                }
+            }
+        }
+    }
+
     private fun saveImageAs() {
         val currPath = getCurrentPath()
+        if (currPath.isPCloudPath()) {
+            saveRotatedPCloudImage(currPath)
+            return
+        }
+
         SaveAsDialog(this, currPath, false) {
             val newPath = it
             handleSAFDialog(it) {
@@ -979,6 +1053,32 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                         toast(org.fossify.commons.R.string.file_saved)
                         getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
                         refreshMenuItems()
+                    }
+                }
+            }
+        }
+    }
+
+    // A rotated pCloud image is written back over itself: there is no folder on the device to
+    // save it beside, and "save a copy somewhere else" is what copying to this device is for
+    private fun saveRotatedPCloudImage(path: String) {
+        val degrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: return
+        withEditableMediaFile(path) { localPath ->
+            toast(org.fossify.commons.R.string.saving)
+            ensureBackgroundThread {
+                saveRotatedImageToFile(localPath, localPath, degrees, true) {
+                    writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { success ->
+                        runOnUiThread {
+                            if (success) {
+                                toast(org.fossify.commons.R.string.file_saved)
+                                getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
+                                mPos = -1
+                                mPrevHashcode = 0
+                                refreshViewPager()
+                            } else {
+                                toast(getString(R.string.pcloud_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                            }
+                        }
                     }
                 }
             }
@@ -1059,16 +1159,17 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // the same gating as refreshMenuItems(): no file, no file operations
         val isLocal = currentMedium?.path?.isPCloudPath() != true
         val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
+        val hasFile = !isInPCloudBin
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
             toggleFavorite()
         }
 
-        binding.bottomActions.bottomEdit.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_EDIT != 0 && currentMedium?.isSVG() == false)
+        binding.bottomActions.bottomEdit.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT != 0 && currentMedium?.isSVG() == false)
         binding.bottomActions.bottomEdit.setOnLongClickListener { toast(R.string.edit); true }
         binding.bottomActions.bottomEdit.setOnClickListener {
-            openEditor(getCurrentPath())
+            editCurrentMedium()
         }
 
         binding.bottomActions.bottomShare.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
@@ -1083,7 +1184,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             checkDeleteConfirmation()
         }
 
-        binding.bottomActions.bottomRotate.beVisibleIf(isLocal && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
+        binding.bottomActions.bottomRotate.beVisibleIf(hasFile && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
         binding.bottomActions.bottomRotate.setOnLongClickListener { toast(R.string.rotate); true }
         binding.bottomActions.bottomRotate.setOnClickListener {
             rotateImage(90)
@@ -1115,10 +1216,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             initSlideshow()
         }
 
-        binding.bottomActions.bottomShowOnMap.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP != 0)
+        binding.bottomActions.bottomShowOnMap.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP != 0)
         binding.bottomActions.bottomShowOnMap.setOnLongClickListener { toast(R.string.show_on_map); true }
         binding.bottomActions.bottomShowOnMap.setOnClickListener {
-            showFileOnMap(getCurrentPath())
+            showCurrentOnMap()
         }
 
         binding.bottomActions.bottomToggleFileVisibility.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY != 0)
@@ -1140,10 +1241,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             checkMediaManagementAndRename()
         }
 
-        binding.bottomActions.bottomSetAs.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_SET_AS != 0)
+        binding.bottomActions.bottomSetAs.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS != 0)
         binding.bottomActions.bottomSetAs.setOnLongClickListener { toast(org.fossify.commons.R.string.set_as); true }
         binding.bottomActions.bottomSetAs.setOnClickListener {
-            setAs(getCurrentPath())
+            setCurrentAs()
         }
 
         binding.bottomActions.bottomCopy.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
@@ -1178,8 +1279,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             if (medium.isHidden()) org.fossify.commons.R.drawable.ic_unhide_vector else org.fossify.commons.R.drawable.ic_hide_vector
         binding.bottomActions.bottomToggleFileVisibility.setImageResource(hideIcon)
 
-        val isLocal = !medium.path.isPCloudPath()
-        binding.bottomActions.bottomRotate.beVisibleIf(isLocal && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
+        val hasFile = !medium.path.isPCloudRecycleBinPath()
+        binding.bottomActions.bottomRotate.beVisibleIf(hasFile && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
         binding.bottomActions.bottomChangeOrientation.setImageResource(getChangeOrientationIcon())
     }
 
@@ -1201,7 +1302,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun printFile() {
-        sendPrintIntent(getCurrentPath())
+        withLocalMediaFile(getCurrentPath()) { sendPrintIntent(it) }
     }
 
     private fun sendPrintIntent(path: String) {
@@ -1288,11 +1389,26 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun copyImageToClipboard() {
-        val clipboard = getSystemService(ClipboardManager::class.java) as ClipboardManager
-
         val imagePath = getCurrentMedium()?.path ?: return
-        val clip = ClipData.newUri(contentResolver, "Image", getFinalUriFromPath(imagePath, BuildConfig.APPLICATION_ID))
-        clipboard.setPrimaryClip(clip)
+        withLocalMediaFile(imagePath) { localPath ->
+            val clipboard = getSystemService(ClipboardManager::class.java) as ClipboardManager
+            val clip = ClipData.newUri(contentResolver, "Image", getFinalUriFromPath(localPath, BuildConfig.APPLICATION_ID))
+            clipboard.setPrimaryClip(clip)
+        }
+    }
+
+    // The three that only need the file handed to another part of the system. A local medium
+    // is already a file and goes through without a detour; a pCloud one is fetched first
+    private fun setCurrentAs() {
+        withLocalMediaFile(getCurrentPath()) { setAs(it) }
+    }
+
+    private fun openCurrentWith() {
+        withLocalMediaFile(getCurrentPath()) { openPath(it, true) }
+    }
+
+    private fun showCurrentOnMap() {
+        withLocalMediaFile(getCurrentPath()) { showFileOnMap(it) }
     }
 
     private fun checkDeleteConfirmation() {
