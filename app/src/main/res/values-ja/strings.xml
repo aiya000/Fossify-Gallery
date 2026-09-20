@@ -98,6 +98,9 @@
     <string name="pcloud_restore">復元</string>
     <string name="pcloud_restore_other_folder">別のフォルダへ…</string>
     <string name="pcloud_restore_pick_pcloud_folder">pCloud のフォルダを選んでください</string>
+    <string name="shared_media_none">共有された画像や動画がありません</string>
+    <string name="shared_media_unreadable">共有された画像や動画を読み込めませんでした</string>
+    <string name="shared_media_preparing">共有されたメディアを準備しています…</string>
     <string name="pcloud_already_exists">同じ名前のファイルかフォルダが pCloud にすでにあります</string>
     <string name="pcloud_hide_folder_description">このフォルダとその中のすべてを、このアプリで非表示にします。この端末のこのアプリだけの設定で、pCloud には何も書き込まず、ほかの pCloud アプリには影響しません。非表示のフォルダを見るには、「設定」の「非表示のアイテムを表示する」か、メニューの「一時的に非表示のアイテムを表示」を使います。この選択は設定のエクスポートに含まれます。非表示にしますか？</string>
     <string name="pcloud_cant_unhide_folder">上のフォルダが非表示になっているので、このフォルダもいっしょに隠れています。そちらのフォルダを再表示してください。</string>

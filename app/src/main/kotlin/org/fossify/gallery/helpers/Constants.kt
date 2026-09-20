@@ -152,6 +152,11 @@ const val PCLOUD_WORK_DIR = "pcloud-work"
 // can tell it is editing a pCloud medium and offer to save it back rather than beside itself
 const val PCLOUD_EDIT_DIR = "pcloud-edit"
 
+// under the cache directory: the media handed over by the share sheet, written out under the
+// name they are shared as. A share arrives as content:// uris and the copy works on real
+// paths, so they are staged here and copied from here. Emptied at the start of every share
+const val SHARED_MEDIA_DIR = "shared-incoming"
+
 const val PCLOUD_ACCESS_TOKEN = "pcloud_access_token"
 const val PCLOUD_API_HOST = "pcloud_api_host"
 const val PCLOUD_ACCOUNT_EMAIL = "pcloud_account_email"

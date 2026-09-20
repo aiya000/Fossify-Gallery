@@ -91,6 +91,37 @@
             </intent-filter>
         </activity>
 
+        <!--
+            The share sheet's entry: takes images and videos from another app and copies them
+            into a folder the user picks. It has no UI of its own, only the folder picker, so
+            it is translucent and stays out of the recents list
+        -->
+        <activity
+            android:name=".activities.ReceiveSharedMediaActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/TranslucentTheme">
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".activities.MediaActivity"
             android:configChanges="orientation"

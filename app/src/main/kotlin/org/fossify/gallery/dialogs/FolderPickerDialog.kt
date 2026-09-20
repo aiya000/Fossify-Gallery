@@ -64,13 +64,19 @@ import java.io.File
 // half of the commons dialog is not needed here.
 //
 // A fork of commons 6.1.6 FilePickerDialog rather than a subclass: that class is final and
-// keeps its listing private. The device side is kept as it is there
+// keeps its listing private. The device side is kept as it is there.
+//
+// [localStorageOnly] leaves pCloud out even while signed in, for a caller that can only write
+// to the device. [onCancelled] tells such a caller that nothing was picked, so that a screen
+// standing on the picker alone can close itself
 class FolderPickerDialog(
     private val activity: BaseSimpleActivity,
     private var currPath: String,
     private var showHidden: Boolean = false,
     private val showFAB: Boolean = false,
     private val canAddShowHiddenButton: Boolean = false,
+    private val localStorageOnly: Boolean = false,
+    private val onCancelled: (() -> Unit)? = null,
     private val callback: (pickedPath: String) -> Unit
 ) {
     private class Storage(val path: String, val label: String)
@@ -89,7 +95,7 @@ class FolderPickerDialog(
 
     init {
         if (currPath.isPCloudPath()) {
-            if (!config.isPCloudLoggedIn) {
+            if (!config.isPCloudLoggedIn || localStorageOnly) {
                 currPath = activity.internalStoragePath
             }
         } else {
@@ -118,7 +124,7 @@ class FolderPickerDialog(
         tryUpdateItems()
 
         val builder = activity.getAlertDialogBuilder()
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .setNegativeButton(org.fossify.commons.R.string.cancel) { _, _ -> onCancelled?.invoke() }
             .setPositiveButton(org.fossify.commons.R.string.ok, null)
 
         if (showFAB) {
@@ -151,6 +157,9 @@ class FolderPickerDialog(
         builder.apply {
             activity.setupDialogStuff(binding.root, this, org.fossify.commons.R.string.select_folder) { alertDialog ->
                 mDialog = alertDialog
+                // only a cancel, never a dismiss(): picking a folder and creating one both
+                // dismiss the dialog, and those are not "nothing was picked"
+                alertDialog.setOnCancelListener { onCancelled?.invoke() }
                 alertDialog.onBackPressedDispatcher.addCallback(alertDialog) {
                     if (currPath.trimEnd('/') != storageRootOf(currPath).trimEnd('/')) {
                         currPath = currPath.getParentPath().ifEmpty { "/" }
@@ -178,7 +187,7 @@ class FolderPickerDialog(
             storages.add(Storage(OTG_STORAGE, activity.getString(org.fossify.commons.R.string.usb)))
         }
 
-        if (config.isPCloudLoggedIn) {
+        if (config.isPCloudLoggedIn && !localStorageOnly) {
             storages.add(Storage(PCLOUD_PATH_SCHEME, activity.getString(R.string.pcloud)))
         }
 

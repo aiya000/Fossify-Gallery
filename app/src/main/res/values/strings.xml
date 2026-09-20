@@ -110,6 +110,9 @@
     <string name="pcloud_moving">Moving on pCloud (%1$d/%2$d)</string>
     <string name="pcloud_transfer_done">pCloud: %1$d files transferred</string>
     <string name="pcloud_transfer_done_with_failures">pCloud: %1$d files transferred, %2$d failed</string>
+    <string name="shared_media_none">No images or videos were shared</string>
+    <string name="shared_media_unreadable">The shared images and videos could not be read</string>
+    <string name="shared_media_preparing">Preparing the shared media…</string>
     <string name="restore_to_path">Restoring to \'%s\'</string>
     <plurals name="restore_confirmation">
         <item quantity="one">Are you sure you want to restore %d file?</item>
