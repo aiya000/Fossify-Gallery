@@ -3,7 +3,9 @@ package org.fossify.gallery.helpers
 import android.content.Context
 import android.util.Log
 import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msdtyp.FileTime
 import com.hierynomus.msfscc.FileAttributes
+import com.hierynomus.msfscc.fileinformation.FileBasicInformation
 import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -17,6 +19,7 @@ import com.hierynomus.smbj.share.File
 import org.fossify.gallery.extensions.config
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.EnumSet
 import java.util.concurrent.TimeUnit
 
@@ -204,6 +207,86 @@ object SmbClient {
 
         return OpenFile(file)
     }
+
+    // whether the share has a file at the pseudo path. A folder there answers false, the way
+    // File.isFile does, and so does a path whose parent folder is not there either
+    fun fileExists(context: Context, path: String): Boolean {
+        val share = connectedShare(context)
+        return share.fileExists(toSharePath(context, path))
+    }
+
+    fun folderExists(context: Context, path: String): Boolean {
+        val share = connectedShare(context)
+        return share.folderExists(toSharePath(context, path))
+    }
+
+    // Makes the folder, and the folders above it that are not there yet. A folder that is
+    // already there is left alone, so a caller can say this before every write without asking
+    // first. There is no "make the parents too" request in the protocol, and a mkdir of a
+    // nested path fails when a folder in the middle is missing, so it is walked segment by
+    // segment
+    fun createFolder(context: Context, path: String) {
+        val share = connectedShare(context)
+        var walked = ""
+        for (segment in toSharePath(context, path).split(SEPARATOR).filter { it.isNotEmpty() }) {
+            walked = if (walked.isEmpty()) segment else "$walked$SEPARATOR$segment"
+            if (!share.folderExists(walked)) {
+                share.mkdir(walked)
+            }
+        }
+    }
+
+    // Writes a new file at the pseudo path, its bytes coming from [write]. A name that is
+    // already taken is refused rather than written over: the caller picked a name it believed
+    // to be free, and one taken since is a collision, not a request to replace what is there.
+    //
+    // What [write] threw comes back out, with the half-written file already removed. The share
+    // keeps a file a write broke off in the middle, and nothing afterwards would tell it from
+    // a whole one -- the same reason the copy off the share discards its half-written files
+    fun create(context: Context, path: String, write: (OutputStream) -> Unit) {
+        val share = connectedShare(context)
+        val sharePath = toSharePath(context, path)
+        val file = share.openFile(
+            sharePath,
+            EnumSet.of(AccessMask.GENERIC_WRITE),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_CREATE,
+            null
+        )
+
+        try {
+            // both are closed: closing the stream flushes what is left but leaves the handle
+            // open on the server, the same way the read side does
+            file.use { open -> open.outputStream.use(write) }
+        } catch (e: Exception) {
+            runCatching { share.rm(sharePath) }
+            throw e
+        }
+    }
+
+    // Puts a modification time on a file of the share. The gallery sorts by that time, so a
+    // copy that landed here and now would sort to the top of the folder instead of where the
+    // original belongs
+    fun setModified(context: Context, path: String, millis: Long) {
+        val share = connectedShare(context)
+        // only the write time is being set; the other three say so with DONT_SET, and 0
+        // attributes leaves the file's own alone
+        val information = FileBasicInformation(
+            FileBasicInformation.DONT_SET,
+            FileBasicInformation.DONT_SET,
+            FileTime.ofEpochMillis(millis),
+            FileBasicInformation.DONT_SET,
+            0L
+        )
+
+        share.setFileInformation(toSharePath(context, path), information)
+    }
+
+    // Deleting, renaming and moving on the share are not here yet, and are deliberately not
+    // written ahead of the screens that would call them (#28). smbj has `rm`, `rmdir` and
+    // `DiskEntry.rename` waiting; what is missing is everything around them -- which rows follow
+    // the file, what a half-done batch leaves behind, and what the menus should offer
 
     private fun FileIdBothDirectoryInformation.toEntry(): Entry {
         val isFolder = fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L

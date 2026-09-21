@@ -476,6 +476,7 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
         isPickingFolderForWidget = false,
         navigateGroups = true,
         localDestinationOnly = localDestinationOnly,
+        isCopyOperation = isCopyOperation,
         onCancelled = onCancelled
     ) {
         copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, onPCloudTransferQueued, callback)
@@ -494,12 +495,19 @@ fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
     onPCloudTransferQueued: (() -> Unit)? = null,
     callback: (destinationPath: String) -> Unit
 ) {
-    // the share is read-only so far (#28), so it can only be the source, and only of a copy.
-    // The picker turns away a destination on it, and the menus offer neither a move nor a
-    // delete for its media; this is the backstop for both
+    // The share is copied off and copied onto, and that is all it does so far (#28). A move
+    // would have to delete the side it came from once the copy landed, which is not built in
+    // either direction; a copy onto the share starts from a file on the device, because
+    // anything already remote would have to be staged first. The picker turns both away and
+    // the menus offer no move for the share's media; this is the backstop for all of it
     if (source.isSmbPath() || destination.isSmbPath()) {
-        if (destination.isSmbPath() || !isCopyOperation) {
-            toast(R.string.smb_no_write_destination, Toast.LENGTH_LONG)
+        if (!isCopyOperation) {
+            toast(R.string.smb_no_move_yet, Toast.LENGTH_LONG)
+            return
+        }
+
+        if (destination.isSmbPath() && source.isRemotePath()) {
+            toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
             return
         }
 
@@ -593,9 +601,10 @@ fun BaseSimpleActivity.startPCloudTransfer(
     }
 }
 
-// Queues a copy off the share once the permissions the destination needs are in: a folder on
-// the device is written into, a folder on pCloud wants an account. The notification permission
-// is asked for so that the progress can be seen; the copy runs without it too.
+// Queues a copy off the share, or onto it, once the permissions the destination needs are in:
+// a folder on the device is written into, a folder on pCloud wants an account, and a folder on
+// the share wants neither. The notification permission is asked for so that the progress can be
+// seen; the copy runs without it too.
 //
 // [onQueued] fires once the job is with the service, which is several dialogs later than this
 // returns. A caller whose only business was this copy waits for it rather than for the copy
@@ -615,7 +624,12 @@ fun BaseSimpleActivity.startSmbCopy(
         return
     }
 
-    val kind = if (destination.isPCloudPath()) SmbTransferService.Kind.TO_PCLOUD else SmbTransferService.Kind.TO_DEVICE
+    val kind = when {
+        destination.isSmbPath() -> SmbTransferService.Kind.FROM_DEVICE
+        destination.isPCloudPath() -> SmbTransferService.Kind.TO_PCLOUD
+        else -> SmbTransferService.Kind.TO_DEVICE
+    }
+
     if (kind == SmbTransferService.Kind.TO_PCLOUD && !config.isPCloudLoggedIn) {
         toast(R.string.pcloud_log_in_required)
         return
@@ -636,7 +650,9 @@ fun BaseSimpleActivity.startSmbCopy(
     }
 
     when (kind) {
-        SmbTransferService.Kind.TO_PCLOUD -> enqueue()
+        // neither destination is a folder of the device, so there is no SAF access to ask for;
+        // what a copy onto the share reads is media the app already lists
+        SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.FROM_DEVICE -> enqueue()
         SmbTransferService.Kind.TO_DEVICE -> handleSAFDialog(destination) { granted ->
             if (granted) {
                 handleSAFDialogSdk30(destination) { allowed ->

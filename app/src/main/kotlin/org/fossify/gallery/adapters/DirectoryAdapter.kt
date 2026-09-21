@@ -210,12 +210,12 @@ class DirectoryAdapter(
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
 
-        // A folder on the share has no directory behind it either, and the share can only be
-        // read (#28), so everything that would change something on it is off -- it was treated
-        // as a folder on the device until now, which offered actions that could only fail. What
-        // is left is what only reads the share ("copy to", which copies its media away) or is
-        // only a setting here: pinning, locking, the cover image, and "move to", which for a
-        // folder of the share can only mean putting it in a group
+        // A folder on the share has no directory behind it either, and nothing on the share can
+        // be deleted or renamed yet (#28), so everything that would change one of its folders is
+        // off -- it was treated as a folder on the device until now, which offered actions that
+        // could only fail. What is left is what only reads the share ("copy to", which copies its
+        // media away) or is only a setting here: pinning, locking, the cover image, and "move
+        // to", which for a folder of the share can only mean putting it in a group
         val isAnySmbSelected = realPaths.any { it.isSmbPath() }
         val isSmbOnly = realPaths.isNotEmpty() && realPaths.all { it.isSmbPath() }
         menu.apply {
@@ -874,6 +874,9 @@ class DirectoryAdapter(
                         isPickingFolderForWidget = false,
                         excludedGroupIds = groupIds,
                         allowFolderDestination = !groupsOnly,
+                        // so that the picker knows to turn away a folder of the share: it can be
+                        // copied into now, but not moved into (#28)
+                        isCopyOperation = false,
                         groupCallback = { destinationGroupId ->
                             moveToGroup(folderPaths, groupIds, destinationGroupId)
                         }

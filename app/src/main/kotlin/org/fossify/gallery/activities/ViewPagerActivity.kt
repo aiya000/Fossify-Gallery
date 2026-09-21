@@ -341,8 +341,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
         val hasFile = !isInPCloudBin
-        // the share can only be read (#28): a medium on it is copied away from it, never moved,
-        // which would have to delete the original off the share
+        // a medium on the share is copied away from it, never moved: a move would have to delete
+        // the original off the share, and nothing deletes on it yet (#28)
         val isOnShare = currentMedium.path.isSmbPath()
 
         runOnUiThread {
