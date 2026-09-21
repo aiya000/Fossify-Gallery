@@ -2,6 +2,7 @@ package org.fossify.gallery.interfaces
 
 import androidx.room.*
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.fossify.gallery.models.Medium
 
 @Dao
@@ -81,10 +82,17 @@ interface MediumDao {
     fun clearFavorites()
 
     // A video on a remote storage is scanned without its content being read, so its duration is
-    // not known until something opens the file. Whatever first does -- the grid asking for a
-    // thumbnail frame -- writes it back here, and the row carries it from then on
+    // not known until something opens the file. Whatever first does -- the viewer on playback,
+    // or a folder asked to fill its videos in -- writes it back here, and the row carries it
+    // from then on
     @Query("UPDATE media SET video_duration = :duration WHERE full_path = :path COLLATE NOCASE")
     fun updateVideoDuration(path: String, duration: Int)
+
+    // The videos in one folder whose length is still unknown, so that a folder can be filled in
+    // deliberately instead of a video at a time as it is played. A zero is not a length of zero,
+    // it is what a scan leaves behind for a file it never opened
+    @Query("SELECT full_path FROM media WHERE deleted_ts = 0 AND parent_path = :path COLLATE NOCASE AND type = $TYPE_VIDEOS AND video_duration = 0")
+    fun getVideoPathsWithoutDuration(path: String): List<String>
 
     // the device's bin only, the pCloud one is emptied through PCloudWriter
     @Query("DELETE FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")

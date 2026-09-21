@@ -84,6 +84,11 @@
         android:title="@string/smb_rescan"
         app:showAsAction="never" />
     <item
+        android:id="@+id/read_smb_durations_group"
+        android:showAsAction="never"
+        android:title="@string/smb_read_durations_group"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/column_count"
         android:icon="@drawable/ic_column_count_vector"
         android:title="@string/column_count"
