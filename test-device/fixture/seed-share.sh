@@ -57,7 +57,22 @@ for entry in "${FIXTURE_TREE[@]}"; do
     done
 done
 
-echo "$videos videos, $images images in ${#FIXTURE_TREE[@]} folders"
+# the filler. One video each, copied rather than generated: what they are for is the number of
+# folders the walk has to get through, not what is in them
+if [ "$FIXTURE_FILLER_FOLDERS" -gt 0 ]; then
+    echo "filling $FIXTURE_FILLER_FOLDERS more folders"
+    source_video="$FIXTURE_SHARE_DIR/Camera/video-1.mp4"
+    for i in $(seq 1 "$FIXTURE_FILLER_FOLDERS"); do
+        # named to sort after every folder the tests look for: the folder list draws 400 rows
+        # of filler, and anything sorting after them would be pushed off the screen
+        folder="$(printf '%s/Filler/zz%04d' "$FIXTURE_SHARE_DIR" "$i")"
+        mkdir -p "$folder"
+        [ -f "$folder/video.mp4" ] || cp "$source_video" "$folder/video.mp4"
+        videos=$((videos + 1))
+    done
+fi
+
+echo "$videos videos, $images images in $((${#FIXTURE_TREE[@]} + FIXTURE_FILLER_FOLDERS)) folders"
 
 # the manifest is what the driving scripts assert on, so a mismatch here has to be loud: it would
 # otherwise turn into a failing test that looks like a bug in the app

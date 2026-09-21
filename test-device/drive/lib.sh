@@ -117,9 +117,28 @@ wait_for_log() {
     return 1
 }
 
+# Takes the log once and asserts against that copy from then on.
+#
+# A walk of the share logs steadily, and the device's buffer is not large: a line found by
+# wait_for_log was gone again by the time the next question was asked of it, which read as the app
+# never having said it. Everything a case wants to know is in one snapshot, and the snapshot is
+# what is kept in the run directory
+capture_log() {
+    LOG_SNAPSHOT="$(logcat_dump "$1")"
+    note "log kept at $LOG_SNAPSHOT"
+}
+
+captured_log() {
+    if [ -n "${LOG_SNAPSHOT:-}" ]; then
+        cat "$LOG_SNAPSHOT"
+    else
+        app_log
+    fi
+}
+
 expect_log() {
     local pattern="$1" label="$2"
-    if app_log | rg -q -- "$pattern"; then
+    if captured_log | rg -q -- "$pattern"; then
         pass "$label"
     else
         fail "$label (nothing in the log matched: $pattern)"
@@ -128,7 +147,7 @@ expect_log() {
 
 refute_log() {
     local pattern="$1" label="$2"
-    if app_log | rg -q -- "$pattern"; then
+    if captured_log | rg -q -- "$pattern"; then
         fail "$label (the log matched what it must not: $pattern)"
     else
         pass "$label"
@@ -163,6 +182,9 @@ ui_tap_text() {
     "${ADB[@]}" shell input tap $point
 }
 
+# A long press, held with motionevent rather than made out of a swipe of no distance. The swipe
+# form is what the first version used and the app never saw it: `input swipe` with the same point
+# twice does not last long enough to be a press at all
 ui_long_press_text() {
     local text="$1" name="${2:-longpress}"
     local dump point
@@ -173,7 +195,54 @@ ui_long_press_text() {
     fi
 
     # shellcheck disable=SC2086
-    "${ADB[@]}" shell input swipe $point $point 800
+    "${ADB[@]}" shell input motionevent DOWN $point
+    sleep 1
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input motionevent UP $point
+    sleep 1
+}
+
+# The same, but the text has to be the whole label. A folder row named Camera is otherwise found
+# in the toolbar's "Open camera" button, and a check that matches the toolbar passes whatever the
+# list is showing
+# Whether the folder list is in its selection mode. The toolbar counts what is picked there --
+# "1 / 2003" -- and that count is the only thing on screen that says so
+in_selection_mode() {
+    local dump
+    dump="$(ui_dump "${1:-selection}")"
+    python3 "$DRIVE_DIR/ui.py" "$dump" --list | rg -q '^[0-9]+ / [0-9]+\s'
+}
+
+# Picks a row, and makes sure it took. A long press that lands while the list is still rebinding
+# after a scan is swallowed, and the next tap then opens the ordinary menu instead of the
+# selection's -- which reads as a missing menu item rather than as a press that never happened
+select_row() {
+    local text="$1" name="${2:-select}"
+    local attempt
+    for attempt in 1 2 3; do
+        ui_long_press_text "$text" "$name-$attempt" || return 1
+        if in_selection_mode "$name-$attempt-check"; then
+            return 0
+        fi
+        sleep 2
+    done
+
+    fail "holding '$text' did not start a selection"
+    return 1
+}
+
+ui_wait_exact_text() {
+    local text="$1" seconds="${2:-60}" name="${3:-wait}"
+    local waited=0 dump
+    while [ "$waited" -lt "$seconds" ]; do
+        dump="$(ui_dump "$name")"
+        if python3 "$DRIVE_DIR/ui.py" "$dump" --text "$text" --exact > /dev/null; then
+            return 0
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+    return 1
 }
 
 ui_wait_text() {
@@ -210,32 +279,38 @@ wait_for_service() {
     return 1
 }
 
-# the screen, so a swipe does not have to guess where the edges are
-screen_width() { "${ADB[@]}" shell wm size | tr -d '\r' | awk -F'[ x]' '/Physical size/ {print $3}'; }
-screen_height() { "${ADB[@]}" shell wm size | tr -d '\r' | awk -F'[ x]' '/Physical size/ {print $4}'; }
+# Changing storage, through the toolbar's Storage chip.
+#
+# The gesture a user makes for this is a sideways drag of the folder list, and that is the one
+# worth worrying about -- it is the easiest thing in the app to do by accident, which is why #59
+# ranked a swipe below a scan asked for by hand. It is not what these scripts make, though:
+# `input swipe` synthesises a handful of move events and the list's drag detection does not take
+# them, so a swipe here does nothing at all and a test built on one passes by accident.
+#
+# The chip is the same code path from switchStorage() down -- leftBehind() and the rescan policy
+# both live there -- so what the ranks do is still what is being checked.
+switch_storage_to() {
+    local label="$1" name="${2:-storage}"
+    local dump point
+    dump="$(ui_dump "$name-chip")"
+    if ! point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --resource-id "storage_filter")"; then
+        fail "the storage chip is not on screen (view tree in $dump)"
+        return 1
+    fi
 
-# The sideways drag between storages: rule 1 of #59, and the gesture easiest to make by accident.
-# It has to be past a fifth of the width to count, so it goes most of the way across
-swipe_storage_forward() {
-    local w h
-    w="$(screen_width)"
-    h="$(screen_height)"
-    "${ADB[@]}" shell input swipe $((w * 85 / 100)) $((h / 2)) $((w * 15 / 100)) $((h / 2)) 200
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input tap $point
+    sleep 1
+    ui_tap_text "$label" "$name-menu"
+    sleep 1
 }
 
-swipe_storage_back() {
-    local w h
-    w="$(screen_width)"
-    h="$(screen_height)"
-    "${ADB[@]}" shell input swipe $((w * 15 / 100)) $((h / 2)) $((w * 85 / 100)) $((h / 2)) 200
-}
-
-# The three dots of the toolbar. It is a content description rather than a text, and the keyevent
-# below is the fallback for a screen whose menu is not in a toolbar
 open_overflow_menu() {
     local dump point
     dump="$(ui_dump "overflow")"
-    if point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "More options")"; then
+    # the last of them: while a selection is on, its toolbar is drawn over the ordinary one and
+    # both are in the tree. The three dots that open the selection's menu are the later pair
+    if point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "More options" --last)"; then
         # shellcheck disable=SC2086
         "${ADB[@]}" shell input tap $point
         return 0

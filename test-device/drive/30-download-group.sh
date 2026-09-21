@@ -22,7 +22,7 @@ sleep 4
 open_overflow_menu
 sleep 1
 ui_tap_text "Rescan the network share" "30-menu"
-if ! wait_for_log "Walked the share:" 300 "30-scan"; then
+if ! wait_for_log "Walked the share:" 900 "30-scan"; then
     fail "the share was never scanned, so there is nothing to download"
     screenshot "30-no-scan"
     finish
@@ -35,8 +35,10 @@ if ! ui_wait_text "$FIXTURE_GROUP_PARENT_NAME" 30 "30-list"; then
     finish
 fi
 
-ui_long_press_text "$FIXTURE_GROUP_PARENT_NAME" "30-longpress"
-sleep 1
+if ! select_row "$FIXTURE_GROUP_PARENT_NAME" "30-select"; then
+    screenshot "30-not-selected"
+    finish
+fi
 screenshot "30-selected"
 
 step "asking for the videos in it"
@@ -56,14 +58,15 @@ else
 fi
 
 # a group can run to tens of gigabytes, so the size is named as well as the count
-if python3 "$DRIVE_DIR/ui.py" "$dialog" --list | rg -q '[0-9]+([.,][0-9]+)? ?[KMG]B'; then
+# "221.2 kB", as the app formats it -- the unit's case is the platform's, not ours
+if python3 "$DRIVE_DIR/ui.py" "$dialog" --list | rg -qi '[0-9]+([.,][0-9]+)? ?[kmg]?b\b'; then
     pass "and it names how much that is"
 else
     fail "the confirmation does not say how much is about to come over the network"
 fi
 
 step "letting it run"
-ui_tap_text "OK" "30-confirm-ok" || ui_tap_text "Yes" "30-confirm-yes"
+ui_tap_text "Yes" "30-confirm-yes"
 
 if ! wait_for_log "Downloaded .*video-.*" 300 "30-download"; then
     fail "nothing was downloaded"
@@ -101,6 +104,8 @@ screenshot "30-downloaded"
 # time finds every video already on the device, so there is nothing to fetch -- and today that
 # ends in a message rather than in playback. If this stops being true, the note is what to change
 step "asking a second time, where #64 still has a hole"
+# the selection ends when the download starts, so the group has to be picked again
+select_row "$FIXTURE_GROUP_PARENT_NAME" "30-select-again" || true
 open_overflow_menu
 sleep 1
 ui_tap_text "Download the videos in the selection" "30-menu-download-again" || true

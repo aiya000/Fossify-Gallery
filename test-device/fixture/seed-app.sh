@@ -34,8 +34,27 @@ for permission in \
     "${ADB[@]}" shell pm grant "$FIXTURE_PACKAGE" "$permission" 2> /dev/null || true
 done
 
+# "all files access" is not an ordinary permission -- it is an app op, asked for with a dialog the
+# app puts up on its first run. Granting it here is what keeps that dialog out of the way of the
+# first tap every script makes
+"${ADB[@]}" shell appops set --uid "$FIXTURE_PACKAGE" MANAGE_EXTERNAL_STORAGE allow 2> /dev/null || true
+
 prefs="$RUN_DIR/Prefs.xml"
-# &quot; because these values are JSON living inside an XML attribute's text
+
+# No XML comments in what follows. Android's SharedPreferences reads this file with a parser that
+# is not a general XML reader, and a comment in it is enough to lose everything after the comment
+# -- which showed up here as a share that scanned fine and a folder list that then drew nothing.
+# What each block is for:
+#
+# - the share: host, port, name, root, and the credentials of the fixture
+# - which scans the settings may start. Off by default: a scan nobody asked for, arriving in the
+#   middle of a test, is the one thing that makes a run unreadable
+# - the groups of #64: a group holding a folder and a subgroup, which is the shape that shows
+#   whether a subgroup is walked where it sits or after the plain folders
+# - the folder list opens on the share, sorted by name, so the order is the one the tests assume
+# - app_run_count keeps the welcome and rating prompts out of the way
+#
+# &quot; because those values are JSON living inside XML.
 cat > "$prefs" <<XML
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
@@ -46,36 +65,26 @@ cat > "$prefs" <<XML
     <string name="smb_user">$FIXTURE_SMB_USER</string>
     <string name="smb_password">$FIXTURE_SMB_PASSWORD</string>
     <string name="smb_domain">$FIXTURE_SMB_DOMAIN</string>
-
-    <!-- which scans the settings may start. Off by default: a scan nobody asked for, arriving
-         in the middle of a test, is the one thing that makes a run unreadable -->
     <boolean name="smb_rescan_on_storage_switch" value="$FIXTURE_RESCAN_ON_STORAGE_SWITCH" />
     <boolean name="smb_rescan_on_launch" value="$FIXTURE_RESCAN_ON_LAUNCH" />
     <boolean name="smb_rescan_on_folder_open" value="false" />
     <boolean name="smb_rescan_on_pull_to_refresh" value="false" />
     <int name="smb_rescan_interval_minutes" value="0" />
-    <!-- an emulator's network counts as metered often enough to be worth ruling out -->
     <boolean name="smb_rescan_on_unmetered_only" value="false" />
-
-    <!-- the groups of #64: a group holding a folder and a subgroup, which is the shape that
-         shows whether a subgroup is walked where it sits or after the plain folders -->
     <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}]</string>
     <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID}</string>
-
-    <!-- the folder list opens on the share, so that the scans under test are of the share -->
     <int name="storage_filter" value="$FIXTURE_STORAGE_FILTER" />
     <int name="directory_sort_order" value="$FIXTURE_DIRECTORY_SORT" />
-
-    <!-- the welcome and rating prompts are not what is under test -->
     <int name="app_run_count" value="5" />
-    <boolean name="is_using_shared_theme" value="false" />
 </map>
 XML
 
 step "writing the fixture settings into the app"
-"${ADB[@]}" shell run-as "$FIXTURE_PACKAGE" sh -c 'mkdir -p shared_prefs && cat > shared_prefs/Prefs.xml' < "$prefs"
+# the whole remote command goes as ONE argument: adb shell joins what it is given and hands it
+# to the device's shell, so quotes that are not inside the string are eaten before they get there
+"${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'mkdir -p shared_prefs && cat > shared_prefs/Prefs.xml'" < "$prefs"
 
-written="$("${ADB[@]}" shell run-as "$FIXTURE_PACKAGE" sh -c 'cat shared_prefs/Prefs.xml' | tr -d '\r' | rg -c 'smb_host' || true)"
+written="$("${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'cat shared_prefs/Prefs.xml'" | tr -d '\r' | rg -c 'smb_host' || true)"
 if [ "$written" != "1" ]; then
     echo "the preferences did not land; run-as may not be allowed on this build" >&2
     exit 1

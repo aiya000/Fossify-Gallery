@@ -15,9 +15,23 @@ on what a device can show.
 ## What it needs
 
 - an **emulator**. `adb devices` may list a phone, and every script refuses to run against one
-    - the Android SDK here has no emulator installed yet. It is two downloads:
-      `sdkmanager --install emulator "system-images;android-34;google_apis;x86_64"`, then
-      `avdmanager create avd -n gallery-fixture -k "system-images;android-34;google_apis;x86_64"`
+    - installing it, once:
+
+      ```sh
+      sdkmanager --install emulator "system-images;android-35;google_apis;x86_64"
+      avdmanager create avd -n gallery-fixture -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+      ```
+
+    - it needs KVM, and the user has to be in the `kvm` group for that: `sudo gpasswd -a $USER kvm`,
+      then a new login — or `sg kvm -c "<command>"` without one
+    - starting it headless:
+
+      ```sh
+      sg kvm -c "$HOME/Android/Sdk/emulator/emulator -avd gallery-fixture -no-window -no-audio -no-snapshot -gpu swiftshader_indirect"
+      ```
+
+    - with a phone connected as well, every script needs `ANDROID_SERIAL=emulator-5554` so it
+      cannot pick the wrong one
     - the refusal can be waved through with `FIXTURE_ALLOW_REAL_DEVICE=1`, which is there for a
       spare phone, not for the one in your pocket
 - **docker**, for the Samba container that serves the fixture
@@ -37,18 +51,20 @@ cd test-device
 docker compose -f fixture/docker-compose.yml up -d
 
 # 2. put the app into a known state (wipes the debug app's data)
-./fixture/seed-app.sh
+ANDROID_SERIAL=emulator-5554 ./fixture/seed-app.sh
 
 # 3. drive it
-./drive/run-all.sh
+ANDROID_SERIAL=emulator-5554 ./drive/run-all.sh
 ```
 
 Each script seeds the app itself, so any one of them can be run alone while a change is being
 worked on:
 
 ```sh
-./drive/20-storage-switch.sh
+ANDROID_SERIAL=emulator-5554 ./drive/20-storage-switch.sh
 ```
+
+The whole run takes a few minutes, most of it spent walking the share three times over.
 
 Screenshots, view trees and logs of a run land in `runs/<timestamp>/`, so a failure can be looked
 at afterwards.
@@ -73,7 +89,18 @@ at afterwards.
 - **Playback itself.** The scripts check that the videos arrive and in what order; watching them
   play through is still done by eye
 
-## Two things worth knowing before changing any of this
+## Why the fixture is 2000 folders
+
+Four folders and eleven files is what the counts are *about*, and it was the whole fixture to
+begin with. It could not be used: a share that small is walked in under a second, so rule 1 of #59
+— what a swipe does to a scan that is **running** — had nothing to interrupt. Every attempt ended
+with the scan finished before the storage had been left.
+
+`FIXTURE_FILLER_FOLDERS` folders of one video each sit under `Filler/`, named `zz0001` upwards so
+they sort after everything the tests look for. They make the walk take long enough to be
+interrupted, and they keep the counts exact, because they are counted too.
+
+## Things worth knowing before changing any of this
 
 **The settings export does not carry the share.** #78 hoped to seed the app by importing a settings
 file, because the storage configuration was thought to be in it. It is not: `setupExportSettings()`
@@ -87,3 +114,25 @@ settings are written straight into `shared_prefs/Prefs.xml` through `run-as` ins
 swiping away again leaves it running. What a swipe does call off is the scan the settings start on
 launch or on their interval, which ranks `AUTO`. `20-storage-switch.sh` covers both, and says which
 is which.
+
+**No XML comments in the seeded preferences.** Android reads `shared_prefs/Prefs.xml` with a
+reader that is not a general XML parser, and a comment in it loses everything after the comment.
+It showed up here as a share that scanned perfectly and a folder list that then drew nothing, with
+`storage_filter` back at its default. `seed-app.sh` explains the blocks in shell comments instead.
+
+**`input swipe` does not change storage.** The gesture a user makes is a sideways drag of the
+folder list, and that is the one #59 ranked below a manual scan — but `input swipe` synthesises
+too few move events for the list's drag detection, so the swipe does nothing and a script built on
+one passes without testing anything. The scripts use the toolbar's Storage chip, which runs the
+same `switchStorage()` and so the same ranks.
+
+**A long press has to be held with `motionevent`.** `input swipe x y x y 800` is not a press at
+all as far as the app is concerned. `select_row` holds DOWN, waits, releases, and then checks that
+the toolbar is counting a selection before going on.
+
+**The selection's toolbar is drawn over the ordinary one, and both are in the view tree.** The
+three dots that open the selection's menu are the *second* pair, which is what `ui.py --last` is
+for.
+
+**The Samba container takes the share over unless it is given the host user's ids.** Without the
+uid and gid in its `-u`, `seed-share.sh` cannot add to the tree afterwards.

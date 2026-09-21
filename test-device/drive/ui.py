@@ -40,6 +40,15 @@ def main():
     parser.add_argument("--resource-id")
     parser.add_argument("--exact", action="store_true")
     parser.add_argument(
+        "--last",
+        action="store_true",
+        help=(
+            "take the last match rather than the first. The selection mode's toolbar is drawn over "
+            "the ordinary one and both are in the tree, so the three dots that belong to the "
+            "selection are the second of the two"
+        ),
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="print every text on screen instead, which is what to reach for when a tap cannot land",
@@ -58,14 +67,20 @@ def main():
     if args.text is None and args.resource_id is None:
         parser.error("one of --text, --resource-id or --list is needed")
 
+    found = None
     for node in tree.iter("node"):
         if matches(node, args.text, args.resource_id, args.exact):
             point = centre_of(node)
             if point is not None:
-                print(f"{point[0]} {point[1]}")
-                return 0
+                found = point
+                if not args.last:
+                    break
 
-    return 1
+    if found is None:
+        return 1
+
+    print(f"{found[0]} {found[1]}")
+    return 0
 
 
 if __name__ == "__main__":

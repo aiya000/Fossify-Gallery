@@ -36,14 +36,16 @@ if ! wait_for_service RemoteScanService 60; then
     screenshot "20a-no-scan"
 else
     screenshot "20a-scanning"
-    note "the scan is running; swiping away from the share"
-    swipe_storage_forward
+    note "the scan is running; leaving the share"
+    switch_storage_to "This device" "20a-leave"
     sleep 3
     screenshot "20a-after-swipe"
+    capture_log "20a"
 
-    expect_log "left SMB behind" "the list said it had left the share"
-    expect_log "called off" "the scan the settings started was called off"
-    logcat_dump "20a" > /dev/null
+    # the scheduler says so only when it actually calls something off, so this one line is the
+    # whole of rule 1-a
+    expect_log "left SMB behind; calling off" "the scheduler called off the scan the settings started"
+    expect_log "was called off" "and the walk stopped without writing anything"
 fi
 
 # ---------------------------------------------------------------- rule 1-b
@@ -63,21 +65,22 @@ if ! wait_for_service RemoteScanService 60; then
     screenshot "20b-no-scan"
 else
     screenshot "20b-scanning"
-    note "the scan is running; swiping away from the share"
-    swipe_storage_forward
+    note "the scan is running; leaving the share"
+    switch_storage_to "This device" "20b-leave"
     sleep 3
     screenshot "20b-after-swipe"
+    capture_log "20b-during"
 
-    refute_log "called off" "the manual scan survived the swipe"
+    refute_log "called off" "the manual scan survived being left"
 
     # and it has to run to the end, not merely survive the moment of the swipe
-    if wait_for_log "Walked the share:" 300 "20b"; then
-        pass "the manual scan finished after the swipe"
-        expect_log "Walked the share: [0-9]+ folders, $FIXTURE_MEDIA files" "and it found everything the fixture holds"
+    if wait_for_log "Walked the share:" 600 "20b"; then
+        capture_log "20b"
+        pass "the manual scan finished after the storage was left"
+        expect_log "Walked the share: [0-9]+ folders, $FIXTURE_MEDIA files" "and it walked everything the fixture holds"
     else
         fail "the manual scan never finished"
     fi
-    logcat_dump "20b" > /dev/null
 fi
 
 # ---------------------------------------------------------------- what the ranks actually say
@@ -90,18 +93,18 @@ app_start
 sleep 4
 
 # arrive at the share, which is what starts the scan at the switch's own rank
-swipe_storage_back
+switch_storage_to "Network share" "20c-arrive"
 if ! wait_for_service RemoteScanService 60; then
     fail "arriving at the share did not start the scan the settings ask for"
     screenshot "20c-no-scan"
 else
     screenshot "20c-scanning"
-    swipe_storage_forward
+    switch_storage_to "This device" "20c-leave"
     sleep 3
     screenshot "20c-after-swipe"
+    capture_log "20c"
 
     refute_log "called off" "the scan the arrival started survived leaving again"
-    logcat_dump "20c" > /dev/null
 fi
 
 finish

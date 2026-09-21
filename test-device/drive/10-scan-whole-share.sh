@@ -24,7 +24,7 @@ sleep 1
 ui_tap_text "Rescan the network share" "10-menu"
 
 step "waiting for the walk to finish"
-if ! wait_for_log "Walked the share:" 300 "10-scan"; then
+if ! wait_for_log "Walked the share:" 900 "10-scan"; then
     fail "the walk never finished; see $(logcat_dump 10-scan-timeout)"
     screenshot "10-scan-timeout"
     finish
@@ -42,19 +42,20 @@ expect_log "Walked the share: [0-9]+ folders, $FIXTURE_MEDIA files" "the scan fo
 expect_log "Walked the share: .*, 0 folders skipped" "no folder was left unread"
 refute_log "was called off" "nothing called the scan off"
 
-step "the folders the fixture holds are in the list"
-for entry in "${FIXTURE_TREE[@]}"; do
-    folder="${entry%%:*}"
-    name="${folder##*/}"
-    if ui_wait_text "$name" 20 "10-folder-$name"; then
+step "what the folder list draws afterwards"
+# Only the folders that are in no group are drawn as themselves. Kyoto and Osaka are members of
+# the fixture's groups, so the list draws the group in their place -- which is the whole point of
+# a group, and was worth being surprised by once
+for name in Camera Screens "$FIXTURE_GROUP_PARENT_NAME"; do
+    if ui_wait_exact_text "$name" 30 "10-row-$name"; then
         pass "$name is in the folder list"
     else
         fail "$name is not in the folder list"
     fi
 done
 
-# Trips holds no media of its own, only the two folders under it. A folder list that shows it is
-# showing an empty folder
+# Trips the folder holds no media of its own, only the two folders under it. What carries its name
+# in the list is the group, not the folder
 screenshot "10-folders"
 
 finish
