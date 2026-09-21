@@ -17,6 +17,8 @@ class SmbSyncPolicy(private val context: Context) {
 
     val rescanOnFolderOpen: Boolean get() = config.smbRescanOnFolderOpen && isNetworkAllowed
 
+    val rescanOnPullToRefresh: Boolean get() = config.smbRescanOnPullToRefresh && isNetworkAllowed
+
     // no active network counts as unmetered: the scan then fails on its own, quietly
     private val isNetworkAllowed: Boolean
         get() {

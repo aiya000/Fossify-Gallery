@@ -135,6 +135,7 @@
     <string name="smb_rescan_on_launch">起動時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>
+    <string name="smb_rescan_on_pull_to_refresh">引っぱって更新したときに共有全体を再スキャン</string>
     <string name="smb_rescan_on_unmetered_only">自動再スキャンは Wi-Fi 接続時のみ（従量制の回線では行わない）</string>
     <string name="smb_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="smb_fetch_failed">ネットワーク共有からファイルを取得できませんでした</string>

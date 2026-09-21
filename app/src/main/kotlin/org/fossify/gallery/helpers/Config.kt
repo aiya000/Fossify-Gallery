@@ -407,6 +407,13 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(SMB_RESCAN_ON_FOLDER_OPEN, true)
         set(smbRescanOnFolderOpen) = prefs.edit().putBoolean(SMB_RESCAN_ON_FOLDER_OPEN, smbRescanOnFolderOpen).apply()
 
+    // Off by default, unlike the rest. Walking the whole share takes minutes, and a pull is the
+    // easiest gesture in the app to make by accident -- the folder list is scrolled with the
+    // same finger. Whoever wants the share walked has the menu item for it
+    var smbRescanOnPullToRefresh: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, false)
+        set(smbRescanOnPullToRefresh) = prefs.edit().putBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, smbRescanOnPullToRefresh).apply()
+
     // a share lives on the local network, so a metered connection is never the one it is on
     var smbRescanOnUnmeteredOnly: Boolean
         get() = prefs.getBoolean(SMB_RESCAN_ON_UNMETERED_ONLY, true)

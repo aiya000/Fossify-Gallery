@@ -324,6 +324,7 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsSmbRescanOnLaunchHolder.beVisibleIf(isConfigured)
         binding.settingsSmbRescanOnStorageSwitchHolder.beVisibleIf(isConfigured)
         binding.settingsSmbRescanOnFolderOpenHolder.beVisibleIf(isConfigured)
+        binding.settingsSmbRescanOnPullToRefreshHolder.beVisibleIf(isConfigured)
         binding.settingsSmbRescanIntervalHolder.beVisibleIf(isConfigured)
 
         binding.settingsSmbRescanOnUnmeteredOnly.isChecked = config.smbRescanOnUnmeteredOnly
@@ -348,6 +349,12 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsSmbRescanOnFolderOpenHolder.setOnClickListener {
             binding.settingsSmbRescanOnFolderOpen.toggle()
             config.smbRescanOnFolderOpen = binding.settingsSmbRescanOnFolderOpen.isChecked
+        }
+
+        binding.settingsSmbRescanOnPullToRefresh.isChecked = config.smbRescanOnPullToRefresh
+        binding.settingsSmbRescanOnPullToRefreshHolder.setOnClickListener {
+            binding.settingsSmbRescanOnPullToRefresh.toggle()
+            config.smbRescanOnPullToRefresh = binding.settingsSmbRescanOnPullToRefresh.isChecked
         }
 
         binding.settingsSmbRescanInterval.text = getPCloudRescanIntervalText(config.smbRescanIntervalMinutes)
