@@ -1,0 +1,291 @@
+package org.fossify.gallery.jobs
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import org.fossify.commons.extensions.formatSize
+import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.helpers.isQPlus
+import org.fossify.gallery.R
+import org.fossify.gallery.helpers.SmbClient
+import org.fossify.gallery.helpers.SmbVideoCache
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
+
+// Fetches one video off the share in full, so that it can be watched from the device instead of
+// being read as it plays. Streaming is still what a video does by default -- it starts at once
+// and costs only what is watched -- but a share that cannot keep up stalls part way through, and
+// then having the whole file in hand first is the only thing that helps.
+//
+// A foreground service for the same reason SmbScanService and SmbDurationService are: the system
+// takes the network away from a process nobody is looking at, and a gigabyte over a slow share
+// is minutes of work that the user will not sit and watch. The notification carries the progress
+// and the stop action, so the download survives leaving the app
+class SmbDownloadService : Service() {
+    companion object {
+        private const val TAG = "SmbVideo"
+        private const val CHANNEL_ID = "smb_downloads"
+        private const val PROGRESS_NOTIFICATION_ID = 7007
+        private const val RESULT_NOTIFICATION_ID = 7008
+        private const val EXTRA_PATH = "path"
+
+        // the notification's stop action comes back in as this
+        private const val ACTION_ABORT = "org.fossify.gallery.ABORT_SMB_DOWNLOAD"
+
+        private const val PROGRESS_INTERVAL_MILLIS = 500L
+        private const val BUFFER_BYTES = 256 * 1024
+
+        private val isWorking = AtomicBoolean(false)
+        private val isAborted = AtomicBoolean(false)
+        private val listeners = CopyOnWriteArraySet<Listener>()
+
+        @Volatile
+        private var workingPath: String? = null
+
+        // one video at a time: a second download would be a second read over the same share,
+        // competing with the one already going, which is the very thing the user is here to
+        // avoid. Returns false when one is already running, so the caller can say so
+        fun start(context: Context, path: String): Boolean {
+            if (isWorking.get()) {
+                return false
+            }
+
+            val intent = Intent(context, SmbDownloadService::class.java).putExtra(EXTRA_PATH, path)
+            ContextCompat.startForegroundService(context, intent)
+            return true
+        }
+
+        // the video being fetched right now, so a viewer that comes back to it can pick the
+        // progress up again instead of offering to start a second download
+        fun downloadingPath(): String? = workingPath
+
+        fun addListener(listener: Listener) {
+            listeners.add(listener)
+        }
+
+        fun removeListener(listener: Listener) {
+            listeners.remove(listener)
+        }
+    }
+
+    // what the viewer watches to draw the progress over the video it is showing. Both are called
+    // on the main thread
+    interface Listener {
+        fun onSmbDownloadProgress(path: String, done: Long, total: Long)
+
+        // file is null when the download failed or was called off
+        fun onSmbDownloadFinished(path: String, file: File?)
+    }
+
+    private var lastProgressAt = 0L
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_ABORT) {
+            isAborted.set(true)
+            return START_NOT_STICKY
+        }
+
+        // a service started with startForegroundService() has to show its notification before
+        // this returns, whatever it then decides to do
+        showProgress(buildNotification(getString(R.string.smb_download_preparing), null))
+
+        val path = intent?.getStringExtra(EXTRA_PATH)
+        if (path == null) {
+            finish(path = null, file = null)
+            return START_NOT_STICKY
+        }
+
+        if (!isWorking.compareAndSet(false, true)) {
+            Log.w(TAG, "A video is already being downloaded, not starting a second one")
+            return START_NOT_STICKY
+        }
+
+        workingPath = path
+        isAborted.set(false)
+        ensureBackgroundThread {
+            work(path)
+        }
+
+        return START_NOT_STICKY
+    }
+
+    private fun work(path: String) {
+        val cache = SmbVideoCache(this)
+        var downloaded: File? = null
+        try {
+            val target = cache.targetOf(path)
+            if (target == null) {
+                // no scanned row, so there is no name to give the copy. Nothing the user can do
+                // about it from here, and a rescan is what fixes it
+                Log.w(TAG, "No scanned row for $path, so it cannot be downloaded")
+                showResult(getString(R.string.smb_download_failed))
+            } else if (target.isFile && target.length() > 0) {
+                downloaded = target
+            } else {
+                downloaded = download(path, target)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not download $path from the share", e)
+            // the usual failure is a session the server has given up on; dropping the connection
+            // means the next attempt opens a fresh one instead of failing the same way
+            SmbClient.disconnect()
+            showResult(getString(R.string.smb_download_failed))
+        } finally {
+            // a copy that has just been written is the newest thing here, so the sweep can only
+            // take what has really gone a day unwatched
+            cache.sweepExpired()
+            isWorking.set(false)
+            workingPath = null
+            finish(path, downloaded)
+        }
+    }
+
+    // returns the finished copy, or null when the download was called off part way
+    private fun download(path: String, target: File): File? {
+        val cache = SmbVideoCache(this)
+        val partial = File(cache.ensureDir(), "${target.name}${SmbVideoCache.PARTIAL_SUFFIX}")
+        var completed = false
+        try {
+            SmbClient.open(this, path).use { open ->
+                val total = open.size
+                var done = 0L
+                partial.outputStream().use { out ->
+                    val buffer = ByteArray(BUFFER_BYTES)
+                    val input = open.inputStream()
+                    while (true) {
+                        if (isAborted.get()) {
+                            Log.i(TAG, "The download of $path was called off after $done of $total bytes")
+                            return null
+                        }
+
+                        val read = input.read(buffer)
+                        if (read < 0) {
+                            break
+                        }
+
+                        out.write(buffer, 0, read)
+                        done += read
+                        reportProgress(path, done, total)
+                    }
+                }
+
+                // a connection that drops part way through just ends the stream. Renaming a
+                // short read into place would leave a torn video under a name that only changes
+                // when the file on the share does, so it would be played from then on
+                if (done != total) {
+                    throw IOException("The share sent $done bytes of $total for $path")
+                }
+            }
+
+            if (!partial.renameTo(target)) {
+                throw IOException("Could not move the downloaded video into place")
+            }
+
+            completed = true
+            Log.i(TAG, "Downloaded $path to ${target.name}")
+            showResult(getString(R.string.smb_download_done, path.substringAfterLast('/')))
+            return target
+        } finally {
+            if (!completed) {
+                partial.delete()
+            }
+        }
+    }
+
+    private fun finish(path: String?, file: File?) {
+        Handler(Looper.getMainLooper()).post {
+            if (path != null) {
+                listeners.forEach { it.onSmbDownloadFinished(path, file) }
+            }
+
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    // a buffer of a quarter megabyte means thousands of these over one video, so both the
+    // notification and the viewer are told twice a second rather than on every block
+    private fun reportProgress(path: String, done: Long, total: Long) {
+        val now = System.currentTimeMillis()
+        if (now - lastProgressAt < PROGRESS_INTERVAL_MILLIS) {
+            return
+        }
+
+        lastProgressAt = now
+        val text = getString(R.string.smb_download_progress, done.formatSize(), total.formatSize())
+        showProgress(buildNotification(text, path.substringAfterLast('/'), done, total))
+        Handler(Looper.getMainLooper()).post {
+            listeners.forEach { it.onSmbDownloadProgress(path, done, total) }
+        }
+    }
+
+    private fun showProgress(notification: Notification) {
+        if (isQPlus()) {
+            startForeground(PROGRESS_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(PROGRESS_NOTIFICATION_ID, notification)
+        }
+    }
+
+    // the one notification that stays behind, for a download that ended while the app was off screen
+    private fun showResult(text: String) {
+        val notification = NotificationCompat.Builder(this, ensureChannel())
+            .setSmallIcon(R.drawable.ic_storage_vector)
+            .setContentTitle(text)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
+    }
+
+    private fun buildNotification(text: String, filename: String?, done: Long = 0, total: Long = 0): Notification {
+        val abort = PendingIntent.getService(
+            this,
+            0,
+            Intent(this, SmbDownloadService::class.java).setAction(ACTION_ABORT),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // a video runs to gigabytes, which does not fit the Int the progress bar takes, so it is
+        // drawn as a percentage instead
+        val percent = if (total > 0) ((done * 100) / total).toInt() else 0
+        return NotificationCompat.Builder(this, ensureChannel())
+            .setSmallIcon(R.drawable.ic_storage_vector)
+            .setContentTitle(text)
+            .setProgress(100, percent, total == 0L)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .addAction(0, getString(R.string.smb_scan_stop), abort)
+            .apply {
+                if (filename != null) {
+                    setContentText(filename)
+                }
+            }
+            .build()
+    }
+
+    private fun ensureChannel(): String {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.smb_download_channel), NotificationManager.IMPORTANCE_LOW)
+            manager.createNotificationChannel(channel)
+        }
+
+        return CHANNEL_ID
+    }
+}

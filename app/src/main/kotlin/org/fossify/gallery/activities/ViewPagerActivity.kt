@@ -117,6 +117,7 @@ import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
@@ -346,6 +347,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
                 findItem(R.id.menu_open_with).isVisible = hasFile
+                // only a video on the share is read as it plays, so only that one can be had in
+                // hand first. It stays offered for one already downloaded, which then says so
+                findItem(R.id.menu_smb_download_video).isVisible = currentMedium.path.isSmbPath() && currentMedium.isVideo()
                 findItem(R.id.menu_hide).isVisible =
                     isLocal && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
 
@@ -481,6 +485,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_resize -> resizeImage()
                 R.id.menu_settings -> launchSettings()
                 R.id.menu_copy_to_clipboard -> copyImageToClipboard()
+                R.id.menu_smb_download_video -> downloadCurrentSmbVideo()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
@@ -1063,6 +1068,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun getCurrentPhotoFragment() = getCurrentFragment() as? PhotoFragment
+
+    // "download first, then play". The fragment owns the player, so it is the one that swaps the
+    // stream for the downloaded file once it is there
+    private fun downloadCurrentSmbVideo() {
+        (getCurrentFragment() as? VideoFragment)?.downloadAndPlay()
+    }
 
     private fun getPortraitPath() = intent.getStringExtra(PORTRAIT_PATH) ?: ""
 
