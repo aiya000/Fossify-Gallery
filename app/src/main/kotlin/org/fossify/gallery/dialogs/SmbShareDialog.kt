@@ -70,29 +70,44 @@ class SmbShareDialog(val activity: BaseSimpleActivity, val callback: () -> Unit)
         }
 
         save()
-        activity.toast(R.string.smb_rescanning)
+        activity.toast(R.string.smb_connecting)
         ensureBackgroundThread {
             try {
                 SmbClient.test(activity)
                 activity.toast(R.string.smb_connection_ok)
             } catch (e: Exception) {
+                // SmbClient logs which step failed and with what; the toast is cut short by the
+                // length of a status name, so it says only that something went wrong
                 SmbClient.disconnect()
                 activity.showErrorToast(e)
             }
         }
     }
 
-    // a new host or share means the cached folders belong to something else; dropping the
-    // connection is what makes the next call pick the new settings up
+    // A new host or share means the cached folders belong to something else; dropping the
+    // connection is what makes the next call pick the new settings up.
+    //
+    // A share name typed with a path after it ("photos/2026") is split here: only the first
+    // segment is a share, the rest is a folder inside it, and a server answers a connect to
+    // "photos/2026" with a share that does not exist rather than with anything useful
     private fun save() {
         binding.apply {
+            val typedShare = smbShareName.value.trim().replace('\\', '/').trim('/')
+            val share = typedShare.substringBefore('/')
+            val folderInTypedShare = typedShare.substringAfter('/', "")
+            val typedFolder = smbRootPath.value.trim().replace('\\', '/').trim('/')
+
             config.smbHost = smbHost.value.trim()
             config.smbPort = smbPort.value.trim().toIntOrNull() ?: SMB_DEFAULT_PORT
-            config.smbShare = smbShareName.value.trim().trim('/', '\\')
-            config.smbRootPath = smbRootPath.value.trim()
+            config.smbShare = share
+            config.smbRootPath = listOf(folderInTypedShare, typedFolder).filter { it.isNotEmpty() }.joinToString("/")
             config.smbUser = smbUser.value.trim()
             config.smbPassword = smbPassword.value
             config.smbDomain = smbDomain.value.trim()
+
+            // what was saved is not always what was typed, so the fields are put back in step
+            smbShareName.setText(config.smbShare)
+            smbRootPath.setText(config.smbRootPath)
         }
 
         SmbClient.disconnect()

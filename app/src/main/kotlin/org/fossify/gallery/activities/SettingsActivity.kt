@@ -263,7 +263,13 @@ class SettingsActivity : SimpleActivity() {
     // no share at all and its cached folders have to go with it
     private fun setupSmbShare() {
         val isConfigured = config.isSmbConfigured
-        binding.settingsSmbShare.text = if (isConfigured) "\\\\${config.smbHost}\\${config.smbShare}" else getString(R.string.smb_not_configured)
+        // the whole root, not just the share: the folder inside it is as much a part of what is
+        // browsed, and leaving it out reads like the share itself was picked
+        binding.settingsSmbShare.text = if (isConfigured) {
+            "\\\\${config.smbHost}\\${config.smbShare}" + config.smbRootPath.let { if (it.isEmpty()) "" else "\\${it.replace('/', '\\')}" }
+        } else {
+            getString(R.string.smb_not_configured)
+        }
         binding.settingsSmbShareHolder.setOnClickListener {
             if (isConfigured) {
                 showSmbShareOptions()

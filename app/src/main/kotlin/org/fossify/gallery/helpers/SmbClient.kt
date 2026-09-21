@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.util.Log
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
@@ -96,10 +97,22 @@ object SmbClient {
         }
     }
 
+    // Every step logs before it runs. A share that will not open fails with one status code out
+    // of a protocol the user cannot see, and which of the three steps it came from is most of
+    // the answer: reaching the host, being let in, and being given the share are three different
+    // things to fix. A toast is cut short and is gone once it is read, so this goes to the log
     private fun connectLocked(credentials: Credentials): DiskShare {
         val client = SMBClient(smbConfig)
+        var step = "connect to ${credentials.host}:${credentials.port}"
         try {
             val connection = client.connect(credentials.host, credentials.port)
+
+            step = if (credentials.user.isEmpty()) {
+                "authenticate as a guest"
+            } else {
+                "authenticate as ${credentials.user}${if (credentials.domain.isEmpty()) "" else "@${credentials.domain}"}"
+            }
+
             val authentication = if (credentials.user.isEmpty()) {
                 // a share that lets anyone in still wants a session; smbj calls that one guest
                 AuthenticationContext.guest()
@@ -108,6 +121,8 @@ object SmbClient {
             }
 
             val session = connection.authenticate(authentication)
+
+            step = "open the share ${credentials.shareName}"
             val share = session.connectShare(credentials.shareName) as? DiskShare
                 ?: throw IOException("${credentials.shareName} is not a disk share")
 
@@ -116,8 +131,10 @@ object SmbClient {
             this.session = session
             this.share = share
             openedWith = credentials
+            Log.i(TAG, "Connected to \\\\${credentials.host}\\${credentials.shareName}")
             return share
         } catch (e: Exception) {
+            Log.w(TAG, "Could not $step", e)
             // a half-opened connection would hold a socket and a thread for nothing
             client.close()
             throw e
@@ -148,7 +165,15 @@ object SmbClient {
     // went wrong, its message is what the user is shown
     fun test(context: Context) {
         val share = connectedShare(context)
-        share.list(toSharePath(context, SMB_PATH_SCHEME))
+        val root = toSharePath(context, SMB_PATH_SCHEME)
+        try {
+            share.list(root)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not list the folder \"$root\" in the share", e)
+            throw e
+        }
+
+        Log.i(TAG, "Listed the folder \"$root\" in the share")
     }
 
     // the entries of one folder, "." and ".." and hidden system entries left out. The path is a
@@ -200,6 +225,7 @@ object SmbClient {
         return joined.replace('/', SEPARATOR)
     }
 
+    private const val TAG = "SmbClient"
     private const val TIMEOUT_SECONDS = 15L
     private const val SOCKET_TIMEOUT_SECONDS = 30L
 }
