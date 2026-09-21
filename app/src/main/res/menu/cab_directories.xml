@@ -71,6 +71,11 @@
         android:title="@string/smb_download_videos_of_selection"
         app:showAsAction="never" />
     <item
+        android:id="@+id/cab_group_selection"
+        android:showAsAction="never"
+        android:title="@string/group_selection"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/cab_ungroup"
         android:showAsAction="never"
         android:title="@string/ungroup"

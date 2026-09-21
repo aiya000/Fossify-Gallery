@@ -107,6 +107,7 @@ import org.fossify.gallery.extensions.getDirectorySortingValue
 import org.fossify.gallery.extensions.getDirsToShow
 import org.fossify.gallery.extensions.getDistinctPath
 import org.fossify.gallery.extensions.getFavoritePaths
+import org.fossify.gallery.extensions.getAllGroupDirectories
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getNoMediaFoldersSync
 import org.fossify.gallery.extensions.getOTGFolderChildrenNames
@@ -427,7 +428,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (config.searchAllFilesByDefault) {
             binding.mainMenu.updateHintText(getString(org.fossify.commons.R.string.search_files))
         } else {
-            binding.mainMenu.updateHintText(getString(org.fossify.commons.R.string.search_folders))
+            binding.mainMenu.updateHintText(getString(R.string.search_folders_and_groups))
         }
     }
 
@@ -495,6 +496,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     private fun openGroup(groupId: Long?) {
+        // a group opened from the search results leaves the search behind it: what is listed below
+        // is the group's own contents, which is not what the query asked for
+        if (binding.mainMenu.isSearchOpen) {
+            binding.mainMenu.closeSearch()
+        }
+
         mCurrentGroupId = groupId
         mOpenedGroups.add(groupId)
 
@@ -2065,12 +2072,17 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         var dirsToShow = if (textToSearch.isEmpty()) {
             getDirsToShowWithGroups(sortedDirs)
         } else {
-            // searching looks through all real folders, ignoring the virtual group structure
-            getDirsToShow(
+            // searching looks through all real folders, ignoring the virtual group structure, and
+            // through the groups themselves, at whatever level they sit: a group is reached by its
+            // name without having to walk back to wherever it was made
+            val matchedDirs = getDirsToShow(
                 dirs = sortedDirs,
                 allDirs = mDirs,
                 currentPathPrefix = mCurrentPathPrefix
-            ).clone() as ArrayList<Directory>
+            )
+
+            val groupDirs = getAllGroupDirectories(sortedDirs, hideGroupsWithoutVisibleFolders = true)
+            getSortedDirectories(ArrayList(matchedDirs + groupDirs))
         }
 
         if (currAdapter == null || forceRecreate) {

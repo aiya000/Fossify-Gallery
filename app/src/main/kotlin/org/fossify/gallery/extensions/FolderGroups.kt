@@ -69,6 +69,32 @@ fun Context.getGroupedDirectories(
     return result
 }
 
+// Every group there is, at whatever level it sits, as items for a search. A search looks past the
+// group structure the way it looks past the folder hierarchy, so a group is reached by its name
+// without having to remember which group it was put inside of -- including the one made a moment
+// ago, which is the one hardest to walk back to.
+// Narrowing works as it does above: with hideGroupsWithoutVisibleFolders a group whose folders are
+// all out of view is left out, and a group with no folder assigned at all always stays
+fun Context.getAllGroupDirectories(
+    dirs: ArrayList<Directory>,
+    hideGroupsWithoutVisibleFolders: Boolean = false,
+    groupContentDirs: List<Directory>? = null
+): ArrayList<Directory> {
+    val realDirs = dirs.filter { !it.isGroup() }
+    val contentDirs = groupContentDirs?.filter { !it.isGroup() } ?: realDirs
+    val groups = config.parseFolderGroups()
+    if (groups.isEmpty()) {
+        return ArrayList()
+    }
+
+    val validGroupIds = groups.map { it.id }.toHashSet()
+    val members = config.parseFolderGroupMembers().filterValues { validGroupIds.contains(it) }
+
+    return groups
+        .filter { !hideGroupsWithoutVisibleFolders || hasNoFoldersOrVisibleOnes(it, groups, members, realDirs) }
+        .mapTo(ArrayList()) { createGroupDirectory(it, groups, members, contentDirs) }
+}
+
 private fun Context.hasNoFoldersOrVisibleOnes(group: FolderGroup, groups: List<FolderGroup>, members: Map<String, Long>, dirs: List<Directory>): Boolean {
     val hasFolders = members.values.any { config.isFolderGroupDescendantOrSelf(it, group.id, groups) }
     return !hasFolders || collectFolderGroupContents(group.id, groups, members, dirs).isNotEmpty()
