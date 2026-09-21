@@ -26,13 +26,18 @@ const val GROUP_COLLAGE_SIZE = 4
 // a moment ago can be seen and filled. The folder picker keeps every group instead: a folder may be headed for one that
 // is out of view, and a group belongs to no storage anyway -- which is how the folder list's own storage filter already
 // treats one, see isShownByStorageFilter
+// A group's count, size and collage are summed from groupContentDirs when a caller has narrowed dirs
+// by something a group is not narrowed by: a folder of another storage is still inside the group, so a
+// group whose folders are all out of view would otherwise be drawn empty instead of being drawn as it is
 fun Context.getGroupedDirectories(
     dirs: ArrayList<Directory>,
     currentGroupId: Long?,
     excludedGroupIds: Collection<Long> = emptyList(),
-    hideGroupsWithoutVisibleFolders: Boolean = false
+    hideGroupsWithoutVisibleFolders: Boolean = false,
+    groupContentDirs: List<Directory>? = null
 ): ArrayList<Directory> {
     val realDirs = dirs.filter { !it.isGroup() }
+    val contentDirs = groupContentDirs?.filter { !it.isGroup() } ?: realDirs
     val groups = config.parseFolderGroups()
     if (groups.isEmpty()) {
         return ArrayList(realDirs)
@@ -58,7 +63,7 @@ fun Context.getGroupedDirectories(
         .filter { (it.parentId?.takeIf { id -> validGroupIds.contains(id) }) == currentGroupId }
         .filter { !hideGroupsWithoutVisibleFolders || hasNoFoldersOrVisibleOnes(it, groups, members, realDirs) }
         .forEach { group ->
-            result.add(createGroupDirectory(group, groups, members, realDirs))
+            result.add(createGroupDirectory(group, groups, members, contentDirs))
         }
 
     return result
