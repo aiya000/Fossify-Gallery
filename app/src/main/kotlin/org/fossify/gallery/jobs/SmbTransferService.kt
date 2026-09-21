@@ -259,15 +259,26 @@ class SmbTransferService : Service() {
             throw e
         }
 
-        // the gallery sorts by the modification time, and a fresh file on the device carries
-        // the time it was written; the share's own is what the scan recorded
-        mediaDB.getMediumByPath(path)?.let { medium ->
-            if (medium.modified > 0) {
-                File(target).setLastModified(medium.modified)
-            }
-        }
-
+        keepShareModified(File(target), path)
         return target
+    }
+
+    // Puts the share's own modification time back on a copy of one of its files.
+    //
+    // The gallery sorts by that time, and a file written here and now carries the time it was
+    // written: a copy that kept it would sort to the top of the destination instead of where the
+    // original belongs. What the share said is what the scan recorded, so the row is where it
+    // comes from rather than another round trip.
+    //
+    // It is not only the copy the user ends up with that needs it. A file bound for pCloud is
+    // staged on the device first, and PCloudWriter names the mtime of the file it is handed --
+    // so a staged copy that carries the time of the staging tells pCloud the wrong one, and
+    // nothing afterwards can tell that it was ever different
+    private fun keepShareModified(file: File, path: String) {
+        val modified = mediaDB.getMediumByPath(path)?.modified ?: return
+        if (modified > 0) {
+            file.setLastModified(modified)
+        }
     }
 
     // Best effort: the file was only just created here, so a plain delete gets it on internal
@@ -309,6 +320,7 @@ class SmbTransferService : Service() {
             readShareFile(path) { it.copyTo(output) }
         }
 
+        keepShareModified(staged, path)
         return staged
     }
 

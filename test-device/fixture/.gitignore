@@ -1,2 +1,6 @@
 # the generated tree. seed-share.sh rebuilds it from nothing, so there is no reason to carry it
 share/
+
+# the pCloud account the stub serves. 60-copy-to-pcloud.sh builds it from nothing every run, and
+# what lands in it is whatever that run uploaded
+pcloud/

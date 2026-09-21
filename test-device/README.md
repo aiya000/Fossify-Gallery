@@ -88,13 +88,40 @@ at afterwards.
   be there: "Move to" is kept out of the selection's menu, because the share cannot be written to
   and a move would have to delete from it. Copying the same file twice pins the numbering that
   `AvailableNameTest` covers in the small, through the whole path
+- **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
+  through the app's cache, an upload, and a scan of the destination folder. pCloud is
+  `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
+  machine, and the requests the app made are read out of the stub's log — that it asked for
+  `nopartial` and `renameifexists` is the app's half of "a copy never writes over anything"
+
+## pCloud, without a pCloud account
+
+`fixture/pcloud-stub.py` answers the slice of the API this app calls — `userinfo`, `diff`,
+`listfolder`, `uploadfile`, `getthumb`, `getfilelink` — out of a directory on this machine. The
+app is pointed at it by seeding a token and a host into its settings, which is all the OAuth
+screen leaves behind.
+
+A throwaway account was the other way to do it, and it was turned down: it would put a token
+somewhere outside this repository, make every run depend on a network, and leave the account
+drifting between runs. What is under test is the app's path from a share to pCloud, not pCloud.
+
+The stub serves plain http, because an https one would need a certificate the app is built to
+trust — and a debug build carrying a certificate out of this repository is a worse thing to have
+installed on a phone than this test is worth. `pCloudUrl()` lets the stored host carry its own
+scheme for exactly this, and `app/src/debug/res/xml/network_security_config.xml` allows cleartext
+to `10.0.2.2` and nowhere else. Nothing pCloud itself hands out carries a scheme, so the release
+build is unaffected.
+
+What the stub cannot say anything about is pCloud's own behaviour — how it numbers a name that is
+taken, what it does with a half-finished upload. Those are asserted on the request the app sent
+instead of on the answer.
 
 ## What is not covered yet
 
-- **pCloud.** It needs a real account and a client id that cannot be published. Either a throwaway
-  account whose credentials stay out of this repository, or a stub answering the slice of the API
-  the app uses. Rule 3 of #59 — a transfer cutting into a running scan — is pCloud's, so it waits
-  on this
+- **Signing in to pCloud.** The OAuth screen needs a client id that cannot be published, and the
+  scripts step around it by seeding the token the screen would have stored
+- **Rule 3 of #59** — a transfer cutting into a running scan. It is pCloud's rule, and now that
+  there is a stub there is nothing else in the way of writing it
 - **Playback itself.** The scripts check that the videos arrive and in what order; watching them
   play through is still done by eye
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only, and one host only: 10.0.2.2, which is the machine running the emulator as
+    seen from inside it. The pCloud stub of test-device/ is served there over plain http, because
+    an https stub would need a certificate the app is built to trust, and a debug build carrying a
+    certificate out of this repository would be a standing invitation on any device it is
+    installed on.
+
+    Everything else stays as Android has it: the release build has no configuration of its own,
+    so it refuses cleartext everywhere, and a debug build talking to anything but the emulator's
+    own host does too.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
