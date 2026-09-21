@@ -893,7 +893,11 @@ private fun Context.runSmbScan(onDone: () -> Unit, scan: (SmbScanner) -> Unit) {
         } catch (e: Exception) {
             Log.w("SmbScan", "A scan of the network share failed", e)
             SmbClient.disconnect()
-            showErrorToast(e)
+            // showErrorToast() would put the exception's own class name on the screen, which
+            // says nothing to the person reading it. What they need to know is that the scan
+            // came to nothing and that it cost them none of what the share had; the exception
+            // is one line above this, in the log, for whoever is looking for it
+            toast(R.string.smb_scan_failed)
         } finally {
             SmbScanner.finish()
         }

@@ -130,6 +130,7 @@
     <string name="smb_rescan">Rescan the network share</string>
     <string name="smb_rescanning">Scanning the network share…</string>
     <string name="smb_rescan_done">Network share: %1$d folders, %2$d files</string>
+    <string name="smb_scan_failed">Could not scan the network share. Its media was left as it was.</string>
     <string name="smb_rescan_on_launch">Rescan the network share when the app starts</string>
     <string name="smb_rescan_on_storage_switch">Rescan the network share when switching storage</string>
     <string name="smb_rescan_on_folder_open">Rescan a folder of the share when opening it</string>

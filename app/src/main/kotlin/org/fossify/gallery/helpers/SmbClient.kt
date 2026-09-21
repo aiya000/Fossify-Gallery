@@ -161,6 +161,11 @@ object SmbClient {
         synchronized(lock) { disconnectLocked() }
     }
 
+    // whether a live connection to the share is still standing. A listing that failed means one
+    // thing while it is -- that one folder could not be read -- and quite another once it is
+    // not: the share itself has gone, and nothing further can be read from it either
+    fun isConnected(): Boolean = synchronized(lock) { share?.isConnected == true }
+
     // Opens a connection and lists the root, for the settings screen's test button. Throws what
     // went wrong, its message is what the user is shown
     fun test(context: Context) {

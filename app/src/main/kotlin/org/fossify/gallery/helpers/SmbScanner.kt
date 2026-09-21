@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.util.Log
 import org.fossify.commons.extensions.isGif
 import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isRawFast
@@ -59,9 +60,16 @@ class SmbScanner(private val context: Context) {
         // a folder deeper than this is not walked. A share can be pointed at a whole disk by
         // accident, and a walk of one has no end that a user would wait for
         private const val MAX_DEPTH = 24
+
+        // the tag Context.runSmbScan() reports a failed scan under; a skipped folder belongs in
+        // the same place, being the half of the same story that no exception is thrown for
+        private const val TAG = "SmbScan"
     }
 
-    class Result(val folderCount: Int, val mediaCount: Int)
+    // what a scan found, and how many folders it had to pass over to find it. A scan that
+    // skipped nothing saw the whole share; one that did not is a partial answer, and the count
+    // is what says so
+    class Result(val folderCount: Int, val mediaCount: Int, val skippedFolderCount: Int = 0)
 
     private val aborted = AtomicBoolean(false)
 
@@ -83,9 +91,9 @@ class SmbScanner(private val context: Context) {
         val collector = Collector(media, directories)
         collector.collect(SMB_PATH_SCHEME, 0)
 
-        store(media, directories)
+        store(media, directories, collector.skippedPaths)
         context.config.smbLastFullScanAt = System.currentTimeMillis()
-        return Result(directories.size, media.size)
+        return Result(directories.size, media.size, collector.skippedPaths.size)
     }
 
     // The same for one folder and its direct children only; the subfolders keep the rows an
@@ -108,10 +116,33 @@ class SmbScanner(private val context: Context) {
     // the direct subfolders of a folder, for the folder pickers. Not cached: a picker is opened
     // rarely and a stale list of folders is worse there than a moment's wait
     fun listFolders(path: String): List<String> {
-        return SmbClient.list(context, path)
+        return listWithOneRetry(path)
             .filter { it.isFolder }
             .map { childPathOf(path, it.name) }
             .sorted()
+    }
+
+    // Lists a folder, and asks a second time over a fresh connection when the first ask was cut
+    // short by the connection going away. A share that has been walked for a while loses one
+    // regularly -- a session the server gave up on, a firewall tidying an old one away -- and
+    // the folder it happened on is usually perfectly readable; without the second ask, a walk of
+    // a large share would end on the first of those rather than on anything being wrong.
+    //
+    // A folder that failed while the connection stood is not retried. Nothing about it would be
+    // different the second time, and the caller has its own way of dealing with one
+    private fun listWithOneRetry(path: String): List<SmbClient.Entry> {
+        return try {
+            SmbClient.list(context, path)
+        } catch (e: Exception) {
+            throwIfAborted()
+            if (SmbClient.isConnected()) {
+                throw e
+            }
+
+            Log.w(TAG, "Listing \"$path\" of the share again over a new connection", e)
+            SmbClient.disconnect()
+            SmbClient.list(context, path)
+        }
     }
 
     private fun childPathOf(parentPath: String, name: String) =
@@ -142,21 +173,29 @@ class SmbScanner(private val context: Context) {
         private val getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0
         private val mediaFetcher = MediaFetcher(context)
 
+        // the folders the walk could not get into. They are not in the media it collected, and
+        // store() must therefore not read their absence as the share having dropped them
+        val skippedPaths = HashSet<String>()
+
         // Lists one folder and walks into its subfolders. A folder that cannot be listed -- no
         // permission for it, or it was removed while the walk ran -- is skipped rather than
         // ending the scan; the rest of the share is still worth having
         fun collect(path: String, depth: Int) {
             throwIfAborted()
             val entries = try {
-                SmbClient.list(context, path)
+                listWithOneRetry(path)
             } catch (e: Exception) {
                 throwIfAborted()
-                if (depth == 0) {
-                    // the root not listing means the share is not reachable, which is not a
-                    // folder to skip over
+                // The root not listing means the share is not reachable, which is not a folder
+                // to skip over -- and neither is any folder whose listing left no connection
+                // standing. Walking on without one skips every folder that is left, and the
+                // scan then reports an empty share rather than an unreachable one
+                if (depth == 0 || !SmbClient.isConnected()) {
                     throw e
                 }
 
+                Log.w(TAG, "Skipping \"$path\", a folder of the share that could not be listed", e)
+                skippedPaths.add(path)
                 return
             }
 
@@ -222,23 +261,31 @@ class SmbScanner(private val context: Context) {
     // replaces the SMB rows in one transaction, so a folder list read in between never sees half
     // of a scan. Rows the share no longer has are dropped one by one: a NOT IN over thousands of
     // paths would trip SQLite's argument limit
-    private fun store(media: List<Medium>, directories: List<Directory>) {
+    private fun store(media: List<Medium>, directories: List<Directory>, skippedPaths: Set<String>) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val keptMediaPaths = media.map { it.path }.toHashSet()
-            context.mediaDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { it !in keptMediaPaths }.forEach { path ->
-                context.mediaDB.deleteMediumPath(path)
-                context.favoritesDB.deleteFavoritePath(path)
-            }
+            context.mediaDB.getPathsWithPrefix(SMB_PATH_SCHEME)
+                .filter { it !in keptMediaPaths && !isUnderSkipped(it, skippedPaths) }
+                .forEach { path ->
+                    context.mediaDB.deleteMediumPath(path)
+                    context.favoritesDB.deleteFavoritePath(path)
+                }
 
             val keptDirectoryPaths = directories.map { it.path }.toHashSet()
-            context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { it !in keptDirectoryPaths }.forEach { path ->
-                context.directoryDB.deleteDirPath(path)
-            }
+            context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME)
+                .filter { it !in keptDirectoryPaths && !isUnderSkipped(it, skippedPaths) }
+                .forEach { path -> context.directoryDB.deleteDirPath(path) }
 
             context.mediaDB.insertAll(media)
             context.directoryDB.insertAll(directories)
         }
     }
+
+    // a row of a folder the walk could not get into, or of anything below one. The share may
+    // well still hold it; this scan only never got to look, and what a scan did not look at is
+    // not something it may drop
+    private fun isUnderSkipped(path: String, skippedPaths: Set<String>) =
+        skippedPaths.any { path == it || path.startsWith("$it/") }
 
     // the same, narrowed to one folder: only its own media rows are dropped, a subfolder's rows
     // are that subfolder's business
