@@ -13,6 +13,7 @@ import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.snackbar.Snackbar
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.extensions.beGone
@@ -44,6 +45,7 @@ import org.fossify.gallery.extensions.effectiveStorageFilter
 import org.fossify.gallery.extensions.getCachedDirectories
 import org.fossify.gallery.extensions.getDirsToShow
 import org.fossify.gallery.extensions.getDistinctPath
+import org.fossify.gallery.extensions.getAllGroupDirectories
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.isPCloudPath
@@ -56,6 +58,9 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
+
+// a sentence of guidance wants more than the two lines a snackbar gives it by default
+private const val SNACKBAR_MAX_LINES = 5
 
 /**
  * Lets the user pick a folder. Virtual folder groups are shown as soon as [navigateGroups] is set or
@@ -162,6 +167,21 @@ class PickDirectoryDialog(
                         alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                             groupCallback?.invoke(currentGroupId)
                             alertDialog.dismiss()
+                        }
+                    } else {
+                        // OK picks nothing in this mode: a destination is a folder tapped in the
+                        // list, and a group is only walked into -- it holds folders, not files.
+                        // It used to close the dialog without picking anything, which looked like
+                        // a copy that quietly did nothing, so it says what to do instead and the
+                        // dialog stays where it is. Cancel is still how it is left
+                        alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                            showPickerMessage(
+                                if (currentGroupId == null) {
+                                    R.string.pick_a_destination_by_tapping
+                                } else {
+                                    R.string.group_is_not_a_destination
+                                }
+                            )
                         }
                     }
 
@@ -311,8 +331,9 @@ class PickDirectoryDialog(
         }
     }
 
-    // favorites, the recycle bin and groups belong to no storage and always pass, like they
-    // do for the folder list's own storage filter
+    // favorites, the recycle bin and groups belong to no storage and always pass here, like they
+    // do for the folder list's own storage filter. A group is narrowed later, in gotDirectories,
+    // by whether anything it holds is still in the list this leaves behind
     private fun isShownByStorageChips(directory: Directory): Boolean {
         val path = directory.path
         return when {
@@ -325,7 +346,8 @@ class PickDirectoryDialog(
     }
 
     private fun configureSearchView() = with(searchView) {
-        updateHintText(context.getString(org.fossify.commons.R.string.search_folders))
+        val hint = if (showGroups) R.string.search_folders_and_groups else org.fossify.commons.R.string.search_folders
+        updateHintText(context.getString(hint))
         searchEditText.imeOptions = EditorInfo.IME_ACTION_DONE
 
         toggleHideOnScroll(!config.scrollHorizontally)
@@ -375,7 +397,7 @@ class PickDirectoryDialog(
         val hint = when {
             isPickingGroup && groupId == null -> activity.getString(R.string.move_to_top_level_hint)
             isPickingGroup -> activity.getString(R.string.move_into_group_hint, groupName(groupId!!))
-            groupId == null -> activity.getString(org.fossify.commons.R.string.search_folders)
+            groupId == null -> activity.getString(R.string.search_folders_and_groups)
             else -> activity.getString(R.string.inside_group, groupName(groupId))
         }
 
@@ -384,14 +406,35 @@ class PickDirectoryDialog(
 
     private fun groupName(groupId: Long) = config.getFolderGroup(groupId)?.name ?: ""
 
+    // The dialog's own message, in place of a toast: this dialog fills the screen and a toast
+    // behind it was cut off after its first line. A snackbar lands in this dialog's own
+    // CoordinatorLayout, and is given the lines a sentence of guidance needs
+    private fun showPickerMessage(messageId: Int) {
+        Snackbar.make(binding.root, activity.getString(messageId), Snackbar.LENGTH_LONG).apply {
+            view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.maxLines = SNACKBAR_MAX_LINES
+            show()
+        }
+    }
+
     private fun filterFolderListBySearchQuery(query: String) {
         val adapter = binding.directoriesGrid.adapter as? DirectoryAdapter
-        var dirsToShow = allDirectories
-        if (query.isNotEmpty()) {
-            dirsToShow = dirsToShow.filter { it.name.contains(query, true) }.toMutableList() as ArrayList
+        var dirsToShow = ArrayList(allDirectories.filter { isShownByStorageChips(it) })
+        if (showGroups) {
+            // the groups are searched through as well, at whatever level they sit: the group a
+            // folder is headed for is often not the one that happens to be open
+            dirsToShow.addAll(
+                activity.getAllGroupDirectories(
+                    dirs = dirsToShow,
+                    hideGroupsWithoutVisibleFolders = narrowsStorage,
+                    groupContentDirs = allDirectories
+                )
+            )
         }
 
-        dirsToShow = dirsToShow.filter { isShownByStorageChips(it) }.toMutableList() as ArrayList
+        if (query.isNotEmpty()) {
+            dirsToShow = ArrayList(dirsToShow.filter { it.name.contains(query, true) })
+        }
+
         dirsToShow = activity.getSortedDirectories(dirsToShow)
         checkPlaceholderVisibility(dirsToShow)
 
@@ -511,14 +554,17 @@ class PickDirectoryDialog(
         val sortedDirs = activity.getSortedDirectories(distinctDirs)
 
         val dirs = if (showGroups) {
-            // the chips narrow the folders only: a group belongs to no storage, and a folder
-            // is often headed for a group of folders that live somewhere else
-            // and a group is drawn as what it holds, not as what the chips let through: a group of
-            // pCloud folders seen while the chips are on the device is still the group it is
+            // a group follows the chips by what it holds: the one whose folders are all on another
+            // storage is put away with them, and a group with no folder in it yet stays, so that it
+            // can be filled. A folder headed for a group that is out of view is taken there by
+            // switching the chips to the storage that group's folders live on, or to all of them.
+            // What a group is drawn as does not change with the chips, though: its count and its
+            // collage are summed from every folder inside it, wherever that folder lives
             val grouped = activity.getGroupedDirectories(
                 dirs = sortedDirs,
                 currentGroupId = currentGroupId,
                 excludedGroupIds = excludedGroupIds,
+                hideGroupsWithoutVisibleFolders = narrowsStorage,
                 groupContentDirs = allDirectories
             )
             val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
@@ -545,6 +591,12 @@ class PickDirectoryDialog(
                 val groupId = clickedDir.getGroupId()
                 activity.handleLockedFolderOpening(path) { success ->
                     if (success) {
+                        // a group opened from the search results leaves the search behind it, the
+                        // same way the folder list does
+                        if (searchView.isSearchOpen) {
+                            searchView.closeSearch()
+                        }
+
                         currentGroupId = groupId
                         openedGroups.add(groupId)
                         currentPathPrefix = ""

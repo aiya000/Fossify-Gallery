@@ -241,6 +241,13 @@ class DirectoryAdapter(
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isAnySmbSelected
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
+            // putting things in a group costs nothing but a setting, so it is offered for every
+            // storage. What is left out is favorites and the recycle bins, which are not folders
+            // anyone groups. It is the same thing "move to" does with a group as the destination,
+            // reached from the selection instead of from the picker -- which is what that picker
+            // is mostly opened for
+            findItem(R.id.cab_group_selection).isVisible =
+                !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !isPCloudBinSelected
             // offered wherever a share is set up, on folders and on groups alike. A selection
             // holding none of the share's videos answers with "nothing to download" rather than
             // going missing, so nobody has to work out why it is not there
@@ -276,6 +283,7 @@ class DirectoryAdapter(
             R.id.cab_select_all -> selectAll()
             R.id.cab_create_shortcut -> tryCreateShortcut()
             R.id.cab_ungroup -> askConfirmUngroup()
+            R.id.cab_group_selection -> askGroupSelection()
             R.id.cab_smb_download_videos -> downloadSmbVideosOfSelection()
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_select_photo -> tryChangeAlbumCover(false)
@@ -873,6 +881,32 @@ class DirectoryAdapter(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Makes a new group out of the selection, where the selection already sits. "Move to" does
+    // the same by way of the destination picker, which is a long way around for what is usually
+    // the reason that picker was opened at all
+    private fun askGroupSelection() {
+        handleLockedFolderOpeningForFolders(getSelectedPaths()) { paths ->
+            val groupIds = paths.mapNotNull { it.toFolderGroupId() }
+            val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN && it != PCLOUD_RECYCLE_BIN }
+            if (groupIds.isEmpty() && folderPaths.isEmpty()) {
+                return@handleLockedFolderOpeningForFolders
+            }
+
+            // the new group is made beside what goes into it, so that the list does not move
+            // somewhere else under the selection
+            val parentId = if (folderPaths.isNotEmpty()) {
+                config.parseFolderGroupMembers()[folderPaths.first()]
+            } else {
+                config.getFolderGroup(groupIds.first())?.parentId
+            }
+
+            FolderGroupNameDialog(activity) { name ->
+                val group = config.addFolderGroup(name, parentId)
+                moveToGroup(folderPaths, groupIds, group.id)
             }
         }
     }
