@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
 import android.text.format.DateFormat
+import android.util.Log
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.gallery.R
@@ -647,6 +648,10 @@ class MediaFetcher(val context: Context) {
         val cached = try {
             context.mediaDB.getMediaFromPath(folder)
         } catch (e: Exception) {
+            // An empty answer here reads as "this folder holds nothing", and the folder list
+            // takes that as leave to drop the folder from the cache. That is far too much to
+            // conclude from a query that failed, so whatever failed has to be findable
+            Log.w("RemoteMedia", "Could not read the cached media of \"$folder\"", e)
             emptyList()
         }
 

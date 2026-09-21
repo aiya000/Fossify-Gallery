@@ -8,6 +8,7 @@ import android.os.Handler
 import android.provider.MediaStore
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
+import android.util.Log
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
@@ -113,6 +114,7 @@ import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
 import org.fossify.gallery.extensions.effectiveStorageFilter
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
@@ -190,6 +192,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_MEDIA = 2
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
+
+        // what the recheck of the displayed folders reports a remote storage's losses under
+        private const val TAG_REMOTE_FOLDERS = "RemoteFolders"
 
         // a sideways drag of the folder list goes through past this share of the width
         private const val STORAGE_SWIPE_COMMIT_FRACTION = 5f
@@ -1691,9 +1696,19 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 )
 
                 val newDir = if (curMedia.isEmpty()) {
-                    if (directory.path != tempFolderPath) {
+                    // A folder on a remote storage is never dropped here. This recheck is how a
+                    // local folder emptied outside the app is noticed, and for that it asks the
+                    // filesystem -- but a remote folder has nothing here to ask, so getFilesFrom()
+                    // answers out of the same cache that holds the folder. Dropping it on that
+                    // answer is the cache deleting itself over its own bad read, and a share of
+                    // a thousand folders goes in one pass. What a remote storage still holds is
+                    // for its scanner to say, having asked the server
+                    if (directory.path.isRemotePath()) {
+                        Log.w(TAG_REMOTE_FOLDERS, "The cache answered that \"${directory.path}\" holds nothing; keeping it, only a scan may drop it")
+                    } else if (directory.path != tempFolderPath) {
                         dirPathsToRemove.add(directory.path)
                     }
+
                     directory
                 } else {
                     createDirectoryFromMedia(
@@ -1761,7 +1776,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 dirs.removeAll(dirsToRemove)
                 setupAdapter(dirs)
             }
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            // the recheck is a best effort over folders that are already on screen, so it has
+            // always swallowed what went wrong. Swallowing it unseen is what makes a fault here
+            // impossible to explain afterwards
+            Log.w(TAG_REMOTE_FOLDERS, "The recheck of the displayed folders did not finish", e)
         }
 
         val foldersToScan = mLastMediaFetcher!!.getFoldersToScan()
@@ -2067,8 +2086,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun checkInvalidDirectories(dirs: ArrayList<Directory>) {
         val invalidDirs = ArrayList<Directory>()
         val OTGPath = config.OTGPath
-        // a pCloud folder has no file behind it, only a rescan gets to decide that it is gone
-        dirs.filter { !it.areFavorites() && !it.isRecycleBin() && !it.path.isPCloudPath() }.forEach {
+        // a folder on a remote storage has no file behind it, only a rescan gets to decide that
+        // it is gone. getDoesFilePathExist() says no to every pseudo path, and File(path).list()
+        // below would be no kinder, so a share of a thousand folders goes in a single pass
+        dirs.filter { !it.areFavorites() && !it.isRecycleBin() && !it.path.isRemotePath() }.forEach {
             if (!getDoesFilePathExist(it.path, OTGPath)) {
                 invalidDirs.add(it)
             } else if (it.path != config.tempFolderPath && (!isRPlus() || isExternalStorageManager())) {

@@ -172,12 +172,13 @@ private fun Context.createGroupDirectory(
 
 // Drops memberships of folders which no longer exist on the filesystem, keeps the stored JSON small.
 // Hidden or excluded folders are not shown in the folder list but still exist, so they keep their group.
-// A pCloud folder has no filesystem to check and may be out of view while logged out, so it keeps its group;
-// PCloudWriter moves the membership along on a rename
+// A folder on a remote storage has no filesystem to check and may be out of view while the
+// storage is logged out or unreachable, so it keeps its group; PCloudWriter moves the
+// membership along on a rename
 fun Context.pruneFolderGroupMembers() {
     val members = config.parseFolderGroupMembers()
     val OTGPath = config.OTGPath
-    val stalePaths = members.keys.filter { !it.isPCloudPath() && !getDoesFilePathExist(it, OTGPath) }
+    val stalePaths = members.keys.filter { !it.isRemotePath() && !getDoesFilePathExist(it, OTGPath) }
     if (stalePaths.isNotEmpty()) {
         stalePaths.forEach { members.remove(it) }
         config.storeFolderGroupMembers(members)

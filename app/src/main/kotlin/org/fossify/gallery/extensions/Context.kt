@@ -1298,8 +1298,8 @@ fun Context.getCachedMedia(
             val mediaToDelete = ArrayList<Medium>()
             // creating a new thread intentionally, do not reuse the common background thread
             Thread {
-                // pCloud media has no file behind it, the cache row is all there is. Only a rescan may drop it
-                media.filter { !it.path.isPCloudPath() && !getDoesFilePathExist(it.path, OTGPath) }.forEach {
+                // media on a remote storage has no file behind it, the cache row is all there is. Only a rescan may drop it
+                media.filter { !it.path.isRemotePath() && !getDoesFilePathExist(it.path, OTGPath) }.forEach {
                     if (it.path.startsWith(recycleBinPath)) {
                         deleteDBPath(it.path)
                     } else {
@@ -1326,10 +1326,13 @@ fun Context.getCachedMedia(
 fun Context.removeInvalidDBDirectories(dirs: ArrayList<Directory>? = null) {
     val dirsToCheck = dirs ?: directoryDB.getAll()
     val OTGPath = config.OTGPath
+    // a folder on a remote storage has no file here to find, so asking the filesystem about it
+    // answers no every time and would drop every one of them. Only a scan, which asks the
+    // server, gets to decide that one is gone
     dirsToCheck.filter {
         !it.areFavorites()
                 && !it.isRecycleBin()
-                && !it.path.isPCloudPath()
+                && !it.path.isRemotePath()
                 && !getDoesFilePathExist(it.path, OTGPath)
                 && it.path != config.tempFolderPath
     }.forEach {
@@ -1561,16 +1564,19 @@ fun Context.createDirectoryFromMedia(
     val grouped = MediaFetcher(this).groupMedia(curMedia, path)
     var thumbnail: String? = null
 
-    // a pCloud thumbnail has no file to check for, its cache row is the proof that it exists
+    // a thumbnail on a remote storage has no file here to check for, its cache row is the proof
+    // that it exists. Asking the filesystem about a pseudo path answers no to every one of
+    // them, which leaves the folder without a cover and costs a syscall for each file it asked
+    // about on the way
     albumCovers.forEach {
-        if (it.path == path && (it.tmb.isPCloudPath() || getDoesFilePathExist(it.tmb, OTGPath))) {
+        if (it.path == path && (it.tmb.isRemotePath() || getDoesFilePathExist(it.tmb, OTGPath))) {
             thumbnail = it.tmb
         }
     }
 
     if (thumbnail == null) {
         val sortedMedia = grouped.filter { it is Medium }.toMutableList() as ArrayList<Medium>
-        thumbnail = sortedMedia.firstOrNull { it.path.isPCloudPath() || getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
+        thumbnail = sortedMedia.firstOrNull { it.path.isRemotePath() || getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
     }
 
     if (config.OTGPath.isNotEmpty() && thumbnail!!.startsWith(config.OTGPath)) {
