@@ -4,6 +4,8 @@
 > changes listed under [Fork-specific features](#fork-specific-features).
 
 - - - - -
+- - - - -
+- - - - -
 
 # Fossify Gallery
 
@@ -44,6 +46,10 @@ Experience the beauty of intuitive material design with dynamic themes. Want mor
 <img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/2_en-US.png" width="30%">
 <img alt="App image" src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_en-US.png" width="30%">
 </div>
+
+- - - - -
+- - - - -
+- - - - -
 
 ## Fork-specific features
 
