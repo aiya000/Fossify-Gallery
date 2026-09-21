@@ -835,7 +835,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             val paths = mediaDB.getVideoPathsWithoutDuration(mPath)
             runOnUiThread {
                 if (paths.isEmpty()) {
-                    toast(R.string.smb_read_durations_none)
+                    // nothing to ask about, so it is reported as the run that it was
+                    toast(getString(R.string.smb_read_durations_done, 0))
                     return@runOnUiThread
                 }
 

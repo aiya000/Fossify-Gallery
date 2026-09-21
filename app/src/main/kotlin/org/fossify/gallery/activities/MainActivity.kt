@@ -585,7 +585,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 }
                 findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
                 findItem(R.id.rescan_smb).isVisible = config.isSmbConfigured
-                findItem(R.id.read_smb_durations_group).isVisible = config.isSmbConfigured && smbFoldersOfCurrentGroup().isNotEmpty()
+                // shown for every group, not only for one that holds a folder of the share: a
+                // group does not say on its face what is inside it, and a menu item that comes
+                // and goes for a reason nobody can see is worse than one that reports nothing
+                // to do
+                findItem(R.id.read_smb_durations_group).isVisible = config.isSmbConfigured && mCurrentGroupId != null
             }
 
             // a freshly set icon has no tint yet
@@ -1111,7 +1115,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             val paths = folders.flatMap { mediaDB.getVideoPathsWithoutDuration(it) }
             runOnUiThread {
                 if (paths.isEmpty()) {
-                    toast(R.string.smb_read_durations_none)
+                    // nothing to ask about, so it is reported as the run that it was
+                    toast(getString(R.string.smb_read_durations_done, 0))
                     return@runOnUiThread
                 }
 
