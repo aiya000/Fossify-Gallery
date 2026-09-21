@@ -285,9 +285,17 @@ class SmbScanner(private val context: Context) {
                 .forEach { path -> context.directoryDB.deleteDirPath(path) }
 
             context.mediaDB.insertAll(media)
-            context.directoryDB.insertAll(directories)
+            context.directoryDB.insertAll(directories.map { withExistingId(it) })
         }
     }
+
+    // The same folder, carrying the row id the cache already holds for it. Inserting it without
+    // one replaces the row, and SQLite hands out a fresh id: the folder list falls back to id
+    // order wherever the sorting leaves two folders equal, and under the custom order that is
+    // every folder the user has not dragged into place. A folder would therefore move to the end
+    // of the list for having been opened. A rescan re-describes a folder; it does not find a new one
+    private fun withExistingId(directory: Directory) =
+        context.directoryDB.getDirectoryId(directory.path)?.let { directory.copy(id = it) } ?: directory
 
     // a row of a folder the walk could not get into, or of anything below one. The share may
     // well still hold it; this scan only never got to look, and what a scan did not look at is
@@ -310,7 +318,7 @@ class SmbScanner(private val context: Context) {
             }
 
             context.mediaDB.insertAll(media)
-            context.directoryDB.insertAll(directories)
+            context.directoryDB.insertAll(directories.map { withExistingId(it) })
         }
     }
 
