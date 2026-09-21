@@ -33,3 +33,7 @@ native <methods>;
 -dontwarn org.bouncycastle.**
 -dontwarn javax.naming.**
 -dontwarn org.slf4j.**
+
+# mbassador can filter messages with Java EE expression language, which Android has no
+# implementation of; that path is never taken here
+-dontwarn javax.el.**
