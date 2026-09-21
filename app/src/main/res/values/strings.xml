@@ -121,6 +121,8 @@
     <string name="smb_user">User name (empty for a guest share)</string>
     <string name="smb_password">Password</string>
     <string name="smb_domain">Domain or workgroup (optional)</string>
+    <string name="smb_hide_folder_description">This hides the folder and everything under it in this app, on this device only: nothing is written to the share, other devices are not affected. Hidden folders can be shown again with \'Show hidden items\' in Settings or \'Temporarily show hidden\' in the menu, and the choice goes out with the settings export. Continue?</string>
+    <string name="smb_cant_unhide_folder">A folder above this one is hidden, so this one is hidden with it. Unhide that folder instead.</string>
     <string name="smb_test_connection">Test the connection</string>
     <string name="smb_connecting">Connecting to the share…</string>
     <string name="smb_connection_ok">Connected to the share</string>

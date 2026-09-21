@@ -83,6 +83,7 @@ import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudFolderHidden
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbFolderHidden
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.directoryDB
@@ -328,21 +329,26 @@ class DirectoryAdapter(
         else -> TYPE_IMAGES
     }
 
-    // a pCloud folder is hidden by a setting rather than a .nomedia file, so no storage
-    // permission comes into it, see Config.pCloudHiddenFolders. Only a folder hidden by
-    // itself is offered for unhiding, one under a hidden folder is hidden by its parent
+    // a remote folder is hidden by a setting rather than a .nomedia file, so no storage
+    // permission comes into it, see Config.pCloudHiddenFolders and Config.smbHiddenFolders.
+    // Only a folder hidden by itself is offered for unhiding, one under a hidden folder is
+    // hidden by its parent
     private fun checkHideBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
-        val (pCloudPaths, localPaths) = selectedPaths.filter { !it.isSmbPath() }.partition { it.isPCloudPath() }
+        val (smbPaths, rest) = selectedPaths.partition { it.isSmbPath() }
+        val (pCloudPaths, localPaths) = rest.partition { it.isPCloudPath() }
         val canTouchLocalFolders = !isRPlus() || isExternalStorageManager()
         val hiddenPCloudFolders = config.pCloudHiddenFolders
+        val hiddenSmbFolders = config.smbHiddenFolders
 
         menu.findItem(R.id.cab_hide).isVisible =
             (canTouchLocalFolders && localPaths.any { !it.doesThisOrParentHaveNoMedia(HashMap(), null) })
                 || pCloudPaths.any { !activity.isPCloudFolderHidden(it) }
+                || smbPaths.any { !activity.isSmbFolderHidden(it) }
 
         menu.findItem(R.id.cab_unhide).isVisible =
             (canTouchLocalFolders && localPaths.any { it.doesThisOrParentHaveNoMedia(HashMap(), null) })
                 || pCloudPaths.any { hiddenPCloudFolders.contains(it) }
+                || smbPaths.any { hiddenSmbFolders.contains(it) }
     }
 
     private fun checkPinBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
@@ -500,10 +506,15 @@ class DirectoryAdapter(
             }
         }
 
-        // a pCloud folder is hidden by a setting rather than a .nomedia file
-        val (pCloudPaths, localPaths) = selectedPaths.partition { it.isPCloudPath() }
+        // a remote folder is hidden by a setting rather than a .nomedia file
+        val (smbPaths, rest) = selectedPaths.partition { it.isSmbPath() }
+        val (pCloudPaths, localPaths) = rest.partition { it.isPCloudPath() }
         if (pCloudPaths.isNotEmpty()) {
             togglePCloudFoldersVisibility(pCloudPaths, hide)
+        }
+
+        if (smbPaths.isNotEmpty()) {
+            toggleSmbFoldersVisibility(smbPaths, hide)
         }
 
         if (localPaths.isEmpty()) {
@@ -564,7 +575,7 @@ class DirectoryAdapter(
         if (hide) {
             val hideConfirmed = {
                 config.addPCloudHiddenFolders(paths)
-                onPCloudFolderVisibilityChanged()
+                onRemoteFolderVisibilityChanged()
             }
 
             if (config.wasPCloudHideFolderTooltipShown) {
@@ -583,11 +594,40 @@ class DirectoryAdapter(
             }
 
             config.removePCloudHiddenFolders(paths)
-            onPCloudFolderVisibilityChanged()
+            onRemoteFolderVisibilityChanged()
         }
     }
 
-    private fun onPCloudFolderVisibilityChanged() {
+    // the same for a folder of the share, and for the same reason: nothing can be written
+    // there, so the choice is this app's own and lives in the settings
+    private fun toggleSmbFoldersVisibility(paths: List<String>, hide: Boolean) {
+        if (hide) {
+            val hideConfirmed = {
+                config.addSmbHiddenFolders(paths)
+                onRemoteFolderVisibilityChanged()
+            }
+
+            if (config.wasSmbHideFolderTooltipShown) {
+                hideConfirmed()
+            } else {
+                config.wasSmbHideFolderTooltipShown = true
+                ConfirmationDialog(activity, activity.getString(R.string.smb_hide_folder_description)) {
+                    hideConfirmed()
+                }
+            }
+        } else {
+            val hiddenFolders = config.smbHiddenFolders
+            if (paths.any { !hiddenFolders.contains(it) && activity.isSmbFolderHidden(it) }) {
+                ConfirmationDialog(activity, activity.getString(R.string.smb_cant_unhide_folder), 0, org.fossify.commons.R.string.ok, 0) {}
+                return
+            }
+
+            config.removeSmbHiddenFolders(paths)
+            onRemoteFolderVisibilityChanged()
+        }
+    }
+
+    private fun onRemoteFolderVisibilityChanged() {
         if (config.shouldShowHidden) {
             ensureBackgroundThread {
                 updateFolderNames()
@@ -647,10 +687,10 @@ class DirectoryAdapter(
     private fun updateFolderNames() {
         val includedFolders = config.includedFolders
         val hidden = activity.getString(R.string.hidden)
-        // a local folder is checked for its .nomedia on the spot, a pCloud one is hidden by the setting
-        val hiddenPCloudFolders = ArrayList(config.pCloudHiddenFolders)
+        // a local folder is checked for its .nomedia on the spot, a remote one is hidden by the setting
+        val hiddenRemoteFolders = ArrayList(config.pCloudHiddenFolders + config.smbHiddenFolders)
         dirs.filter { !it.isGroup() }.forEach {
-            it.name = activity.checkAppendingHidden(it.path, hidden, includedFolders, hiddenPCloudFolders)
+            it.name = activity.checkAppendingHidden(it.path, hidden, includedFolders, hiddenRemoteFolders)
         }
         listener?.updateDirectories(dirs.toMutableList() as ArrayList)
         activity.runOnUiThread {

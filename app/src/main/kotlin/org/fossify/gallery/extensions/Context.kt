@@ -551,12 +551,22 @@ fun Context.getNoMediaFoldersSync(): ArrayList<String> {
         folders.addAll(config.pCloudHiddenFolders)
     }
 
+    // and a folder of the share, for the same reason
+    if (config.isSmbConfigured) {
+        folders.addAll(config.smbHiddenFolders)
+    }
+
     return folders
 }
 
 // whether the pCloud folder, or one above it, is hidden in this app, see Config.pCloudHiddenFolders
 fun Context.isPCloudFolderHidden(path: String): Boolean {
     return config.pCloudHiddenFolders.any { path == it || path.startsWith("$it/") }
+}
+
+// whether the share's folder, or one above it, is hidden in this app, see Config.smbHiddenFolders
+fun Context.isSmbFolderHidden(path: String): Boolean {
+    return config.smbHiddenFolders.any { path == it || path.startsWith("$it/") }
 }
 
 fun Context.rescanFolderMedia(path: String) {

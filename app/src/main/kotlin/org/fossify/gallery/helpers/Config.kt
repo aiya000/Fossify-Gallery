@@ -675,6 +675,29 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(WAS_PCLOUD_HIDE_FOLDER_TOOLTIP_SHOWN, false)
         set(wasPCloudHideFolderTooltipShown) = prefs.edit().putBoolean(WAS_PCLOUD_HIDE_FOLDER_TOOLTIP_SHOWN, wasPCloudHideFolderTooltipShown).apply()
 
+    // share folders hidden in this app, the same way pCloud ones are and for the same reason:
+    // a .nomedia would have to be written to the share, which is everyone else's business too
+    // and is not something this app can do yet at all
+    var smbHiddenFolders: MutableSet<String>
+        get() = prefs.getStringSet(SMB_HIDDEN_FOLDERS, HashSet())!!
+        set(smbHiddenFolders) = prefs.edit().remove(SMB_HIDDEN_FOLDERS).putStringSet(SMB_HIDDEN_FOLDERS, smbHiddenFolders).apply()
+
+    fun addSmbHiddenFolders(paths: Collection<String>) {
+        val folders = HashSet<String>(smbHiddenFolders)
+        folders.addAll(paths)
+        smbHiddenFolders = folders.filter { it.isNotEmpty() }.toHashSet()
+    }
+
+    fun removeSmbHiddenFolders(paths: Collection<String>) {
+        val folders = HashSet<String>(smbHiddenFolders)
+        folders.removeAll(paths.toSet())
+        smbHiddenFolders = folders
+    }
+
+    var wasSmbHideFolderTooltipShown: Boolean
+        get() = prefs.getBoolean(WAS_SMB_HIDE_FOLDER_TOOLTIP_SHOWN, false)
+        set(wasSmbHideFolderTooltipShown) = prefs.edit().putBoolean(WAS_SMB_HIDE_FOLDER_TOOLTIP_SHOWN, wasSmbHideFolderTooltipShown).apply()
+
     var hideSystemUI: Boolean
         get() = prefs.getBoolean(HIDE_SYSTEM_UI, false)
         set(hideSystemUI) = prefs.edit().putBoolean(HIDE_SYSTEM_UI, hideSystemUI).apply()
