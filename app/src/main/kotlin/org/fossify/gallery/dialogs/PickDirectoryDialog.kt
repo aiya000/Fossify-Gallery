@@ -106,13 +106,17 @@ class PickDirectoryDialog(
     // choice lives for this dialog only. Without the chips every folder passes, unless the
     // caller takes the device only: then the list is narrowed with no chips to switch it
     private val storages = activity.availableStorages()
-    private val showStorageChips = isPickingCopyMoveDestination && !localDestinationOnly && storages.size > 1
-    private val narrowsStorage = showStorageChips || localDestinationOnly
+    private val hasStorageChips = isPickingCopyMoveDestination && !localDestinationOnly && storages.size > 1
+
+    // inside a group the chips are put away, and the narrowing goes with them: a group belongs to no
+    // storage, so it is opened whole, the way its count and its collage are counted whole
+    private val showStorageChips get() = hasStorageChips && currentGroupId == null
+    private val narrowsStorage get() = showStorageChips || localDestinationOnly
     private var storageFilter = when {
         localDestinationOnly -> STORAGE_FILTER_LOCAL
         // the folder list's own filter, read the way the list reads it: a filter pointing at a
         // storage that is no longer set up would leave no chip selected and narrow to nothing
-        showStorageChips -> activity.effectiveStorageFilter()
+        hasStorageChips -> activity.effectiveStorageFilter()
         else -> STORAGE_FILTER_ALL
     }
 
@@ -290,7 +294,7 @@ class PickDirectoryDialog(
 
     private fun configureStorageChips() = with(binding.directoriesStorages) {
         beVisibleIf(showStorageChips)
-        if (!showStorageChips) {
+        if (!hasStorageChips) {
             return@with
         }
 
@@ -497,6 +501,9 @@ class PickDirectoryDialog(
             allDirectories = newDirs.clone() as ArrayList<Directory>
         }
 
+        // walking into a group takes the chips away and walking back out brings them back
+        binding.directoriesStorages.beVisibleIf(showStorageChips)
+
         val distinctDirs = newDirs
             .filter { (showFavoritesBin || (!it.isRecycleBin() && !it.areFavorites())) && !it.isPCloudRecycleBin() && isShownByStorageChips(it) }
             .distinctBy { it.path.getDistinctPath() }
@@ -506,7 +513,14 @@ class PickDirectoryDialog(
         val dirs = if (showGroups) {
             // the chips narrow the folders only: a group belongs to no storage, and a folder
             // is often headed for a group of folders that live somewhere else
-            val grouped = activity.getGroupedDirectories(sortedDirs, currentGroupId, excludedGroupIds)
+            // and a group is drawn as what it holds, not as what the chips let through: a group of
+            // pCloud folders seen while the chips are on the device is still the group it is
+            val grouped = activity.getGroupedDirectories(
+                dirs = sortedDirs,
+                currentGroupId = currentGroupId,
+                excludedGroupIds = excludedGroupIds,
+                groupContentDirs = allDirectories
+            )
             val (groupDirs, realDirs) = grouped.partition { it.isGroup() }
             val realDirsToShow = activity.getDirsToShow(ArrayList(realDirs), allDirectories, currentPathPrefix)
             if (currentPathPrefix.isEmpty()) {

@@ -18,9 +18,15 @@ import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.getTextSize
 import org.fossify.commons.helpers.MEDIUM_ALPHA
 
+// how much of the accent color the selected chip is filled with: enough to tell it apart at a
+// glance, little enough that its label is still read against it in either theme
+private const val SELECTED_FILL_ALPHA = 0.2f
+
 // A row of chips to pick a storage from, one of them highlighted, drawn like the root crumb
 // of commons' Breadcrumbs so that it sits next to a folder list without looking foreign.
-// The folder pickers show the device's storages and pCloud in it
+// The folder pickers show the device's storages and pCloud in it.
+// The selected chip is filled with the accent color and given a solid stroke, the others keep
+// the dialog's own background and a faint stroke: a text color alone is easy to miss
 class StorageChips(context: Context, attrs: AttributeSet) : HorizontalScrollView(context, attrs) {
     class Chip(val tag: Any, val label: String)
 
@@ -44,8 +50,18 @@ class StorageChips(context: Context, attrs: AttributeSet) : HorizontalScrollView
         val horizontalPadding = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.normal_margin)
         val spacing = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.small_margin)
         val strokeWidth = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.one_dp)
-        val strokeColor = context.getProperPrimaryColor().adjustAlpha(MEDIUM_ALPHA)
-        val fillColor = context.getDialogBackgroundColor()
+        val primaryColor = context.getProperPrimaryColor()
+        // the item layout is the text view itself, so the activated state the selection sets on
+        // it reaches its background as well
+        val fillColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_activated), intArrayOf()),
+            intArrayOf(primaryColor.adjustAlpha(SELECTED_FILL_ALPHA), context.getDialogBackgroundColor())
+        )
+
+        val strokeColors = ColorStateList(
+            arrayOf(intArrayOf(android.R.attr.state_activated), intArrayOf()),
+            intArrayOf(primaryColor, primaryColor.adjustAlpha(MEDIUM_ALPHA))
+        )
 
         itemsLayout.removeAllViews()
         chips.forEach { chip ->
@@ -56,8 +72,8 @@ class StorageChips(context: Context, attrs: AttributeSet) : HorizontalScrollView
                 breadcrumbText.updatePadding(left = horizontalPadding, right = horizontalPadding)
                 (breadcrumbText.background.mutate() as? RippleDrawable)?.let { ripple ->
                     (ripple.getDrawable(0) as? GradientDrawable)?.apply {
-                        setColor(fillColor)
-                        setStroke(strokeWidth, strokeColor)
+                        color = fillColors
+                        setStroke(strokeWidth, strokeColors)
                     }
                 }
 
