@@ -22,6 +22,7 @@
     <string name="ungroup">Ungroup</string>
     <string name="ungroup_confirmation">Remove the selected groups? The folders and groups inside them will be kept and moved one level up.</string>
     <string name="cannot_move_group_into_itself">A group cannot be moved into itself or into one of its subgroups</string>
+    <string name="move_folder_into_folder_confirmation">Move %2$d media files from the selected folders into \"%1$s\"?\nThey will be mixed with the files already there, and the emptied folders disappear from the list.\nTo put folders together without merging them, cancel and use \"Group these\".</string>
     <string name="pick_a_destination_by_tapping">Tap a folder in the list to copy or move into it.</string>
     <string name="group_is_not_a_destination">A group holds folders, not files.\nPick a folder as the destination. Folders go into a group with \"Group these\" or \"Move to\".</string>
     <string name="pick_a_group">Select a group as the destination, or press OK to use the current level</string>
