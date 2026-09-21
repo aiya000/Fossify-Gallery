@@ -1,6 +1,6 @@
 ---
 name: debug-install
-description: Install the built foss debug APK of this Gallery app on the connected device with adb. Use when the user asks to install or deploy the debug build; build it first with the `debug-build` skill if needed.
+description: Install the built foss debug APK of this Gallery app on the connected device with adb. Use whenever a debug build should reach the device -- the user asks for it, or a change is ready for them to try -- without asking permission first; build it first with the `debug-build` skill if needed.
 ---
 
 # debug-install
@@ -44,4 +44,9 @@ Install the `foss` debug APK on the device connected via adb.
 
 - The debug build is `io.github.aiya000.fossify.gallery.debug`, a separate app from the release build, with its own settings
   (folder groups, pins, etc. are not shared)
+- **No permission is needed to install it.** `adb install` does not show on the screen and the debug app cannot reach
+  the release app's data, so install it as soon as there is something worth trying, and say so afterwards rather than
+  asking beforehand. This is the debug build only; the release build still waits to be asked (`release-install`)
 - Never install while the user has asked to wait ("インストールは待って") — build only
+- Installing restarts the app, which kills any scan or transfer running in it, and changes its pid. When a `logcat`
+  capture is pinned to the pid, or the device is in the middle of something being measured, finish that first
