@@ -98,6 +98,16 @@ android {
 
     sourceSets {
         getByName("main").java.directories.add("src/main/kotlin")
+        getByName("test").java.directories.add("src/test/kotlin")
+    }
+
+    testOptions {
+        unitTests {
+            // the unit tests run against the android.jar stubs, whose methods throw unless this
+            // is set. The logic under test does not care what android.util.Log answers, and a
+            // test that needs a real Context does not belong in this source set anyway
+            isReturnDefaultValues = true
+        }
     }
 
     compileOptions {
@@ -185,6 +195,10 @@ dependencies {
     // the SMB client. Apache-2.0, SMB2/3; jcifs-ng would be LGPL, which the README's FOSS note
     // is not written for
     implementation(libs.smbj)
+
+    // the tests that need no device, see #79. Plain JUnit on purpose: everything worth pinning
+    // here is logic that was made free of Context first
+    testImplementation(libs.junit)
 
     ksp(libs.glide.compiler)
     implementation(libs.zjupure.webpdecoder)
