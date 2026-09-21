@@ -340,7 +340,7 @@ class SettingsActivity : SimpleActivity() {
             SmbScanner(this).forgetAll()
             if (config.isSmbConfigured) {
                 toast(R.string.smb_rescanning)
-                rescanSmb(reportCounts = true)
+                rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL)
             }
         }
     }

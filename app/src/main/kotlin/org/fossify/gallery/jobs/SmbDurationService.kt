@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 // The viewer does it for the one video it is playing. This is the deliberate middle: the user
 // names a folder and waits for it, having been told how many files that means opening.
 //
-// A foreground service for the same reason SmbScanService is one -- the work is minutes long
+// A foreground service for the same reason RemoteScanService is one -- the work is minutes long
 // and the system takes the network away from a process nobody is looking at, so a plain
 // background thread dies as soon as the app is left. The notification is also where the
 // progress can be read once it is, and carries the stop action

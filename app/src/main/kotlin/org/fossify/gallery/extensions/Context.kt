@@ -100,12 +100,11 @@ import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCLOUD_RESULT_ALREADY_EXISTS
 import org.fossify.gallery.helpers.PCloudException
-import org.fossify.gallery.helpers.PCloudScanAbortedException
-import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -114,9 +113,6 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
-import org.fossify.gallery.helpers.SmbClient
-import org.fossify.gallery.helpers.SmbScanAbortedException
-import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
@@ -130,7 +126,6 @@ import org.fossify.gallery.interfaces.FavoritesDao
 import org.fossify.gallery.interfaces.MediumDao
 import org.fossify.gallery.interfaces.PCloudItemDao
 import org.fossify.gallery.interfaces.WidgetsDao
-import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Favorite
@@ -786,164 +781,101 @@ fun Context.isShownByStorageFilter(directory: Directory): Boolean {
     }
 }
 
-// Brings the pCloud cache up to date off the main thread and tells the user in a toast how it
-// went: the counts when asked for, otherwise only what failed. What is fetched is the changes
-// since the last scan (PCloudScanner.sync()); full lists the whole account again instead. A
-// token pCloud no longer accepts signs the account out. onDone runs in every case but one,
-// also when a scan was already running and this one was skipped; it is called on whatever
-// thread the scan ended on, so hop to the UI thread in it. The one case is a scan that
-// PCloudScanner.abortCurrent() called off: the screen that did so is reloading on its own,
-// and the reload onDone would do is the very thing it wanted to be spared
-fun Context.rescanPCloud(reportCounts: Boolean, full: Boolean = false, onDone: () -> Unit = {}) {
+// Brings the pCloud cache up to date and tells the user how it went: the counts when asked for,
+// otherwise only what failed. What is fetched is the changes since the last scan
+// (PCloudScanner.sync()); full lists the whole account again instead. A token pCloud no longer
+// accepts signs the account out.
+//
+// The scan is queued rather than started. RemoteScanScheduler ranks it against everything else
+// that wants the network, and RemoteScanService runs it in the foreground, which is what keeps
+// the system from taking the network away the moment the app is left -- pCloud's scans ran on a
+// plain background thread until #59 and died that way. priority says what this request is worth;
+// the constants are on the scheduler.
+//
+// onDone runs on whatever thread the scan ended on, so hop to the UI thread in it. It does not
+// run for a scan that was called off: the screen that outranked it is reloading on its own, and
+// the reload onDone would do is the very thing it wanted to be spared
+fun Context.rescanPCloud(reportCounts: Boolean, priority: Int, full: Boolean = false, onDone: () -> Unit = {}) {
     if (!config.isPCloudLoggedIn) {
         onDone()
         return
     }
 
-    runPCloudScan(onDone) { scanner ->
-        val result = if (full) scanner.scanAll() else scanner.sync()
-        if (reportCounts) {
-            toast(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
-        }
-    }
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.PCLOUD,
+            priority = priority,
+            reportCounts = reportCounts,
+            full = full,
+            onDone = onDone
+        )
+    )
 }
 
 // Refreshes the given pCloud folders one by one, non-recursively, the way rescanPCloud()
-// refreshes the whole account; the counts toast sums them up. It shares the scanner's lock
-// with the full scan, so nothing happens while either is running. onDone runs the way it
-// does for rescanPCloud()
-fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, onDone: () -> Unit = {}) {
+// refreshes the whole account; the counts toast sums them up. It goes through the same queue as
+// everything else, so a folder asked for while the whole account is being listed now waits its
+// turn -- it used to be dropped on the floor, because the lock was held
+fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, priority: Int, onDone: () -> Unit = {}) {
     if (paths.isEmpty() || !config.isPCloudLoggedIn) {
         onDone()
         return
     }
 
-    runPCloudScan(onDone) { scanner ->
-        var folderCount = 0
-        var mediaCount = 0
-        paths.forEach { path ->
-            scanner.scanFolder(path)?.let {
-                folderCount += it.folderCount
-                mediaCount += it.mediaCount
-            }
-        }
-
-        if (reportCounts) {
-            toast(getString(R.string.pcloud_rescan_done, folderCount, mediaCount))
-        }
-    }
-}
-
-// Claims the scanner for scan and runs it off the main thread, registered so that a screen
-// can call it off; failure is toasted, a dead token signs the account out, and a scan that
-// was called off is neither reported nor followed by onDone. The scanner is claimed here,
-// before the thread starts, so that an abort cannot slip in between the claim and the
-// registration
-private fun Context.runPCloudScan(onDone: () -> Unit, scan: (PCloudScanner) -> Unit) {
-    val scanner = PCloudScanner(this)
-    if (!PCloudScanner.start(scanner)) {
-        onDone()
-        return
-    }
-
-    ensureBackgroundThread {
-        var aborted = false
-        try {
-            scan(scanner)
-        } catch (e: PCloudScanAbortedException) {
-            aborted = true
-        } catch (e: PCloudException) {
-            if (e.requiresLogIn) {
-                config.clearPCloudAccount()
-                toast(R.string.pcloud_log_in_required)
-            } else {
-                showErrorToast(e)
-            }
-        } catch (e: Exception) {
-            showErrorToast(e)
-        } finally {
-            PCloudScanner.finish()
-        }
-
-        if (!aborted) {
-            onDone()
-        }
-    }
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.PCLOUD,
+            priority = priority,
+            reportCounts = reportCounts,
+            folders = paths,
+            onDone = onDone
+        )
+    )
 }
 
 // Brings the SMB cache up to date. A share has no diff stream, so there is only the one kind of
 // refresh -- the whole share is walked -- and that takes minutes, longer than the user will sit
-// looking at the folder list. It therefore runs in SmbScanService, a foreground service, which
-// is what keeps the system from taking the network away the moment the app is left; the counts
-// and anything that failed are reported from there, in a notification that outlives the screen.
+// looking at the folder list. The counts and anything that failed are reported from the service,
+// in a notification that outlives the screen.
 //
-// Nothing is handed back here. A screen that wants its folders again once a scan is through
-// adds itself to SmbScanService.addListener()
-fun Context.rescanSmb(reportCounts: Boolean) {
+// Nothing is handed back here. A screen that wants its folders again once the queue is through
+// adds itself to RemoteScanService.addListener()
+fun Context.rescanSmb(reportCounts: Boolean, priority: Int) {
     if (!config.isSmbConfigured) {
         return
     }
 
-    SmbScanService.start(this, reportCounts)
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.SMB,
+            priority = priority,
+            reportCounts = reportCounts
+        )
+    )
 }
 
 // Refreshes the given folders of the share one by one, non-recursively; the counts toast sums
-// them up. It shares the scanner's lock with the full scan, so nothing happens while either is
-// running
-fun Context.rescanSmbFolders(paths: List<String>, reportCounts: Boolean, onDone: () -> Unit = {}) {
+// them up. Queued like every other scan, so it waits behind a walk of the whole share instead of
+// being dropped while one runs
+fun Context.rescanSmbFolders(paths: List<String>, reportCounts: Boolean, priority: Int, onDone: () -> Unit = {}) {
     if (paths.isEmpty() || !config.isSmbConfigured) {
         onDone()
         return
     }
 
-    runSmbScan(onDone) { scanner ->
-        var folderCount = 0
-        var mediaCount = 0
-        paths.forEach { path ->
-            val result = scanner.scanFolder(path)
-            folderCount += result.folderCount
-            mediaCount += result.mediaCount
-        }
-
-        if (reportCounts) {
-            toast(getString(R.string.smb_rescan_done, folderCount, mediaCount))
-        }
-    }
-}
-
-// Claims the scanner for scan and runs it off the main thread, registered so that a screen can
-// call it off; failure is toasted, and a scan that was called off is neither reported nor
-// followed by onDone. A failure also drops the connection: the most common one is a session
-// the server has given up on, and the next scan then opens a fresh one instead of failing again
-private fun Context.runSmbScan(onDone: () -> Unit, scan: (SmbScanner) -> Unit) {
-    val scanner = SmbScanner(this)
-    if (!SmbScanner.start(scanner)) {
-        onDone()
-        return
-    }
-
-    ensureBackgroundThread {
-        var aborted = false
-        try {
-            scan(scanner)
-        } catch (e: SmbScanAbortedException) {
-            aborted = true
-        } catch (e: Exception) {
-            Log.w("SmbScan", "A scan of the network share failed", e)
-            SmbClient.disconnect()
-            // showErrorToast() would put the exception's own class name on the screen, which
-            // says nothing to the person reading it. What they need to know is that the scan
-            // came to nothing and that it cost them none of what the share had; the exception
-            // is one line above this, in the log, for whoever is looking for it
-            toast(R.string.smb_scan_failed)
-        } finally {
-            SmbScanner.finish()
-        }
-
-        if (!aborted) {
-            onDone()
-        }
-    }
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.SMB,
+            priority = priority,
+            reportCounts = reportCounts,
+            folders = paths,
+            onDone = onDone
+        )
+    )
 }
 
 // Runs one write to pCloud off the main thread and reports failure the way the scans do; a
@@ -984,7 +916,10 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
         }
 
         if (success && PCloudSyncPolicy(this).rescanAfterWrite) {
-            rescanPCloudFolders(foldersToRescan, reportCounts = false) { onDone(true) }
+            // the same rank as the refresh a transfer owes its destination, and for the same
+            // reason: the user has just changed this folder and what they did stays out of
+            // sight until this has run, while the scan it cuts short is one nobody is waiting on
+            rescanPCloudFolders(foldersToRescan, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) { onDone(true) }
         } else {
             onDone(success)
         }

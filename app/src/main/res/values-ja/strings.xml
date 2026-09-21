@@ -143,6 +143,8 @@
     <string name="smb_scan_channel">ネットワーク共有のスキャン</string>
     <string name="smb_scan_progress">ネットワーク共有: %1$d フォルダ、%2$d ファイル</string>
     <string name="smb_scan_stop">中止</string>
+    <string name="remote_scan_channel">リモートストレージのスキャン</string>
+    <string name="remote_scan_starting">リモートストレージをスキャンしています…</string>
     <string name="smb_rescan_on_launch">起動時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>
