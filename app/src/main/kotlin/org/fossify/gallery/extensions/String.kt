@@ -6,6 +6,7 @@ import org.fossify.commons.helpers.NOMEDIA
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -29,6 +30,20 @@ fun String.toPCloudRecycleBinPath() = "$PCLOUD_RECYCLE_BIN${removePrefix(PCLOUD_
 
 // and back: the path the medium had before it went into the bin
 fun String.fromPCloudRecycleBinPath() = "$PCLOUD_PATH_SCHEME${removePrefix(PCLOUD_RECYCLE_BIN)}"
+
+// SMB media carries a pseudo path too, see SMB_PATH_PREFIX
+fun String.isSmbPath() = startsWith(SMB_PATH_SCHEME)
+
+// "smb:/photos/2026/IMG_0001.jpg" -> "photos/2026/IMG_0001.jpg", the path inside the share as
+// smbj wants it, without a leading separator. The root "smb:" becomes ""
+fun String.toSmbRemotePath() = if (isSmbPath()) removePrefix(SMB_PATH_SCHEME).trimStart('/') else this
+
+// the other way round, "" -> "smb:"
+fun String.toSmbPseudoPath() = "$SMB_PATH_SCHEME${if (isEmpty()) "" else "/${trim('/')}"}"
+
+// a medium that is not on this device: there is no file behind it until one is fetched. The
+// menu gating and the viewer ask this rather than naming one storage
+fun String.isRemotePath() = isPCloudPath() || isSmbPath()
 
 fun String.isThisOrParentIncluded(includedPaths: MutableSet<String>) =
     includedPaths.any { equals(it, true) } || includedPaths.any { "$this/".startsWith("$it/", true) }

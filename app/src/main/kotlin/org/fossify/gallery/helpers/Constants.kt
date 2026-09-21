@@ -191,6 +191,40 @@ const val PCLOUD_RESULT_ALREADY_EXISTS = 2004
 // fallback when the filename extension tells nothing
 const val PCLOUD_CATEGORY_IMAGE = 1
 const val PCLOUD_CATEGORY_VIDEO = 2
+
+// SMB media is displayed with this pseudo path prefix, the same way pCloud media is, e.g.
+// "smb:/photos/2026/IMG_0001.jpg" for "\\host\photos\2026\IMG_0001.jpg". The share name is the
+// first segment, so one configured host is browsed as one tree and getParentPath() keeps working
+const val SMB_PATH_SCHEME = "smb:"
+const val SMB_PATH_PREFIX = "$SMB_PATH_SCHEME/"
+
+// under the cache directory: the local copies of SMB files, for the parts of the app that need
+// a real file. See SmbFileCache
+const val SMB_CACHE_DIR = "smb"
+
+// the share is reached with these; the password is kept in the app's private prefs like the
+// pCloud token is. An empty user name means a guest connection
+const val SMB_HOST = "smb_host"
+const val SMB_PORT = "smb_port"
+const val SMB_SHARE = "smb_share"
+// the folder inside the share to treat as the root, "" for the share itself
+const val SMB_ROOT_PATH = "smb_root_path"
+const val SMB_USER = "smb_user"
+const val SMB_PASSWORD = "smb_password"
+const val SMB_DOMAIN = "smb_domain"
+
+// when the SMB cache is refreshed from the share, mirroring the pCloud rescan settings. A share
+// that is not reachable has to fail fast, so a scan is never started on a metered connection
+const val SMB_RESCAN_ON_LAUNCH = "smb_rescan_on_launch"
+const val SMB_RESCAN_ON_STORAGE_SWITCH = "smb_rescan_on_storage_switch"
+const val SMB_RESCAN_ON_FOLDER_OPEN = "smb_rescan_on_folder_open"
+const val SMB_RESCAN_ON_PULL_TO_REFRESH = "smb_rescan_on_pull_to_refresh"
+const val SMB_RESCAN_ON_UNMETERED_ONLY = "smb_rescan_on_unmetered_only"
+const val SMB_RESCAN_INTERVAL_MINUTES = "smb_rescan_interval_minutes"
+const val SMB_LAST_FULL_SCAN_AT = "smb_last_full_scan_at"
+
+// the default SMB port; 139 is the NetBIOS one, offered for an old server
+const val SMB_DEFAULT_PORT = 445
 const val STORAGE_FILTER = "storage_filter"
 // the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
 const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
@@ -321,11 +355,14 @@ const val LOCATION_INTERNAL = 1
 const val LOCATION_SD = 2
 const val LOCATION_OTG = 3
 const val LOCATION_PCLOUD = 4
+const val LOCATION_SMB = 5
 
-// which storage the folder list is showing
+// which storage the folder list is showing. STORAGE_FILTER_ALL keeps meaning every storage
+// there is, so a new one is added before it and the stored value of ALL never moves
 const val STORAGE_FILTER_LOCAL = 1
 const val STORAGE_FILTER_PCLOUD = 2
 const val STORAGE_FILTER_ALL = 3
+const val STORAGE_FILTER_SMB = 4
 
 const val GROUP_BY_NONE = 1
 const val GROUP_BY_LAST_MODIFIED_DAILY = 2

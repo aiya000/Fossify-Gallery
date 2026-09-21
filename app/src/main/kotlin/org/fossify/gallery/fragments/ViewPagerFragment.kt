@@ -12,7 +12,8 @@ import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.helpers.*
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -27,9 +28,9 @@ abstract class ViewPagerFragment : Fragment() {
     private var mCloseDownThreshold = 100f
     private var mIgnoreCloseDown = false
 
-    // the local copy of a pCloud medium once fetchPCloudOriginal() has brought it in; until
+    // the local copy of a remote medium once fetchRemoteOriginal() has brought it in; until
     // then getPathToLoad() hands out the pseudo path and the medium is shown from its thumbnail
-    private var mPCloudLocalPath: String? = null
+    private var mRemoteLocalPath: String? = null
 
     abstract fun fullscreenToggled(isFullscreen: Boolean)
 
@@ -106,33 +107,35 @@ abstract class ViewPagerFragment : Fragment() {
     fun getPathToLoad(medium: Medium): String {
         val context = context ?: return medium.path
         return when {
-            medium.path.isPCloudPath() -> mPCloudLocalPath ?: medium.path
+            medium.path.isRemotePath() -> mRemoteLocalPath ?: medium.path
             context.isPathOnOTG(medium.path) -> medium.path.getOTGPublicPath(context)
             else -> medium.path
         }
     }
 
-    // Downloads the file behind a pCloud medium into the cache, off the main thread, and calls
+    // Downloads the file behind a remote medium into the cache, off the main thread, and calls
     // back on the UI thread once getPathToLoad() hands out the copy. A failure leaves the
-    // thumbnail on screen and says so in a toast; a dead token is rescanPCloud()'s to act on
-    protected fun fetchPCloudOriginal(medium: Medium, onFetched: () -> Unit) {
-        if (!medium.path.isPCloudPath() || mPCloudLocalPath != null) {
+    // thumbnail on screen and says so in a toast; a dead pCloud token is rescanPCloud()'s to act on
+    protected fun fetchRemoteOriginal(medium: Medium, onFetched: () -> Unit) {
+        val path = medium.path
+        if (!path.isRemotePath() || mRemoteLocalPath != null) {
             return
         }
 
         val context = context ?: return
         ensureBackgroundThread {
             val file = try {
-                PCloudFileCache(context).fetch(medium.path)
+                if (path.isSmbPath()) SmbFileCache(context).fetch(path) else PCloudFileCache(context).fetch(path)
             } catch (e: Exception) {
-                Log.w("PCloudShare", "Could not fetch ${medium.path} for the viewer", e)
-                context.toast("${context.getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+                Log.w("RemoteFetch", "Could not fetch $path for the viewer", e)
+                val failed = context.getString(if (path.isSmbPath()) R.string.smb_fetch_failed else R.string.pcloud_fetch_failed)
+                context.toast("$failed: ${e.message ?: e.javaClass.simpleName}")
                 null
             } ?: return@ensureBackgroundThread
 
             activity?.runOnUiThread {
                 if (isAdded) {
-                    mPCloudLocalPath = file.absolutePath
+                    mRemoteLocalPath = file.absolutePath
                     onFetched()
                 }
             }

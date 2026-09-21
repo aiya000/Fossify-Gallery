@@ -82,7 +82,7 @@ import org.fossify.gallery.adapters.PortraitPhotosAdapter
 import org.fossify.gallery.databinding.PagerPhotoItemBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.getBottomActionsHeight
-import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.sendFakeClick
 import org.fossify.gallery.helpers.ColorModeHelper
 import org.fossify.gallery.helpers.HIGH_TILE_DPI
@@ -249,8 +249,8 @@ class PhotoFragment : ViewPagerFragment() {
             binding.bottomActionsDummy.beGone()
         }
         loadImage()
-        // a pCloud photo starts from its thumbnail and is loaded again from the file once it is in
-        fetchPCloudOriginal(mMedium) { loadImage() }
+        // a remote photo starts from its thumbnail and is loaded again from the file once it is in
+        fetchRemoteOriginal(mMedium) { loadImage() }
         initExtendedDetails()
         mWasInit = true
         updateInstantSwitchWidths()
@@ -281,7 +281,7 @@ class PhotoFragment : ViewPagerFragment() {
                 mIsSubsamplingVisible = false
                 binding.subsamplingView.beGone()
                 loadImage()
-            } else if (mMedium.isGIF() && !getPathToLoad(mMedium).isPCloudPath()) {
+            } else if (mMedium.isGIF() && !getPathToLoad(mMedium).isRemotePath()) {
                 loadGif()
             } else if (mIsSubsamplingVisible && mShouldResetImage) {
                 binding.subsamplingView.onGlobalLayout {
@@ -428,9 +428,9 @@ class PhotoFragment : ViewPagerFragment() {
             mImageOrientation = getImageOrientation()
             activity?.runOnUiThread {
                 when {
-                    // the decoders below want a file; until the pCloud copy is in, Glide shows
-                    // the thumbnail through PCloudStreamLoader like the grid does
-                    getPathToLoad(mMedium).isPCloudPath() -> loadBitmap()
+                    // the decoders below want a file; until the remote copy is in, Glide shows
+                    // the thumbnail through the storage's stream loader like the grid does
+                    getPathToLoad(mMedium).isRemotePath() -> loadBitmap()
                     mMedium.isGIF() -> loadGif()
                     mMedium.isSVG() -> loadSVG()
                     mMedium.isApng() -> loadAPNG()
@@ -497,7 +497,7 @@ class PhotoFragment : ViewPagerFragment() {
         mHasInitialZoom = false
         if (context == null) return
         val path = getFilePathToShow()
-        if (path.isWebP() && !path.isPCloudPath()) {
+        if (path.isWebP() && !path.isRemotePath()) {
             val drawable = WebPDrawable.fromFile(path)
             if (drawable.intrinsicWidth == 0) {
                 loadWithGlide(path, addZoomableView)
@@ -738,7 +738,7 @@ class PhotoFragment : ViewPagerFragment() {
     private fun scheduleZoomableView() {
         mLoadZoomableViewHandler.removeCallbacksAndMessages(null)
         mLoadZoomableViewHandler.postDelayed({
-            val hasFile = !getPathToLoad(mMedium).isPCloudPath()
+            val hasFile = !getPathToLoad(mMedium).isRemotePath()
             if (mIsFragmentVisible && hasFile && context?.config?.allowZoomingImages == true && (mMedium.isImage() || mMedium.isPortrait()) && !mIsSubsamplingVisible) {
                 addZoomableView()
             }

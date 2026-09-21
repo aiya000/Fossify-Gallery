@@ -93,6 +93,7 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_OTG
 import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SD
+import org.fossify.gallery.helpers.LOCATION_SMB
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
@@ -108,8 +109,14 @@ import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
+import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
+import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
+import org.fossify.gallery.helpers.SmbClient
+import org.fossify.gallery.helpers.SmbScanAbortedException
+import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
@@ -123,6 +130,7 @@ import org.fossify.gallery.interfaces.FavoritesDao
 import org.fossify.gallery.interfaces.MediumDao
 import org.fossify.gallery.interfaces.PCloudItemDao
 import org.fossify.gallery.interfaces.WidgetsDao
+import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Favorite
@@ -699,26 +707,43 @@ fun Context.addTempFolderIfNeeded(dirs: ArrayList<Directory>): ArrayList<Directo
 fun Context.getPathLocation(path: String): Int {
     return when {
         path.isPCloudPath() -> LOCATION_PCLOUD
+        path.isSmbPath() -> LOCATION_SMB
         isPathOnSD(path) -> LOCATION_SD
         isPathOnOTG(path) -> LOCATION_OTG
         else -> LOCATION_INTERNAL
     }
 }
 
-// Which folders the storage filter lets through. Favorites, the recycle bin and virtual groups
-// belong to no storage and always pass. Without a pCloud account the filter means local
-// storage whatever it says, so a stale pCloud cache never shows up after signing out
+// The filter the folder list actually goes by: one pointing at a storage that is not set up
+// means local storage, so the list is never left empty by a filter nothing can satisfy
+fun Context.effectiveStorageFilter(): Int {
+    val filter = config.storageFilter
+    return when {
+        filter == STORAGE_FILTER_PCLOUD && !config.isPCloudLoggedIn -> STORAGE_FILTER_LOCAL
+        filter == STORAGE_FILTER_SMB && !config.isSmbConfigured -> STORAGE_FILTER_LOCAL
+        else -> filter
+    }
+}
+
+// Which folders the storage filter lets through. Favorites and virtual groups belong to no
+// storage and always pass; the device's recycle bin has a device path, so it goes with the
+// device's folders, and the pCloud bin has a pCloud path and goes with pCloud's
 fun Context.isShownByStorageFilter(directory: Directory): Boolean {
-    val isPCloud = directory.path.isPCloudPath()
+    val path = directory.path
+    val isPCloud = path.isPCloudPath()
+    val isSmb = path.isSmbPath()
     return when {
         directory.areFavorites() || directory.isGroup() -> true
-        // the device's bin goes with the device's folders; the pCloud bin has a pCloud path
-        // and follows the pCloud rule below, so the "both" filter shows the two side by side
-        directory.isRecycleBin() -> !config.isPCloudLoggedIn || config.storageFilter != STORAGE_FILTER_PCLOUD
-        !config.isPCloudLoggedIn -> !isPCloud
-        config.storageFilter == STORAGE_FILTER_PCLOUD -> isPCloud
-        config.storageFilter == STORAGE_FILTER_ALL -> true
-        else -> !isPCloud
+        // a storage that is no longer set up shows nothing whatever the filter says, so a cache
+        // left behind by signing out or by clearing the share does not reappear
+        isPCloud && !config.isPCloudLoggedIn -> false
+        isSmb && !config.isSmbConfigured -> false
+        else -> when (effectiveStorageFilter()) {
+            STORAGE_FILTER_ALL -> true
+            STORAGE_FILTER_PCLOUD -> isPCloud
+            STORAGE_FILTER_SMB -> isSmb
+            else -> !isPCloud && !isSmb
+        }
     }
 }
 
@@ -799,6 +824,81 @@ private fun Context.runPCloudScan(onDone: () -> Unit, scan: (PCloudScanner) -> U
             showErrorToast(e)
         } finally {
             PCloudScanner.finish()
+        }
+
+        if (!aborted) {
+            onDone()
+        }
+    }
+}
+
+// Brings the SMB cache up to date. A share has no diff stream, so there is only the one kind of
+// refresh -- the whole share is walked -- and that takes minutes, longer than the user will sit
+// looking at the folder list. It therefore runs in SmbScanService, a foreground service, which
+// is what keeps the system from taking the network away the moment the app is left; the counts
+// and anything that failed are reported from there, in a notification that outlives the screen.
+//
+// Nothing is handed back here. A screen that wants its folders again once a scan is through
+// adds itself to SmbScanService.addListener()
+fun Context.rescanSmb(reportCounts: Boolean) {
+    if (!config.isSmbConfigured) {
+        return
+    }
+
+    SmbScanService.start(this, reportCounts)
+}
+
+// Refreshes the given folders of the share one by one, non-recursively; the counts toast sums
+// them up. It shares the scanner's lock with the full scan, so nothing happens while either is
+// running
+fun Context.rescanSmbFolders(paths: List<String>, reportCounts: Boolean, onDone: () -> Unit = {}) {
+    if (paths.isEmpty() || !config.isSmbConfigured) {
+        onDone()
+        return
+    }
+
+    runSmbScan(onDone) { scanner ->
+        var folderCount = 0
+        var mediaCount = 0
+        paths.forEach { path ->
+            val result = scanner.scanFolder(path)
+            folderCount += result.folderCount
+            mediaCount += result.mediaCount
+        }
+
+        if (reportCounts) {
+            toast(getString(R.string.smb_rescan_done, folderCount, mediaCount))
+        }
+    }
+}
+
+// Claims the scanner for scan and runs it off the main thread, registered so that a screen can
+// call it off; failure is toasted, and a scan that was called off is neither reported nor
+// followed by onDone. A failure also drops the connection: the most common one is a session
+// the server has given up on, and the next scan then opens a fresh one instead of failing again
+private fun Context.runSmbScan(onDone: () -> Unit, scan: (SmbScanner) -> Unit) {
+    val scanner = SmbScanner(this)
+    if (!SmbScanner.start(scanner)) {
+        onDone()
+        return
+    }
+
+    ensureBackgroundThread {
+        var aborted = false
+        try {
+            scan(scanner)
+        } catch (e: SmbScanAbortedException) {
+            aborted = true
+        } catch (e: Exception) {
+            Log.w("SmbScan", "A scan of the network share failed", e)
+            SmbClient.disconnect()
+            // showErrorToast() would put the exception's own class name on the screen, which
+            // says nothing to the person reading it. What they need to know is that the scan
+            // came to nothing and that it cost them none of what the share had; the exception
+            // is one line above this, in the log, for whoever is looking for it
+            toast(R.string.smb_scan_failed)
+        } finally {
+            SmbScanner.finish()
         }
 
         if (!aborted) {
@@ -1089,7 +1189,13 @@ fun Context.getCachedDirectories(
         }) as ArrayList<Directory>
 
         filteredDirectories = filteredDirectories.filter {
-            (forceShowAllStorages && (config.isPCloudLoggedIn || !it.path.isPCloudPath())) || isShownByStorageFilter(it)
+            val storageIsSetUp = when {
+                it.path.isPCloudPath() -> config.isPCloudLoggedIn
+                it.path.isSmbPath() -> config.isSmbConfigured
+                else -> true
+            }
+
+            (forceShowAllStorages && storageIsSetUp) || isShownByStorageFilter(it)
         } as ArrayList<Directory>
 
         if (shouldShowHidden) {
@@ -1128,7 +1234,7 @@ fun Context.getCachedMedia(
     ensureBackgroundThread {
         val mediaFetcher = MediaFetcher(this)
         val foldersToScan = if (path.isEmpty()) {
-            mediaFetcher.getFoldersToScan().apply { addAll(mediaFetcher.getPCloudFoldersToShow()) }
+            mediaFetcher.getFoldersToScan().apply { addAll(mediaFetcher.getRemoteFoldersToShow()) }
         } else {
             arrayListOf(path)
         }
@@ -1195,8 +1301,8 @@ fun Context.getCachedMedia(
             val mediaToDelete = ArrayList<Medium>()
             // creating a new thread intentionally, do not reuse the common background thread
             Thread {
-                // pCloud media has no file behind it, the cache row is all there is. Only a rescan may drop it
-                media.filter { !it.path.isPCloudPath() && !getDoesFilePathExist(it.path, OTGPath) }.forEach {
+                // media on a remote storage has no file behind it, the cache row is all there is. Only a rescan may drop it
+                media.filter { !it.path.isRemotePath() && !getDoesFilePathExist(it.path, OTGPath) }.forEach {
                     if (it.path.startsWith(recycleBinPath)) {
                         deleteDBPath(it.path)
                     } else {
@@ -1223,10 +1329,13 @@ fun Context.getCachedMedia(
 fun Context.removeInvalidDBDirectories(dirs: ArrayList<Directory>? = null) {
     val dirsToCheck = dirs ?: directoryDB.getAll()
     val OTGPath = config.OTGPath
+    // a folder on a remote storage has no file here to find, so asking the filesystem about it
+    // answers no every time and would drop every one of them. Only a scan, which asks the
+    // server, gets to decide that one is gone
     dirsToCheck.filter {
         !it.areFavorites()
                 && !it.isRecycleBin()
-                && !it.path.isPCloudPath()
+                && !it.path.isRemotePath()
                 && !getDoesFilePathExist(it.path, OTGPath)
                 && it.path != config.tempFolderPath
     }.forEach {
@@ -1458,16 +1567,19 @@ fun Context.createDirectoryFromMedia(
     val grouped = MediaFetcher(this).groupMedia(curMedia, path)
     var thumbnail: String? = null
 
-    // a pCloud thumbnail has no file to check for, its cache row is the proof that it exists
+    // a thumbnail on a remote storage has no file here to check for, its cache row is the proof
+    // that it exists. Asking the filesystem about a pseudo path answers no to every one of
+    // them, which leaves the folder without a cover and costs a syscall for each file it asked
+    // about on the way
     albumCovers.forEach {
-        if (it.path == path && (it.tmb.isPCloudPath() || getDoesFilePathExist(it.tmb, OTGPath))) {
+        if (it.path == path && (it.tmb.isRemotePath() || getDoesFilePathExist(it.tmb, OTGPath))) {
             thumbnail = it.tmb
         }
     }
 
     if (thumbnail == null) {
         val sortedMedia = grouped.filter { it is Medium }.toMutableList() as ArrayList<Medium>
-        thumbnail = sortedMedia.firstOrNull { it.path.isPCloudPath() || getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
+        thumbnail = sortedMedia.firstOrNull { it.path.isRemotePath() || getDoesFilePathExist(it.path, OTGPath) }?.path ?: ""
     }
 
     if (config.OTGPath.isNotEmpty() && thumbnail!!.startsWith(config.OTGPath)) {

@@ -7,10 +7,12 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Point
 import android.graphics.SurfaceTexture
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
@@ -74,12 +76,15 @@ import org.fossify.gallery.activities.VideoActivity
 import org.fossify.gallery.databinding.PagerVideoItemBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.extensions.getActionBarHeight
 import org.fossify.gallery.extensions.getBottomActionsHeight
 import org.fossify.gallery.extensions.getFormattedDuration
 import org.fossify.gallery.extensions.getFriendlyMessage
 import org.fossify.gallery.extensions.launchGesturePlayer
+import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.parseFileChannel
 import org.fossify.gallery.helpers.Config
 import org.fossify.gallery.helpers.EXOPLAYER_MAX_BUFFER_MS
@@ -88,6 +93,8 @@ import org.fossify.gallery.helpers.FAST_FORWARD_VIDEO_MS
 import org.fossify.gallery.helpers.MEDIUM
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.SHOULD_INIT_FRAGMENT
+import org.fossify.gallery.helpers.SmbDataSource
+import org.fossify.gallery.helpers.SmbMediaDataSource
 import org.fossify.gallery.interfaces.PlaybackSpeedListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.views.MediaSideScroll
@@ -299,8 +306,8 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         initTimeHolder()
         // checkIfPanorama() TODO: Implement panorama using a FOSS library
 
-        // a pCloud video has no file to read the size from, the player reports it once it plays
-        if (!mMedium.path.isPCloudPath()) {
+        // a remote video has no file to read the size from, the player reports it once it plays
+        if (!mMedium.path.isRemotePath()) {
             ensureBackgroundThread {
                 activity.getVideoResolution(mMedium.path)?.apply {
                     mVideoSize.x = x
@@ -487,10 +494,10 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         val shouldSkipInit = activity == null || usesGesturePlayer() || mIsPanorama || mExoPlayer != null
         if (shouldSkipInit) return
 
-        val mediaSource = if (mMedium.path.isPCloudPath()) {
-            createPCloudMediaSource() ?: return
-        } else {
-            createFileMediaSource() ?: return
+        val mediaSource = when {
+            mMedium.path.isPCloudPath() -> createPCloudMediaSource() ?: return
+            mMedium.path.isSmbPath() -> createSmbMediaSource()
+            else -> createFileMediaSource() ?: return
         }
 
         mPlayOnPrepared = true
@@ -574,6 +581,13 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(url))
     }
 
+    // A video on the share is read where the player asks for it, nothing is downloaded first
+    // and nothing has to be fetched before the player can start
+    private fun createSmbMediaSource(): MediaSource {
+        val factory = SmbDataSource.Factory(requireContext().applicationContext)
+        return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(SmbDataSource.toMediaUri(mMedium.path)))
+    }
+
     private fun fetchPCloudStreamUrl() {
         if (mIsFetchingPCloudStreamUrl) {
             return
@@ -605,8 +619,8 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         }
     }
 
-    // the separate gesture player wants a file, so a pCloud video plays in here whatever the setting says
-    private fun usesGesturePlayer() = mConfig.gestureVideoPlayer && !mMedium.path.isPCloudPath()
+    // the separate gesture player wants a file, so a remote video plays in here whatever the setting says
+    private fun usesGesturePlayer() = mConfig.gestureVideoPlayer && !mMedium.path.isRemotePath()
 
     private fun ExoPlayer.initListeners() {
         addListener(object : Player.Listener {
@@ -938,17 +952,67 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
 
     private fun setupVideoDuration() {
         ensureBackgroundThread {
-            mDuration = if (mMedium.path.isPCloudPath()) {
+            mDuration = when {
                 // the scanner keeps the duration pCloud reports, there is no file to ask
-                mMedium.videoDuration * 1000L
-            } else {
-                context?.getDuration(mMedium.path)?.times(1000L)?.coerceAtLeast(0L) ?: 0L
+                mMedium.path.isPCloudPath() -> mMedium.videoDuration * 1000L
+                mMedium.path.isSmbPath() -> smbDurationMs().also { rememberSmbDuration(it) }
+                else -> context?.getDuration(mMedium.path)?.times(1000L)?.coerceAtLeast(0L) ?: 0L
             }
 
             activity?.runOnUiThread {
                 setupTimeHolder()
                 setPosition(0)
             }
+        }
+    }
+
+    // Keeps the length this screen just read, so that the grid can show it without opening the
+    // file again. The scan cannot record it -- it walks a listing and never reads a byte of
+    // content, and asking the share for the length of all fourteen thousand videos on it would
+    // turn a walk of minutes into one of hours. Neither may the grid read it while drawing a
+    // thumbnail: that would put a file open behind every video that scrolls past, competing for
+    // the share with whatever is playing. A video whose length is not known yet shows none,
+    // rather than the "00:00" that a zero used to be drawn as
+    private fun rememberSmbDuration(durationMs: Long) {
+        val context = context ?: return
+        val seconds = Math.round(durationMs / 1000.0).toInt()
+        if (seconds <= 0 || seconds == mMedium.videoDuration) {
+            return
+        }
+
+        mMedium.videoDuration = seconds
+        try {
+            context.mediaDB.updateVideoDuration(mMedium.path, seconds)
+        } catch (e: Exception) {
+            // the video is playing either way; a length that could not be kept is not worth
+            // interrupting that for, only worth being able to find afterwards
+            Log.w("SmbVideo", "Could not keep the duration of ${mMedium.path}", e)
+        }
+    }
+
+    // A share tells nothing about a video's length, so it is read out of the file itself over
+    // the same random reads a thumbnail uses -- a few kilobytes, not the whole video. Blocks on
+    // the network, so it runs on the thread setupVideoDuration() already started
+    private fun smbDurationMs(): Long {
+        val context = context ?: return 0L
+        val retriever = MediaMetadataRetriever()
+        val source = try {
+            SmbMediaDataSource(context, mMedium.path)
+        } catch (e: Exception) {
+            Log.w("SmbVideo", "Could not open ${mMedium.path} to read its duration", e)
+            retriever.release()
+            return 0L
+        }
+
+        return try {
+            retriever.setDataSource(source)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            Log.w("SmbVideo", "Could not read the duration of ${mMedium.path}", e)
+            0L
+        } finally {
+            retriever.release()
+            source.close()
         }
     }
 

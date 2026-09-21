@@ -76,6 +76,9 @@ import org.fossify.gallery.extensions.getCachedMedia
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.rescanSmbFolders
+import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.getHumanizedFilename
 import org.fossify.gallery.extensions.isDownloadsFolder
@@ -97,7 +100,9 @@ import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
@@ -142,6 +147,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mShowLoadingIndicator = true
     private var mWasFullscreenViewOpen = false
     private var mDidRescanPCloudFolder = false
+    private var mDidRescanSmbFolder = false
     private var mLastSearchedText = ""
     private var mLatestMediaId = 0L
     private var mLatestMediaDateId = 0L
@@ -383,7 +389,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             findItem(R.id.about).isVisible = mShowAll
             findItem(R.id.create_new_folder).isVisible =
                 !mShowAll && mPath != RECYCLE_BIN && mPath != PCLOUD_RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
+                    // creating a folder on the share is not in yet, that is the write step
+                    && !mPath.isSmbPath()
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn
+            findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
             findItem(R.id.temporarily_show_hidden).isVisible = !config.shouldShowHidden
@@ -424,6 +433,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 R.id.group -> showGroupByDialog()
                 R.id.create_new_folder -> createNewFolder()
                 R.id.rescan_pcloud_folder -> rescanPCloudFolderManually()
+                R.id.rescan_smb_folder -> rescanSmbFolderManually()
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.temporarily_show_hidden -> tryToggleTemporarilyShowHidden()
                 R.id.stop_showing_hidden -> tryToggleTemporarilyShowHidden()
@@ -509,6 +519,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 PCLOUD_RECYCLE_BIN -> getString(R.string.pcloud_recycle_bin)
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
                 PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
+                SMB_PATH_SCHEME -> getString(R.string.smb)
                 else -> getHumanizedFilename(mPath)
             }
 
@@ -750,19 +761,24 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 }
                 startAsyncTask()
                 rescanPCloudFolderIfDue()
+                rescanSmbFolderIfDue()
             }
         }
 
         mLoadedInitialPhotos = true
     }
 
-    // a pull refreshes a pCloud folder from the network first; the cache is what the list is
+    // a pull refreshes a remote folder from its storage first; the cache is what the list is
     // read from either way
     private fun refreshMedia() {
-        if (mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn) {
-            rescanPCloudFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
-        } else {
-            getMedia()
+        when {
+            mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn ->
+                rescanPCloudFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+
+            mPath.isSmbPath() && config.isSmbConfigured ->
+                rescanSmbFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+
+            else -> getMedia()
         }
     }
 
@@ -789,6 +805,24 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // The same for a folder on the share. There is no per-folder throttle: nothing records when
+    // one folder was last walked, and a single listing is one request, so it is not worth a
+    // column of its own -- the whole-share interval is what holds the scans back
+    private fun rescanSmbFolderIfDue() {
+        if (mDidRescanSmbFolder || !mPath.isSmbPath() || !config.isSmbConfigured || !SmbSyncPolicy(this).rescanOnFolderOpen) {
+            return
+        }
+
+        mDidRescanSmbFolder = true
+        rescanSmbFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+    }
+
+    private fun rescanSmbFolderManually() {
+        toast(R.string.smb_rescanning)
+        binding.mediaRefreshLayout.isRefreshing = true
+        rescanSmbFolders(listOf(mPath), reportCounts = true) { runOnUiThread { getMedia() } }
+    }
+
     private fun startAsyncTask() {
         mCurrAsyncTask?.stopFetching()
         mCurrAsyncTask = GetMediaAsynctask(
@@ -811,7 +845,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                         .filter { !newPaths.contains(it.path) }
                         .forEach {
                             // a pCloud favorite that dropped out of the list was unfavorited, its cache row stays
-                            if (mPath == FAVORITES && (it.path.isPCloudPath() || getDoesFilePathExist(it.path))) {
+                            if (mPath == FAVORITES && (it.path.isRemotePath() || getDoesFilePathExist(it.path))) {
                                 favoritesDB.deleteFavoritePath(it.path)
                                 mediaDB.updateFavorite(it.path, false)
                             } else {
@@ -1100,8 +1134,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 return
             }
 
-            // a pCloud video is streamed inside the app only, the other players want a file
-            if (path.isPCloudPath()) {
+            // a remote video is streamed inside the app only, the other players want a file
+            if (path.isRemotePath()) {
                 openInViewPager(path)
                 return
             }

@@ -1089,7 +1089,12 @@ class MediaAdapter(
             mediumName.text = medium.name
             mediumName.tag = medium.path
 
-            val showVideoDuration = medium.isVideo() && config.showThumbnailVideoDuration
+            // A video on a remote storage is scanned from a directory listing alone, so nothing
+            // is known about how long it is until something opens the file -- the grid asking
+            // for a thumbnail frame is what first does, and it writes the length back. Until
+            // then the length is zero, which is not a length any video has: it means "not known
+            // yet", and "00:00" is the one thing it must not be shown as
+            val showVideoDuration = medium.isVideo() && config.showThumbnailVideoDuration && medium.videoDuration > 0
             if (showVideoDuration) {
                 videoDuration?.text = medium.videoDuration.getFormattedDuration()
             }

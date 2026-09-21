@@ -346,6 +346,87 @@ class Config(context: Context) : BaseConfig(context) {
             .apply()
     }
 
+    // The SMB share the gallery browses, typed in by hand: there is no discovery of hosts yet.
+    // Only one share is configured at a time, its name being the first segment of every
+    // "smb:" pseudo path, so a second one can be added later without moving the paths
+    var smbHost: String
+        get() = prefs.getString(SMB_HOST, "")!!
+        set(smbHost) = prefs.edit().putString(SMB_HOST, smbHost).apply()
+
+    var smbPort: Int
+        get() = prefs.getInt(SMB_PORT, SMB_DEFAULT_PORT)
+        set(smbPort) = prefs.edit().putInt(SMB_PORT, smbPort).apply()
+
+    var smbShare: String
+        get() = prefs.getString(SMB_SHARE, "")!!
+        set(smbShare) = prefs.edit().putString(SMB_SHARE, smbShare).apply()
+
+    // the folder inside the share that "smb:/" stands for, without surrounding separators
+    var smbRootPath: String
+        get() = prefs.getString(SMB_ROOT_PATH, "")!!
+        set(smbRootPath) = prefs.edit().putString(SMB_ROOT_PATH, smbRootPath.trim('/', '\\')).apply()
+
+    var smbUser: String
+        get() = prefs.getString(SMB_USER, "")!!
+        set(smbUser) = prefs.edit().putString(SMB_USER, smbUser).apply()
+
+    var smbPassword: String
+        get() = prefs.getString(SMB_PASSWORD, "")!!
+        set(smbPassword) = prefs.edit().putString(SMB_PASSWORD, smbPassword).apply()
+
+    var smbDomain: String
+        get() = prefs.getString(SMB_DOMAIN, "")!!
+        set(smbDomain) = prefs.edit().putString(SMB_DOMAIN, smbDomain).apply()
+
+    // a host and a share are all that is needed; a guest share wants no user name
+    val isSmbConfigured: Boolean
+        get() = smbHost.isNotEmpty() && smbShare.isNotEmpty()
+
+    fun clearSmbShare() {
+        prefs.edit()
+            .remove(SMB_HOST)
+            .remove(SMB_PORT)
+            .remove(SMB_SHARE)
+            .remove(SMB_ROOT_PATH)
+            .remove(SMB_USER)
+            .remove(SMB_PASSWORD)
+            .remove(SMB_DOMAIN)
+            .remove(SMB_LAST_FULL_SCAN_AT)
+            .apply()
+    }
+
+    var smbRescanOnLaunch: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_LAUNCH, true)
+        set(smbRescanOnLaunch) = prefs.edit().putBoolean(SMB_RESCAN_ON_LAUNCH, smbRescanOnLaunch).apply()
+
+    var smbRescanOnStorageSwitch: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_STORAGE_SWITCH, false)
+        set(smbRescanOnStorageSwitch) = prefs.edit().putBoolean(SMB_RESCAN_ON_STORAGE_SWITCH, smbRescanOnStorageSwitch).apply()
+
+    var smbRescanOnFolderOpen: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_FOLDER_OPEN, true)
+        set(smbRescanOnFolderOpen) = prefs.edit().putBoolean(SMB_RESCAN_ON_FOLDER_OPEN, smbRescanOnFolderOpen).apply()
+
+    // Off by default, unlike the rest. Walking the whole share takes minutes, and a pull is the
+    // easiest gesture in the app to make by accident -- the folder list is scrolled with the
+    // same finger. Whoever wants the share walked has the menu item for it
+    var smbRescanOnPullToRefresh: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, false)
+        set(smbRescanOnPullToRefresh) = prefs.edit().putBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, smbRescanOnPullToRefresh).apply()
+
+    // a share lives on the local network, so a metered connection is never the one it is on
+    var smbRescanOnUnmeteredOnly: Boolean
+        get() = prefs.getBoolean(SMB_RESCAN_ON_UNMETERED_ONLY, true)
+        set(smbRescanOnUnmeteredOnly) = prefs.edit().putBoolean(SMB_RESCAN_ON_UNMETERED_ONLY, smbRescanOnUnmeteredOnly).apply()
+
+    var smbRescanIntervalMinutes: Int
+        get() = prefs.getInt(SMB_RESCAN_INTERVAL_MINUTES, 0)
+        set(smbRescanIntervalMinutes) = prefs.edit().putInt(SMB_RESCAN_INTERVAL_MINUTES, smbRescanIntervalMinutes).apply()
+
+    var smbLastFullScanAt: Long
+        get() = prefs.getLong(SMB_LAST_FULL_SCAN_AT, 0L)
+        set(smbLastFullScanAt) = prefs.edit().putLong(SMB_LAST_FULL_SCAN_AT, smbLastFullScanAt).apply()
+
     var dirColumnCnt: Int
         get() = prefs.getInt(getDirectoryColumnsField(), getDefaultDirectoryColumnCount())
         set(dirColumnCnt) = prefs.edit().putInt(getDirectoryColumnsField(), dirColumnCnt).apply()

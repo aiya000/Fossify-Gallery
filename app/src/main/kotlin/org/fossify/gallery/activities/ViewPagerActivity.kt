@@ -116,6 +116,7 @@ import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
@@ -568,7 +569,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             return
         }
 
-        if (!mPath.isPCloudPath() && !getDoesFilePathExist(mPath) && getPortraitPath() == "") {
+        // a medium on a remote storage is fetched when it is shown; there is no file here to
+        // find beforehand, and asking closes the viewer on every one of them
+        if (!mPath.isRemotePath() && !getDoesFilePathExist(mPath) && getPortraitPath() == "") {
             finish()
             return
         }

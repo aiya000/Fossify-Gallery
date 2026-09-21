@@ -37,6 +37,8 @@ Build the `foss` flavor debug APK.
 ## Notes
 
 - The debug build uses the application id `io.github.aiya000.fossify.gallery.debug`, so it coexists with a release build or the official app
-- Do not install automatically. Installing is the `debug-install` skill, run it only when the user asks
+- **Installing the debug build needs no permission.** It is a separate app from the release one and cannot touch its
+  data, so go straight on to the `debug-install` skill whenever the change is one the user will want to try on the
+  device. Asking first only makes them wait. The release build is the opposite -- see `release-install`
 - If the user's machine was restarted or the session was resumed, a background build may have been killed silently:
   check the log and the APK timestamp before trusting an earlier build

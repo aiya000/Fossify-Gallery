@@ -41,4 +41,10 @@ interface DirectoryDao {
 
     @Query("SELECT thumbnail FROM directories WHERE path = :path")
     fun getDirectoryThumbnail(path: String): String?
+
+    // the row id of a folder already in the cache. A rescan that re-inserts a folder without it
+    // gets a fresh id, and the folder list falls back to id order wherever the sorting leaves
+    // two folders equal -- so the folder would move to the end of the list for having been looked at
+    @Query("SELECT id FROM directories WHERE path = :path COLLATE NOCASE")
+    fun getDirectoryId(path: String): Long?
 }
