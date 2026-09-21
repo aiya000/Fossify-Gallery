@@ -623,7 +623,7 @@ class MediaFetcher(val context: Context) {
 
     // the cached folders of the remote storages, for "show all" when the storage filter lets one
     // through. They join the local folders and are read from the cache like any other remote
-    // folder; a pCloud folder hidden in this app stays out like a .nomedia one does, unless
+    // folder; a remote folder hidden in this app stays out like a .nomedia one does, unless
     // hidden ones are shown
     fun getRemoteFoldersToShow(): List<String> {
         val config = context.config
@@ -637,7 +637,9 @@ class MediaFetcher(val context: Context) {
         }
 
         if (config.isSmbConfigured && (filter == STORAGE_FILTER_SMB || filter == STORAGE_FILTER_ALL)) {
-            folders.addAll(context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME))
+            folders.addAll(
+                context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { showHidden || !context.isSmbFolderHidden(it) }
+            )
         }
 
         return folders

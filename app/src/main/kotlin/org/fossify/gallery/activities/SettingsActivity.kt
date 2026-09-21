@@ -1320,9 +1320,10 @@ class SettingsActivity : SimpleActivity() {
                 put(USE_24_HOUR_FORMAT, config.use24HourFormat)
                 put(INCLUDED_FOLDERS, TextUtils.join(",", config.includedFolders))
                 put(EXCLUDED_FOLDERS, TextUtils.join(",", config.excludedFolders))
-                // a pCloud folder name may hold a comma, which would split it on import, so this
-                // list goes out as a JSON array rather than comma-joined like the two above
+                // a remote folder name may hold a comma, which would split it on import, so these
+                // lists go out as JSON arrays rather than comma-joined like the two above
                 put(PCLOUD_HIDDEN_FOLDERS, Gson().toJson(config.pCloudHiddenFolders.sorted()))
+                put(SMB_HIDDEN_FOLDERS, Gson().toJson(config.smbHiddenFolders.sorted()))
                 put(SHOW_HIDDEN_MEDIA, config.showHiddenMedia)
                 put(FILE_LOADING_PRIORITY, config.fileLoadingPriority)
                 put(AUTOPLAY_VIDEOS, config.autoplayVideos)
@@ -1475,10 +1476,10 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
-    // the hidden pCloud folders are written as a JSON array, an export from before that was
+    // the hidden remote folders are written as a JSON array, an export from before that was
     // comma-joined and is still read that way; a folder name with a comma in it came out of the
     // old form as two broken entries
-    private fun parseExportedPCloudHiddenFolders(value: String): Collection<String> {
+    private fun parseExportedHiddenFolders(value: String): Collection<String> {
         if (!value.trimStart().startsWith("[")) {
             return value.toStringSet()
         }
@@ -1531,7 +1532,8 @@ class SettingsActivity : SimpleActivity() {
                 USE_24_HOUR_FORMAT -> config.use24HourFormat = value.toBoolean()
                 INCLUDED_FOLDERS -> config.addIncludedFolders(value.toStringSet())
                 EXCLUDED_FOLDERS -> config.addExcludedFolders(value.toStringSet())
-                PCLOUD_HIDDEN_FOLDERS -> config.addPCloudHiddenFolders(parseExportedPCloudHiddenFolders(value.toString()))
+                PCLOUD_HIDDEN_FOLDERS -> config.addPCloudHiddenFolders(parseExportedHiddenFolders(value.toString()))
+                SMB_HIDDEN_FOLDERS -> config.addSmbHiddenFolders(parseExportedHiddenFolders(value.toString()))
                 SHOW_HIDDEN_MEDIA -> config.showHiddenMedia = value.toBoolean()
                 FILE_LOADING_PRIORITY -> config.fileLoadingPriority = value.toInt()
                 AUTOPLAY_VIDEOS -> config.autoplayVideos = value.toBoolean()

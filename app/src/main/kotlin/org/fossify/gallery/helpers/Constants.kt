@@ -232,6 +232,9 @@ const val SMB_RESCAN_ON_PULL_TO_REFRESH = "smb_rescan_on_pull_to_refresh"
 const val SMB_RESCAN_ON_UNMETERED_ONLY = "smb_rescan_on_unmetered_only"
 const val SMB_RESCAN_INTERVAL_MINUTES = "smb_rescan_interval_minutes"
 const val SMB_LAST_FULL_SCAN_AT = "smb_last_full_scan_at"
+// share folders hidden in this app, see Config.smbHiddenFolders
+const val SMB_HIDDEN_FOLDERS = "smb_hidden_folders"
+const val WAS_SMB_HIDE_FOLDER_TOOLTIP_SHOWN = "was_smb_hide_folder_tooltip_shown"
 
 // the default SMB port; 139 is the NetBIOS one, offered for an old server
 const val SMB_DEFAULT_PORT = 445
