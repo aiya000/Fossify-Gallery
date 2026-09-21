@@ -166,6 +166,10 @@
     <string name="smb_download_done">\'%1$s\' を読み込みました。</string>
     <string name="smb_download_done_many">%1$d 本の動画を読み込みました。</string>
     <string name="smb_download_done_with_failed">%1$d 本の動画を読み込みました。%2$d 本は読み込めませんでした。</string>
+    <string name="smb_download_videos_of_selection">この中の動画を読み込んで再生する</string>
+    <string name="smb_download_videos_none_found">選択した中に、共有の動画はありませんでした。</string>
+    <string name="smb_download_done_play">%1$d 本の動画を読み込みました。タップで再生します。</string>
+    <string name="smb_download_done_with_failed_play">%1$d 本の動画を読み込みました。%2$d 本は読み込めませんでした。タップで再生します。</string>
     <string name="smb_download_failed">ネットワーク共有から動画を読み込めませんでした。</string>
     <string name="smb_download_busy">ほかの動画を読み込んでいます。終わるまで待つか、通知から中止してください。</string>
     <string name="smb_download_already">この動画は読み込み済みで、端末から再生しています。</string>

@@ -168,6 +168,7 @@ import org.fossify.gallery.helpers.HIDE_SYSTEM_UI_DELAY
 import org.fossify.gallery.helpers.IS_VIEW_INTENT
 import org.fossify.gallery.helpers.MAX_PRINT_SIDE_SIZE
 import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.QUEUE_PATHS
 import org.fossify.gallery.helpers.PORTRAIT_PATH
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCloudWriter
@@ -232,6 +233,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     // selection toggle in the toolbar hangs off
     private var mSelectedPaths: ArrayList<String>? = null
 
+    // The media to show, in the order to show them, when the viewer was opened on a queue of
+    // downloaded videos rather than on a folder. The queue can cross folders, so the swipe
+    // follows it and the folder is not listed at all; see QUEUE_PATHS
+    private var mQueuePaths: ArrayList<String>? = null
+
     private var mFavoritePaths = ArrayList<String>()
     private var mIgnoredPaths = ArrayList<String>()
     private var mOriginalBrightness: Float? = null
@@ -258,7 +264,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         refreshMenuItems()
 
         window.decorView.setBackgroundColor(getProperBackgroundColor())
-        (MediaActivity.mMedia.clone() as ArrayList<ThumbnailItem>).filterIsInstanceTo(mMediaFiles, Medium::class.java)
+        // A queue of downloaded videos brings its own list and its own order, which can cross
+        // folders; what the grid was last showing has nothing to do with it
+        mQueuePaths = intent.getStringArrayListExtra(QUEUE_PATHS)?.takeIf { it.isNotEmpty() }
+        if (mQueuePaths == null) {
+            (MediaActivity.mMedia.clone() as ArrayList<ThumbnailItem>).filterIsInstanceTo(mMediaFiles, Medium::class.java)
+        }
 
         requestMediaPermissions {
             initViewPager(
@@ -1632,11 +1643,32 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun refreshViewPager(refetchPosition: Boolean = false) {
+        // a queue is its own list in its own order. Listing the folder the first video happens
+        // to sit in would throw the rest of the queue away
+        val queuePaths = mQueuePaths
+        if (queuePaths != null) {
+            loadQueue(queuePaths, refetchPosition)
+            return
+        }
+
         val isRandomSorting = config.getFolderSorting(mDirectory) and SORT_BY_RANDOM != 0
         if (!isRandomSorting || isExternalIntent()) {
             GetMediaAsynctask(applicationContext, mDirectory, isPickImage = false, isPickVideo = false, showAll = mShowAll) {
                 gotMedia(it, refetchViewPagerPosition = refetchPosition)
             }.execute()
+        }
+    }
+
+    // The rows behind a queue's paths, kept in the queue's order rather than the database's. A
+    // path whose row has gone is dropped, which is the same thing the folder listing would do
+    private fun loadQueue(queuePaths: List<String>, refetchPosition: Boolean) {
+        ensureBackgroundThread {
+            val media = queuePaths.mapNotNull { mediaDB.getMediumByPath(it) }
+            runOnUiThread {
+                if (!isDestroyed && media.isNotEmpty()) {
+                    gotMedia(ArrayList<ThumbnailItem>(media), ignorePlayingVideos = true, refetchViewPagerPosition = refetchPosition)
+                }
+            }
         }
     }
 

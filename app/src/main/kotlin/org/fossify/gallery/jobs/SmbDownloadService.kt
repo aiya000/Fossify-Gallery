@@ -19,6 +19,9 @@ import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isQPlus
 import org.fossify.gallery.R
+import org.fossify.gallery.activities.ViewPagerActivity
+import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.QUEUE_PATHS
 import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbVideoCache
 import java.io.File
@@ -42,6 +45,10 @@ class SmbDownloadService : Service() {
         private const val PROGRESS_NOTIFICATION_ID = 7007
         private const val RESULT_NOTIFICATION_ID = 7008
         private const val EXTRA_PATHS = "paths"
+
+        // the videos to watch afterwards, which is not the same list: one already on the device
+        // is not fetched again, but it is still part of what was asked for
+        private const val EXTRA_PLAYLIST = "playlist"
 
         // the notification's stop action comes back in as this
         private const val ACTION_ABORT = "org.fossify.gallery.ABORT_SMB_DOWNLOAD"
@@ -69,12 +76,14 @@ class SmbDownloadService : Service() {
         //
         // The order of the list is the order they are fetched in, and the caller decides it --
         // from the grid that is the order the user tapped them in
-        fun start(context: Context, paths: List<String>): Boolean {
+        fun start(context: Context, paths: List<String>, playlist: List<String> = emptyList()): Boolean {
             if (isWorking.get()) {
                 return false
             }
 
-            val intent = Intent(context, SmbDownloadService::class.java).putStringArrayListExtra(EXTRA_PATHS, ArrayList(paths))
+            val intent = Intent(context, SmbDownloadService::class.java)
+                .putStringArrayListExtra(EXTRA_PATHS, ArrayList(paths))
+                .putStringArrayListExtra(EXTRA_PLAYLIST, ArrayList(playlist))
             ContextCompat.startForegroundService(context, intent)
             return true
         }
@@ -102,6 +111,7 @@ class SmbDownloadService : Service() {
     }
 
     private var lastProgressAt = 0L
+    private var playlist: List<String> = emptyList()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -126,6 +136,7 @@ class SmbDownloadService : Service() {
             return START_NOT_STICKY
         }
 
+        playlist = intent?.getStringArrayListExtra(EXTRA_PLAYLIST).orEmpty()
         isAborted.set(false)
         ensureBackgroundThread {
             work(paths)
@@ -196,6 +207,10 @@ class SmbDownloadService : Service() {
 
     private fun resultText(done: Int, failed: Int, paths: List<String>): String = when {
         done == 0 -> getString(R.string.smb_download_failed)
+        // a run started from a folder or a group has somewhere to go afterwards, and the
+        // notification is what takes the user there
+        playlist.isNotEmpty() && failed > 0 -> getString(R.string.smb_download_done_with_failed_play, done, failed)
+        playlist.isNotEmpty() -> getString(R.string.smb_download_done_play, done)
         // the single video the viewer's menu asks for is worth naming; a selection is not
         done == 1 && paths.size == 1 -> getString(R.string.smb_download_done, paths.first().substringAfterLast('/'))
         failed > 0 -> getString(R.string.smb_download_done_with_failed, done, failed)
@@ -307,8 +322,32 @@ class SmbDownloadService : Service() {
             .setSmallIcon(R.drawable.ic_storage_vector)
             .setContentTitle(text)
             .setAutoCancel(true)
+            .setContentIntent(playlistIntent())
             .build()
         getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
+    }
+
+    // What "then play them" hangs off. The screen is never taken over on its own -- a run of
+    // minutes ends whenever it ends, and by then the user may be somewhere else entirely -- so
+    // the finished notification is what opens the viewer, on the whole list and in its order
+    private fun playlistIntent(): PendingIntent? {
+        if (playlist.isEmpty()) {
+            return null
+        }
+
+        val intent = Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(PATH, playlist.first())
+            putStringArrayListExtra(QUEUE_PATHS, ArrayList(playlist))
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        return PendingIntent.getActivity(
+            this,
+            1,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun buildNotification(text: String, filename: String?, done: Long = 0, total: Long = 0): Notification {

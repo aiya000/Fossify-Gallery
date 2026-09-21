@@ -110,6 +110,11 @@ const val CUSTOM_MEDIA_ORDER_SEPARATOR = "|||"
 // the paths selected in the media grid, handed to the fullscreen view and back again
 const val SELECTED_PATHS = "selected_paths"
 
+// The media the fullscreen view is to show, in the order it is to show them, instead of the
+// folder it would otherwise list. A queue of downloaded videos crosses folders, and the swipe
+// has to follow the queue rather than whichever folder the first video happens to sit in
+const val QUEUE_PATHS = "queue_paths"
+
 // not a sorting criterion of its own, it is combined with SORT_BY_DATE_TAKEN or
 // SORT_BY_DATE_MODIFIED. The commons SORT_BY_* flags end at SORT_BY_COUNT (524288)
 const val SORT_GROUP_BY_FILENAME = 1048576
