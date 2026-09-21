@@ -114,8 +114,10 @@ import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
+import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
 import org.fossify.gallery.extensions.effectiveStorageFilter
@@ -824,32 +826,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // The storages the folder list can be switched between, in the order the menu lists them and
     // a sideways swipe walks them. A storage that is not set up is not one of them, and with
     // only the device there is nothing to switch to, so "all storages" is left out as well
-    private fun availableStorages(): List<Int> {
-        val storages = arrayListOf(STORAGE_FILTER_LOCAL)
-        if (config.isPCloudLoggedIn) {
-            storages.add(STORAGE_FILTER_PCLOUD)
-        }
-
-        if (config.isSmbConfigured) {
-            storages.add(STORAGE_FILTER_SMB)
-        }
-
-        if (storages.size > 1) {
-            storages.add(STORAGE_FILTER_ALL)
-        }
-
-        return storages
-    }
-
-    private fun storageLabel(storageFilter: Int) = getString(
-        when (storageFilter) {
-            STORAGE_FILTER_PCLOUD -> R.string.pcloud
-            STORAGE_FILTER_SMB -> R.string.smb
-            STORAGE_FILTER_ALL -> R.string.storage_all
-            else -> R.string.storage_local
-        }
-    )
-
     private fun switchStorage(newFilter: Int) {
         if (newFilter == config.storageFilter) {
             return

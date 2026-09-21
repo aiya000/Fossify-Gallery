@@ -153,6 +153,7 @@
     <string name="smb_read_durations_done">Read the length of %1$d videos.</string>
     <string name="smb_read_durations_done_with_failed">Read the length of %1$d videos. %2$d could not be read.</string>
     <string name="smb_read_durations_failed">Could not read the lengths of the videos.</string>
+    <string name="smb_no_write_destination">Writing to the network share is not supported yet, so a folder on it cannot be a destination.</string>
     <string name="shared_media_none">No images or videos were shared</string>
     <string name="shared_media_unreadable">The shared images and videos could not be read</string>
     <string name="shared_media_preparing">Preparing the shared media…</string>

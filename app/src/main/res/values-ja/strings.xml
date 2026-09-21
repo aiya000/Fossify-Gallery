@@ -155,6 +155,7 @@
     <string name="smb_read_durations_done">%1$d 本の動画の長さを取得しました。</string>
     <string name="smb_read_durations_done_with_failed">%1$d 本の動画の長さを取得しました。%2$d 本は読み取れませんでした。</string>
     <string name="smb_read_durations_failed">動画の長さを取得できませんでした。</string>
+    <string name="smb_no_write_destination">ネットワーク共有への書き込みにはまだ対応していないため、共有のフォルダは移動先に選べません。</string>
     <string name="restore_to_path">\'%s\' に復元しています</string>
     <string name="filter_media">表示する形式</string>
     <string name="images">画像</string>

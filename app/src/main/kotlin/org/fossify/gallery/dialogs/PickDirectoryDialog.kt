@@ -38,17 +38,22 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.DirectoryAdapter
 import org.fossify.gallery.databinding.DialogDirectoryPickerBinding
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
+import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.effectiveStorageFilter
 import org.fossify.gallery.extensions.getCachedDirectories
 import org.fossify.gallery.extensions.getDirsToShow
 import org.fossify.gallery.extensions.getDistinctPath
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
+import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
 
@@ -60,8 +65,8 @@ import org.fossify.gallery.views.StorageChips
  * [excludedGroupIds], and their subgroups, are not offered. Set [allowFolderDestination] to false to
  * accept only groups.
  *
- * [localDestinationOnly] leaves pCloud out of the list and out of the "Other folder" picker, for a
- * caller that can only write to the device. [onCancelled] tells a caller that nothing was picked,
+ * [localDestinationOnly] leaves the remote storages out of the list and out of the "Other folder"
+ * picker, for a caller that can only write to the device. [onCancelled] tells a caller that nothing was picked,
  * so that a screen standing on this dialog alone can close itself.
  */
 class PickDirectoryDialog(
@@ -96,15 +101,18 @@ class PickDirectoryDialog(
     private val isPickingGroup = groupCallback != null
     private val showGroups = isPickingGroup || navigateGroups
 
-    // A copy or move destination can be on either storage, so the list starts out showing
-    // the storage the folder list is on and can be switched from a row of chips; the
+    // A copy or move destination can be on any storage that is set up, so the list starts out
+    // showing the one the folder list is on and can be switched from a row of chips; the
     // choice lives for this dialog only. Without the chips every folder passes, unless the
     // caller takes the device only: then the list is narrowed with no chips to switch it
-    private val showStorageChips = isPickingCopyMoveDestination && config.isPCloudLoggedIn && !localDestinationOnly
+    private val storages = activity.availableStorages()
+    private val showStorageChips = isPickingCopyMoveDestination && !localDestinationOnly && storages.size > 1
     private val narrowsStorage = showStorageChips || localDestinationOnly
     private var storageFilter = when {
         localDestinationOnly -> STORAGE_FILTER_LOCAL
-        showStorageChips -> config.storageFilter
+        // the folder list's own filter, read the way the list reads it: a filter pointing at a
+        // storage that is no longer set up would leave no chip selected and narrow to nothing
+        showStorageChips -> activity.effectiveStorageFilter()
         else -> STORAGE_FILTER_ALL
     }
 
@@ -286,11 +294,7 @@ class PickDirectoryDialog(
             return@with
         }
 
-        val chips = listOf(
-            StorageChips.Chip(STORAGE_FILTER_LOCAL, activity.getString(R.string.storage_local)),
-            StorageChips.Chip(STORAGE_FILTER_PCLOUD, activity.getString(R.string.pcloud)),
-            StorageChips.Chip(STORAGE_FILTER_ALL, activity.getString(R.string.storage_local_and_pcloud))
-        )
+        val chips = storages.map { StorageChips.Chip(it, activity.storageLabel(it)) }
         setChips(chips, storageFilter)
         onChipClicked = { tag ->
             storageFilter = tag as Int
@@ -306,10 +310,12 @@ class PickDirectoryDialog(
     // favorites, the recycle bin and groups belong to no storage and always pass, like they
     // do for the folder list's own storage filter
     private fun isShownByStorageChips(directory: Directory): Boolean {
+        val path = directory.path
         return when {
             !narrowsStorage || directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
-            storageFilter == STORAGE_FILTER_PCLOUD -> directory.path.isPCloudPath()
-            storageFilter == STORAGE_FILTER_LOCAL -> !directory.path.isPCloudPath()
+            storageFilter == STORAGE_FILTER_PCLOUD -> path.isPCloudPath()
+            storageFilter == STORAGE_FILTER_SMB -> path.isSmbPath()
+            storageFilter == STORAGE_FILTER_LOCAL -> !path.isPCloudPath() && !path.isSmbPath()
             else -> true
         }
     }
@@ -322,7 +328,11 @@ class PickDirectoryDialog(
         return when {
             !narrowsStorage -> null
             storageFilter == STORAGE_FILTER_PCLOUD -> { path -> path.isPCloudPath() }
-            storageFilter == STORAGE_FILTER_LOCAL -> { path -> !path.isPCloudPath() }
+            storageFilter == STORAGE_FILTER_LOCAL -> { path -> !path.isPCloudPath() && !path.isSmbPath() }
+            // The share narrows the folders but not the groups. No group holds a folder of the
+            // share yet -- there was no way to put one in until now -- so narrowing by it would
+            // hide every group there is, and the one thing this chip is for is putting a folder
+            // of the share into a group
             else -> null
         }
     }
@@ -550,6 +560,11 @@ class PickDirectoryDialog(
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
+                    return@DirectoryAdapter
+                } else if (isPickingCopyMoveDestination && path.isSmbPath()) {
+                    // the share is read-only so far, see #28. A folder on it can be walked into
+                    // and put in a group, but nothing can be written into it
+                    activity.toast(R.string.smb_no_write_destination, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
                     activity.toast(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)
