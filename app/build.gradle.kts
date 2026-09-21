@@ -98,6 +98,16 @@ android {
 
     sourceSets {
         getByName("main").java.directories.add("src/main/kotlin")
+        getByName("test").java.directories.add("src/test/kotlin")
+    }
+
+    testOptions {
+        unitTests {
+            // the unit tests run against the android.jar stubs, whose methods throw unless this
+            // is set. The logic under test does not care what android.util.Log answers, and a
+            // test that needs a real Context does not belong in this source set anyway
+            isReturnDefaultValues = true
+        }
     }
 
     compileOptions {
@@ -186,10 +196,23 @@ dependencies {
     // is not written for
     implementation(libs.smbj)
 
+    // the tests that need no device, see #79. Plain JUnit on purpose: everything worth pinning
+    // here is logic that was made free of Context first
+    testImplementation(libs.junit)
+
     ksp(libs.glide.compiler)
     implementation(libs.zjupure.webpdecoder)
 
     implementation(libs.bundles.room)
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
+}
+
+// StringFormatArgumentsTest reads the string XML at run time rather than through the classpath,
+// and gradle cannot see that from the test's inputs: without this the task stays up to date when
+// a string changes, so the run after a bad translation passes without having run anything
+tasks.withType<Test>().configureEach {
+    inputs.dir(layout.projectDirectory.dir("src/main/res"))
+        .withPropertyName("resources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
