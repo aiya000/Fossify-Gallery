@@ -8,7 +8,7 @@
 # the device can say whether a file arrives.
 #
 # The other half of the rule is what must NOT be offered. Copying off the share reads it; moving
-# would have to delete from it, and the share is still read-only. So the absence of "Move to" is
+# would have to delete from it, and nothing deletes on the share yet. So the absence of "Move to" is
 # checked in the same breath as the presence of "Copy to" -- a menu that quietly grows the wrong
 # item back is exactly the kind of regression nobody notices until a file is gone.
 set -euo pipefail
@@ -116,11 +116,11 @@ else
     finish
 fi
 
-# the share is read-only: a move would have to delete the original off it
+# a move would have to delete the original off the share, and nothing deletes on it yet
 if python3 "$DRIVE_DIR/ui.py" "$menu" --text "Move to" --exact > /dev/null; then
     fail "'Move to' is offered, and it would have to delete from the share"
 else
-    pass "'Move to' is kept away, the share cannot be written to yet"
+    pass "'Move to' is kept away, nothing deletes on the share yet"
 fi
 
 step "copying it to the device"
