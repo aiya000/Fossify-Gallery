@@ -196,6 +196,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // what the recheck of the displayed folders reports a remote storage's losses under
         private const val TAG_REMOTE_FOLDERS = "RemoteFolders"
 
+        // how often the recheck may build the folder list again while it runs. Long enough that
+        // a thousand folders cost a handful of rebuilds rather than a thousand, short enough
+        // that the list still visibly fills in
+        private const val RECHECK_REDRAW_INTERVAL = 500L
+
         // a sideways drag of the folder list goes through past this share of the width
         private const val STORAGE_SWIPE_COMMIT_FRACTION = 5f
         private const val STORAGE_SWIPE_OUT_MILLIS = 150L
@@ -1675,6 +1680,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             getProperDateTaken = true,
             dateTakens = dateTakens
         )
+        var lastRedrawAt = 0L
+        var isRedrawPending = false
         try {
             for (directory in dirs) {
                 if (mShouldStopFetching || isDestroyed || isFinishing) {
@@ -1751,7 +1758,22 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     sortValue = getDirectorySortingValue(curMedia, path, name, size, mediaCnt)
                 }
 
-                setupAdapter(dirs)
+                // The list is built again as the recheck finds a folder that changed, so that the
+                // covers and counts fill in while it runs -- but not once per folder. Changing
+                // the sorting leaves every folder differing from the row it was stored as, since
+                // sortValue is computed under whichever sorting was in force, so a share of a
+                // thousand folders would rebuild the list a thousand times over. Nothing is
+                // dropped by the system for it and no frame is reported late, which is why this
+                // does not look like slowness: it is the list being replaced under the finger,
+                // and a tap landing on a row that is gone before it registers
+                val now = System.currentTimeMillis()
+                if (now - lastRedrawAt >= RECHECK_REDRAW_INTERVAL) {
+                    lastRedrawAt = now
+                    isRedrawPending = false
+                    setupAdapter(dirs)
+                } else {
+                    isRedrawPending = true
+                }
 
                 // update directories and media files in the local db, delete invalid items. Intentionally creating a new thread
                 updateDBDirectory(directory)
@@ -1779,6 +1801,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                         mediaDB.deleteMedia(*mediaToDelete.toTypedArray())
                     }
                 }
+            }
+
+            // whatever the throttle above held back, now that there is no next folder to fold it into
+            if (isRedrawPending) {
+                isRedrawPending = false
+                setupAdapter(dirs)
             }
 
             if (dirPathsToRemove.isNotEmpty()) {
