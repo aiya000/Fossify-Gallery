@@ -48,6 +48,7 @@ import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
+import org.fossify.gallery.helpers.PCLOUD_RESIZE_DIR
 import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -140,11 +141,7 @@ fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -
     toast(R.string.pcloud_fetching)
     ensureBackgroundThread {
         val copy = try {
-            val cached = PCloudFileCache(this).fetch(path)
-            val editDir = File(cacheDir, PCLOUD_EDIT_DIR)
-            editDir.deleteRecursively()
-            editDir.mkdirs()
-            File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }
+            fetchPCloudMediumForEditing(path)
         } catch (e: Exception) {
             Log.w("PCloudFetch", "Could not fetch $path for editing", e)
             toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
@@ -152,9 +149,19 @@ fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -
         }
 
         runOnUiThread {
-            callback(copy.absolutePath)
+            callback(copy)
         }
     }
+}
+
+// The copy itself, for a caller that is already off the main thread and wants to wait for it.
+// Talks to the network and throws what goes wrong
+fun Activity.fetchPCloudMediumForEditing(path: String): String {
+    val cached = PCloudFileCache(this).fetch(path)
+    val editDir = File(cacheDir, PCLOUD_EDIT_DIR)
+    editDir.deleteRecursively()
+    editDir.mkdirs()
+    return File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }.absolutePath
 }
 
 // Talks to the network, so it belongs off the main thread
@@ -1068,33 +1075,96 @@ fun BaseSimpleActivity.launchResizeMultipleImagesDialog(paths: List<String>, cal
     }
 }
 
+// Resizing reads real pixels, so a pCloud image is fetched first and the dialog works on the
+// copy while it still names the medium where it lives. The destination is either storage: the
+// picker offers pCloud too, so a resized image can stay on pCloud or come down to the device
 fun BaseSimpleActivity.launchResizeImageDialog(path: String, callback: (() -> Unit)? = null) {
-    val originalSize = path.getImageResolution(this) ?: return
+    if (!path.isPCloudPath()) {
+        showResizeImageDialog(path, path, callback)
+        return
+    }
+
+    withLocalMediaFile(path) { localPath ->
+        showResizeImageDialog(path, localPath, callback)
+    }
+}
+
+private fun BaseSimpleActivity.showResizeImageDialog(path: String, localPath: String, callback: (() -> Unit)?) {
+    val originalSize = localPath.getImageResolution(this) ?: return
     ResizeWithPathDialog(this, originalSize, path) { newSize, newPath ->
         ensureBackgroundThread {
-            val file = File(newPath)
-            val pathLastModifiedMap = mapOf(file.absolutePath to file.lastModified())
-            try {
-                resizeImage(path, newPath, newSize) { success ->
-                    if (success) {
-                        toast(org.fossify.commons.R.string.file_saved)
-
-                        val paths = arrayListOf(file.absolutePath)
-                        rescanPathsAndUpdateLastModified(paths, pathLastModifiedMap) {
-                            runOnUiThread {
-                                callback?.invoke()
-                            }
-                        }
-                    } else {
-                        toast(R.string.image_editing_failed)
-                    }
-                }
-            } catch (e: OutOfMemoryError) {
-                toast(org.fossify.commons.R.string.out_of_memory_error)
-            } catch (e: Exception) {
-                showErrorToast(e)
+            if (newPath.isPCloudPath()) {
+                resizeImageToPCloud(localPath, newPath, newSize, callback)
+            } else {
+                resizeImageToDevice(localPath, newPath, newSize, callback)
             }
         }
+    }
+}
+
+private fun BaseSimpleActivity.resizeImageToDevice(sourcePath: String, newPath: String, newSize: Point, callback: (() -> Unit)?) {
+    val file = File(newPath)
+    val pathLastModifiedMap = mapOf(file.absolutePath to file.lastModified())
+    try {
+        resizeImage(sourcePath, newPath, newSize) { success ->
+            if (success) {
+                toast(org.fossify.commons.R.string.file_saved)
+
+                val paths = arrayListOf(file.absolutePath)
+                rescanPathsAndUpdateLastModified(paths, pathLastModifiedMap) {
+                    runOnUiThread {
+                        callback?.invoke()
+                    }
+                }
+            } else {
+                toast(R.string.image_editing_failed)
+            }
+        }
+    } catch (e: OutOfMemoryError) {
+        toast(org.fossify.commons.R.string.out_of_memory_error)
+    } catch (e: Exception) {
+        showErrorToast(e)
+    }
+}
+
+// The resized image is written into the cache under the name it is to have on pCloud, because
+// an upload carries the name of the file it is given, and sent from there. A name already
+// taken is overwritten rather than uploaded beside: the dialog asked about that first
+private fun BaseSimpleActivity.resizeImageToPCloud(sourcePath: String, newPath: String, newSize: Point, callback: (() -> Unit)?) {
+    val resizeDir = File(cacheDir, PCLOUD_RESIZE_DIR)
+    resizeDir.deleteRecursively()
+    resizeDir.mkdirs()
+    val resized = File(resizeDir, newPath.getFilenameFromPath())
+
+    try {
+        resizeImage(sourcePath, resized.absolutePath, newSize) { success ->
+            if (!success) {
+                toast(R.string.image_editing_failed)
+                return@resizeImage
+            }
+
+            val destinationFolder = newPath.getParentPath()
+            toast(R.string.pcloud_writing_back)
+            writeToPCloud(listOf(destinationFolder), {
+                if (pCloudItemsDB.getItem(newPath) != null) {
+                    overwriteFile(newPath, resized.absolutePath)
+                } else {
+                    uploadFile(resized.absolutePath, destinationFolder)
+                }
+            }) { uploaded ->
+                runOnUiThread {
+                    if (uploaded) {
+                        toast(org.fossify.commons.R.string.file_saved)
+                    }
+
+                    callback?.invoke()
+                }
+            }
+        }
+    } catch (e: OutOfMemoryError) {
+        toast(org.fossify.commons.R.string.out_of_memory_error)
+    } catch (e: Exception) {
+        showErrorToast(e)
     }
 }
 

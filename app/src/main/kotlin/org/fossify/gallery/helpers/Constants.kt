@@ -152,6 +152,10 @@ const val PCLOUD_WORK_DIR = "pcloud-work"
 // can tell it is editing a pCloud medium and offer to save it back rather than beside itself
 const val PCLOUD_EDIT_DIR = "pcloud-edit"
 
+// under the cache directory: the resized image on its way to a pCloud folder, under the name
+// it is to have there. Only one resize is in flight at a time, so the folder is emptied first
+const val PCLOUD_RESIZE_DIR = "pcloud-resize"
+
 // under the cache directory: the media handed over by the share sheet, written out under the
 // name they are shared as. A share arrives as content:// uris and the copy works on real
 // paths, so they are staged here and copied from here. Emptied at the start of every share

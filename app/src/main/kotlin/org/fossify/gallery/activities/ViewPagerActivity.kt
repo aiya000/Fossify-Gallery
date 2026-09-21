@@ -102,6 +102,7 @@ import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
@@ -225,13 +226,6 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     private var mMediaFiles = ArrayList<Medium>()
 
-    // the pCloud medium an editor is working on, and the copy it was handed, kept from the
-    // moment the editor is started until it comes back with the copy changed. null while no
-    // pCloud medium is being edited, which is also the case for every local one
-    private var mPCloudEdit: PCloudEdit? = null
-
-    private data class PCloudEdit(val pCloudPath: String, val localPath: String, val size: Long, val lastModified: Long)
-
     // null while the viewer was not opened from a selection in the media grid, which is what the
     // selection toggle in the toolbar hangs off
     private var mSelectedPaths: ArrayList<String>? = null
@@ -337,7 +331,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             binding.mediumViewerToolbar.menu.apply {
                 findItem(R.id.menu_show_on_map).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP == 0
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
-                findItem(R.id.menu_properties).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
+                findItem(R.id.menu_properties).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
                 findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
                 findItem(R.id.menu_share).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
                 findItem(R.id.menu_edit).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
@@ -349,7 +343,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
-                findItem(R.id.menu_resize).isVisible = isLocal && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
+                findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
                 findItem(R.id.menu_open_with).isVisible = hasFile
                 findItem(R.id.menu_hide).isVisible =
                     isLocal && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
@@ -502,13 +496,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            val edit = mPCloudEdit
-            mPCloudEdit = null
-            if (edit != null) {
-                // what counts is whether the copy the editor was handed came back changed; the
-                // result code only says whether it thinks it saved anything at all
-                writeEditBackToPCloud(edit, resultCode == Activity.RESULT_OK)
-            } else if (resultCode == Activity.RESULT_OK && resultData != null) {
+            val wasPCloudEdit = handlePCloudEditResult(resultCode) {
+                mPos = -1
+                mPrevHashcode = 0
+                refreshViewPager()
+            }
+
+            if (!wasPCloudEdit && resultCode == Activity.RESULT_OK && resultData != null) {
                 mPos = -1
                 mPrevHashcode = 0
                 refreshViewPager()
@@ -983,54 +977,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
-    // The editor, and the write back for a pCloud medium. A local medium is edited in place
-    // as it always was; a pCloud one is edited through a copy of its own and written back
-    // over the original once the editor says it changed it
-    private fun editCurrentMedium() {
-        val path = getCurrentPath()
-        if (!path.isPCloudPath()) {
-            openEditor(path)
-            return
-        }
-
-        withEditableMediaFile(path) { localPath ->
-            val copy = File(localPath)
-            mPCloudEdit = PCloudEdit(path, localPath, copy.length(), copy.lastModified())
-            openEditor(localPath)
-        }
-    }
-
-    // Runs when the editor comes back. The copy is left where it is whatever happens: it is
-    // the only place the edit exists until pCloud has taken it, and when pCloud will not take
-    // it the user is told where it is rather than losing the work
-    private fun writeEditBackToPCloud(edit: PCloudEdit, editorSaidItSaved: Boolean) {
-        val copy = File(edit.localPath)
-        if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
-            // the editor was left without saving. When it says it saved and the copy is
-            // untouched all the same, it wrote somewhere else, and going quiet here is what
-            // makes that look like the write back did nothing at all
-            if (editorSaidItSaved) {
-                Log.w("PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
-                toast(R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
-            }
-            return
-        }
-
-        toast(R.string.pcloud_writing_back)
-        writeToPCloud(listOf(edit.pCloudPath.getParentPath()), { overwriteFile(edit.pCloudPath, edit.localPath) }) { success ->
-            runOnUiThread {
-                if (success) {
-                    toast(org.fossify.commons.R.string.file_saved)
-                    mPos = -1
-                    mPrevHashcode = 0
-                    refreshViewPager()
-                } else {
-                    // writeToPCloud already said what went wrong; this says what is left
-                    toast(getString(R.string.pcloud_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
-                }
-            }
-        }
-    }
+    private fun editCurrentMedium() = editMedium(getCurrentPath())
 
     private fun saveImageAs() {
         val currPath = getCurrentPath()
@@ -1140,8 +1087,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private fun getCurrentFragment() = (binding.viewPager.adapter as? MyPagerAdapter)?.getCurrentFragment(binding.viewPager.currentItem)
 
     private fun showProperties() {
-        if (getCurrentMedium() != null) {
-            PropertiesDialog(this, getCurrentPath(), false)
+        val medium = getCurrentMedium() ?: return
+        // a pCloud medium has no file on the device for commons' dialog to read
+        if (medium.path.isPCloudPath()) {
+            PCloudPropertiesDialog(this, listOf(medium))
+        } else {
+            PropertiesDialog(this, medium.path, false)
         }
     }
 
@@ -1191,7 +1142,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         binding.bottomActions.bottomProperties.applyColorFilter(Color.WHITE)
-        binding.bottomActions.bottomProperties.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_PROPERTIES != 0)
+        binding.bottomActions.bottomProperties.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_PROPERTIES != 0)
         binding.bottomActions.bottomProperties.setOnLongClickListener { toast(org.fossify.commons.R.string.properties); true }
         binding.bottomActions.bottomProperties.setOnClickListener {
             showProperties()
@@ -1259,7 +1210,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             moveFileTo()
         }
 
-        binding.bottomActions.bottomResize.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_RESIZE != 0 && currentMedium?.isImage() == true)
+        binding.bottomActions.bottomResize.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE != 0 && currentMedium?.isImage() == true)
         binding.bottomActions.bottomResize.setOnLongClickListener { toast(org.fossify.commons.R.string.resize); true }
         binding.bottomActions.bottomResize.setOnClickListener {
             resizeImage()

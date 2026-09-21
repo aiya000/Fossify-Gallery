@@ -60,6 +60,7 @@ import org.fossify.commons.interfaces.StartReorderDragListener
 import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.gallery.R
+import org.fossify.gallery.activities.SimpleActivity
 import org.fossify.gallery.activities.ViewPagerActivity
 import org.fossify.gallery.databinding.PhotoItemGridBinding
 import org.fossify.gallery.databinding.PhotoItemListBinding
@@ -67,6 +68,7 @@ import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
+import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.PCloudNameDialog
 import org.fossify.gallery.extensions.config
@@ -137,6 +139,12 @@ class MediaAdapter(
     private val viewType = config.getFolderViewType(if (config.showAll) SHOW_ALL else path)
     private val isListViewType = viewType == VIEW_TYPE_LIST
     private var rotatedImagePaths = ArrayList<String>()
+
+    // The editor and the rotation write a pCloud medium back through the hosting activity,
+    // which holds the edit while the editor has it. A picker dialog's grid is hosted by
+    // something else, and there the two stay local as they were
+    private val galleryActivity = activity as? SimpleActivity
+    private val canWriteBackToPCloud = galleryActivity != null
     private var currentMediaHash = media.hashCode()
     private val hasOTGConnected = activity.hasOTGConnected()
 
@@ -241,9 +249,14 @@ class MediaAdapter(
             // a pCloud medium is fetched into a file before it is handed to another app,
             // the same as the fullscreen view does it
             findItem(R.id.cab_open_with).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
-            findItem(R.id.cab_edit).isVisible = isLocal && isOneItemSelected
+            // a pCloud medium is edited through a copy of its own and written back over the
+            // original, the same as the fullscreen view does it
+            findItem(R.id.cab_edit).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && isOneItemSelected && !isInRecycleBin
             findItem(R.id.cab_set_as).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
-            findItem(R.id.cab_resize).isVisible = isLocal && canResize(selectedItems)
+            // a pCloud image is fetched, resized and sent back to a folder the user picks.
+            // Resizing a selection of them writes each one back over itself, which is not
+            // built yet, so pCloud gets the one-at-a-time resize only
+            findItem(R.id.cab_resize).isVisible = (isLocal || (isPCloudOnly && isOneItemSelected)) && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible =
                 selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
@@ -251,8 +264,11 @@ class MediaAdapter(
             findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly
             // a pCloud medium is shared as a file too, fetched first; one in the bin is not
             findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
-            findItem(R.id.cab_rotate).isVisible = isLocal
-            findItem(R.id.cab_properties).isVisible = isLocal
+            // rotating a pCloud image writes it back over itself, one at a time
+            findItem(R.id.cab_rotate).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && !isInRecycleBin
+            // a pCloud medium gets a properties dialog of its own, built from what the gallery
+            // knows rather than from a file on the device
+            findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly
             // a medium in the pCloud bin is restored or deleted for good, nothing else: copying
             // it would go by a remote path the bin does not keep
             findItem(R.id.cab_copy_to).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
@@ -429,6 +445,13 @@ class MediaAdapter(
     }
 
     private fun showProperties() {
+        val selectedItems = getSelectedItems()
+        // a pCloud medium has no file on the device for commons' dialog to read
+        if (selectedItems.any { it.path.isPCloudPath() }) {
+            PCloudPropertiesDialog(activity, selectedItems)
+            return
+        }
+
         if (selectedKeys.size <= 1) {
             val path = getFirstSelectedItemPath() ?: return
             PropertiesDialog(activity, path, config.shouldShowHidden)
@@ -493,7 +516,13 @@ class MediaAdapter(
 
     private fun editFile() {
         val path = getFirstSelectedItemPath() ?: return
-        activity.openEditor(path)
+        val host = galleryActivity
+        if (host == null) {
+            activity.openEditor(path)
+            return
+        }
+
+        host.editMedium(path)
     }
 
     private fun openPath() {
@@ -609,12 +638,28 @@ class MediaAdapter(
     }
 
     private fun handleRotate(paths: List<String>, degrees: Int) {
-        var fileCnt = paths.size
         rotatedImagePaths.clear()
+        rotatedImagePaths.addAll(paths)
+
+        val host = galleryActivity
+        if (host == null) {
+            rotateLocalFiles(paths, degrees)
+            return
+        }
+
+        // a pCloud image is fetched, turned and written back, one after the other; a local
+        // one is turned where it lies, the way it always was
+        host.rotateMedia(paths, degrees) {
+            listener?.refreshItems()
+            finishActMode()
+        }
+    }
+
+    private fun rotateLocalFiles(paths: List<String>, degrees: Int) {
+        var fileCnt = paths.size
         activity.toast(org.fossify.commons.R.string.saving)
         ensureBackgroundThread {
             paths.forEach {
-                rotatedImagePaths.add(it)
                 activity.saveRotatedImageToFile(it, it, degrees, true) {
                     fileCnt--
                     if (fileCnt == 0) {
@@ -631,8 +676,10 @@ class MediaAdapter(
     private fun rotateSelection(degrees: Int) {
         val paths = getSelectedPaths().filter { it.isImageFast() }
 
-        if (paths.any { activity.needsStupidWritePermissions(it) }) {
-            activity.handleSAFDialog(paths.first { activity.needsStupidWritePermissions(it) }) {
+        // a pCloud medium has no file on the device that could want the permission
+        val needsPermission = paths.firstOrNull { !it.isPCloudPath() && activity.needsStupidWritePermissions(it) }
+        if (needsPermission != null) {
+            activity.handleSAFDialog(needsPermission) {
                 if (it) {
                     handleRotate(paths, degrees)
                 }

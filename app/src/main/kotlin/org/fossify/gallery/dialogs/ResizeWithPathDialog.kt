@@ -5,17 +5,23 @@ import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
-import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.extensions.*
+import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogResizeImageWithPathBinding
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 
+// The destination is picked with the gallery's own folder picker rather than commons', so that
+// a pCloud folder can be picked: a resized pCloud image belongs back on pCloud, and the commons
+// picker only walks the device. A local image can go to pCloud the same way
 class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, val path: String, val callback: (newSize: Point, newPath: String) -> Unit) {
     init {
         var realPath = path.getParentPath()
         val binding = DialogResizeImageWithPathBinding.inflate(activity.layoutInflater).apply {
-            folder.setText("${activity.humanizePath(realPath).trimEnd('/')}/")
+            folder.setText("${displayPath(realPath).trimEnd('/')}/")
 
             val fullName = path.getFilenameFromPath()
             val dotAt = fullName.lastIndexOf(".")
@@ -29,8 +35,8 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
 
             filenameValue.setText(name)
             folder.setOnClickListener {
-                FilePickerDialog(activity, realPath, false, activity.config.shouldShowHidden, true, true) {
-                    folder.setText(activity.humanizePath(it))
+                FolderPickerDialog(activity, realPath, activity.config.shouldShowHidden, showFAB = true, canAddShowHiddenButton = true) {
+                    folder.setText(displayPath(it))
                     realPath = it
                 }
             }
@@ -103,19 +109,48 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
                             return@setOnClickListener
                         }
 
-                        if (activity.getDoesFilePathExist(newPath)) {
-                            val title = String.format(activity.getString(org.fossify.commons.R.string.file_already_exists_overwrite), newFilename)
-                            ConfirmationDialog(activity, title) {
-                                callback(newSize, newPath)
-                                alertDialog.dismiss()
-                            }
-                        } else {
-                            callback(newSize, newPath)
-                            alertDialog.dismiss()
-                        }
+                        confirmOverwriteAndFinish(newSize, newPath, newFilename, alertDialog)
                     }
                 }
             }
+    }
+
+    // Whether the name is taken is a database lookup on pCloud and a look at the filesystem on
+    // the device, so the pCloud one goes off the main thread and comes back to ask
+    private fun confirmOverwriteAndFinish(newSize: Point, newPath: String, newFilename: String, alertDialog: AlertDialog) {
+        if (!newPath.isPCloudPath()) {
+            finish(newSize, newPath, newFilename, activity.getDoesFilePathExist(newPath), alertDialog)
+            return
+        }
+
+        ensureBackgroundThread {
+            val exists = activity.pCloudItemsDB.getItem(newPath) != null
+            activity.runOnUiThread {
+                finish(newSize, newPath, newFilename, exists, alertDialog)
+            }
+        }
+    }
+
+    private fun finish(newSize: Point, newPath: String, newFilename: String, nameIsTaken: Boolean, alertDialog: AlertDialog) {
+        if (!nameIsTaken) {
+            callback(newSize, newPath)
+            alertDialog.dismiss()
+            return
+        }
+
+        val title = String.format(activity.getString(org.fossify.commons.R.string.file_already_exists_overwrite), newFilename)
+        ConfirmationDialog(activity, title) {
+            callback(newSize, newPath)
+            alertDialog.dismiss()
+        }
+    }
+
+    // the pseudo path the gallery uses inside itself is "pcloud:/Photos"; what belongs in front
+    // of the user is where it is, said the way the folder list says it
+    private fun displayPath(path: String) = if (path.isPCloudPath()) {
+        "${activity.getString(R.string.pcloud)}${path.removePrefix(PCLOUD_PATH_SCHEME)}"
+    } else {
+        activity.humanizePath(path)
     }
 
     private fun getViewValue(view: EditText): Int {
