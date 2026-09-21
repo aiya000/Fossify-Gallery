@@ -74,9 +74,27 @@ object RemoteScanScheduler {
     private val queue = ArrayList<Request>()
     private var running: Request? = null
 
+    // How a running scan is called off. The scanners are reached through this rather than named
+    // directly, so that what got called off can be watched without a share to walk or an account
+    // to log in to -- which is the whole of rule 1, and the hardest thing here to check by hand
+    internal var abortScan: (Storage) -> Unit = { storage ->
+        when (storage) {
+            Storage.PCLOUD -> PCloudScanner.abortCurrent()
+            Storage.SMB -> SmbScanner.abortCurrent()
+        }
+    }
+
     // Queues the request and makes sure something is draining the queue. Safe to call from any
     // thread; returns once the request is in, not once it has run
     fun submit(context: Context, request: Request) {
+        enqueue(request)
+        RemoteScanService.start(context)
+    }
+
+    // The queueing on its own, with no service to start: where the request lands, and what it
+    // calls off on the way in. Split out of submit() because that one call to Android is all
+    // that stood between these rules and a test of them
+    internal fun enqueue(request: Request) {
         synchronized(lock) {
             val existing = queue.firstOrNull { it.isSameWorkAs(request) }
             if (existing != null) {
@@ -93,11 +111,9 @@ object RemoteScanScheduler {
             val current = running
             if (current != null && request.priority > current.priority) {
                 Log.i(TAG, "${describe(request)} outranks the running ${describe(current)}; calling it off")
-                abort(current.storage)
+                abortScan(current.storage)
             }
         }
-
-        RemoteScanService.start(context)
     }
 
     // by priority, and first come first served within one priority: the queue is short and
@@ -141,7 +157,7 @@ object RemoteScanScheduler {
             val current = running
             if (current != null && current.storage == storage && current.priority < PRIORITY_SWITCH) {
                 Log.i(TAG, "the list left ${current.storage} behind; calling off its ${describe(current)}")
-                abort(storage)
+                abortScan(storage)
             }
         }
     }
@@ -152,13 +168,8 @@ object RemoteScanScheduler {
     fun abortAll() {
         synchronized(lock) {
             queue.clear()
-            running?.let { abort(it.storage) }
+            running?.let { abortScan(it.storage) }
         }
-    }
-
-    private fun abort(storage: Storage) = when (storage) {
-        Storage.PCLOUD -> PCloudScanner.abortCurrent()
-        Storage.SMB -> SmbScanner.abortCurrent()
     }
 
     private fun describe(request: Request) = buildString {

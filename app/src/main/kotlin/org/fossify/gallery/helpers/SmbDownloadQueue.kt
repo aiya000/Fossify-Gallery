@@ -7,7 +7,6 @@ import org.fossify.gallery.extensions.getSortedGroupChildren
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.models.Directory
-import org.fossify.gallery.models.FolderGroup
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.toFolderGroupId
 
@@ -34,31 +33,34 @@ object SmbDownloadQueue {
         val dirs = context.directoryDB.getAll()
         val groups = context.config.parseFolderGroups()
         val members = context.config.parseFolderGroupMembers()
-        val walked = HashSet<Long>()
-        return selected.flatMap { videosOf(context, it, groups, members, dirs, walked) }
-    }
-
-    private fun videosOf(
-        context: Context,
-        directory: Directory,
-        groups: List<FolderGroup>,
-        members: Map<String, Long>,
-        dirs: List<Directory>,
-        walked: HashSet<Long>,
-    ): List<Medium> {
-        val groupId = directory.path.toFolderGroupId() ?: return videosOfFolder(context, directory.path)
-
-        // a group picked twice, or one that somehow holds itself, is walked once
-        if (!walked.add(groupId)) {
-            return emptyList()
-        }
 
         // folders and subgroups come back as one list, in the order the folder list draws them,
         // which is what makes a subgroup fall where it sits rather than after all the folders.
-        // The visited set is this call's own: it is how that helper avoids drawing a group
-        // inside itself, and reusing ours would hide the children we are here for
-        return context.getSortedGroupChildren(groupId, groups, members, dirs, HashSet())
-            .flatMap { videosOf(context, it, groups, members, dirs, walked) }
+        // The visited set is each call's own: it is how that helper avoids drawing a group
+        // inside itself, and sharing one would hide the children we are here for
+        return flatten(
+            selected = selected,
+            childrenOf = { groupId -> context.getSortedGroupChildren(groupId, groups, members, dirs, HashSet()) },
+            videosOfFolder = { path -> videosOfFolder(context, path) },
+        )
+    }
+
+    // The order on its own, with neither a database nor a share behind it: what the walk visits,
+    // given a way to ask a group for its children and a folder for its videos. It does not care
+    // what a folder answers with, which is what lets the order be checked without either
+    internal fun <T> flatten(
+        selected: List<Directory>,
+        childrenOf: (Long) -> List<Directory>,
+        videosOfFolder: (String) -> List<T>,
+        walked: HashSet<Long> = HashSet(),
+    ): List<T> = selected.flatMap { directory ->
+        val groupId = directory.path.toFolderGroupId()
+        when {
+            groupId == null -> videosOfFolder(directory.path)
+            // a group picked twice, or one that somehow holds itself, is walked once
+            !walked.add(groupId) -> emptyList()
+            else -> flatten(childrenOf(groupId), childrenOf, videosOfFolder, walked)
+        }
     }
 
     // the folder's own videos on the share, in the order that folder is sorted by. A folder on

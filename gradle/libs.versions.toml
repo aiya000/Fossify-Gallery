@@ -37,6 +37,8 @@ okio = "3.17.0"
 picasso = "2.71828"
 smbj = "0.14.0"
 subsamplingScaleImageView = "d705c3c4ad"
+#Test
+junit = "4.13.2"
 #build
 app-build-compileSDKVersion = "36"
 app-build-targetSDK = "36"
@@ -80,6 +82,8 @@ picasso = { module = "com.squareup.picasso:picasso", version.ref = "picasso" }
 smbj = { module = "com.hierynomus:smbj", version.ref = "smbj" }
 avif-integration = { group = "com.github.bumptech.glide", name = "avif-integration", version.ref = "glideCompiler" }
 jxl-integration = { group = "io.github.awxkee", name = "jxl-coder-glide", version.ref = "jxlDecoder" }
+#Test
+junit = { module = "junit:junit", version.ref = "junit" }
 [bundles]
 room = [
     "androidx-room-ktx",
