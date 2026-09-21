@@ -8,6 +8,7 @@ import kotlin.math.abs
 data class VideoGestureCallbacks(
     val isPlaying: () -> Boolean,
     val getCurrentSpeed: () -> Float,
+    val getHoldSpeed: () -> Float,
     val setPlaybackSpeed: (Float) -> Unit,
     val showPill: () -> Unit,
     val hidePill: () -> Unit,
@@ -21,7 +22,6 @@ class VideoGestureHelper(
 ) {
     companion object {
         private const val TOUCH_HOLD_DURATION_MS = 500L
-        private const val TOUCH_HOLD_SPEED_MULTIPLIER = 2.0f
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -38,7 +38,7 @@ class VideoGestureHelper(
             isLongPressActive = true
             originalSpeed = callbacks.getCurrentSpeed()
             callbacks.performHaptic()
-            callbacks.setPlaybackSpeed(TOUCH_HOLD_SPEED_MULTIPLIER)
+            callbacks.setPlaybackSpeed(callbacks.getHoldSpeed())
             callbacks.showPill()
         }
     }

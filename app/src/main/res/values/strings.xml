@@ -360,6 +360,7 @@
     <string name="allow_one_to_one_zoom">Allow 1:1 zooming in with two double taps</string>
     <string name="open_videos_on_separate_screen">Play videos on a separate screen with horizontal gestures</string>
     <string name="on_video_tap">On video tap</string>
+    <string name="long_press_playback_speed">Playback speed while holding the video</string>
     <string name="open_in_app_player">Open in-app player</string>
     <string name="open_system_default_player">Open default player app</string>
     <string name="show_notch">Show a notch if available</string>

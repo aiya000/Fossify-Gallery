@@ -299,6 +299,7 @@
     <string name="delete_empty_folders">ファイルの削除後、空になったフォルダーを削除</string>
     <string name="allow_photo_gestures">写真の明るさを縦の動作で制御</string>
     <string name="allow_video_gestures">音量と明るさを縦の動作で変更</string>
+    <string name="long_press_playback_speed">長押し中の再生速度</string>
     <string name="show_media_count">フォルダー内のメディア数を表示</string>
     <string name="show_extended_details">全画面表示に詳細も表示</string>
     <string name="manage_extended_details">表示する詳細の選択</string>

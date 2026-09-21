@@ -22,6 +22,7 @@ import org.fossify.gallery.models.AlbumCover
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.text.DecimalFormat
 import java.util.Locale
 import kotlin.system.exitProcess
 
@@ -77,6 +78,7 @@ class SettingsActivity : SimpleActivity() {
         setupLoopVideos()
         setupOpenVideosOnSeparateScreen()
         setupOnVideoTap()
+        setupLongPressPlaybackSpeed()
         setupMaxBrightness()
         setupUltraHdrRendering()
         setupCropThumbnails()
@@ -579,6 +581,30 @@ class SettingsActivity : SimpleActivity() {
             }
         }
     }
+
+    // The speed a video runs at while the screen is held down. The steps travel through
+    // RadioItem's Int id as whole percents, since a speed is a Float
+    private fun setupLongPressPlaybackSpeed() {
+        binding.settingsLongPressPlaybackSpeed.text = getLongPressPlaybackSpeedText()
+        binding.settingsLongPressPlaybackSpeedHolder.setOnClickListener {
+            val items = LONG_PRESS_PLAYBACK_SPEEDS.mapTo(ArrayList()) {
+                RadioItem(it.toPlaybackSpeedPercent(), formatPlaybackSpeed(it))
+            }
+
+            RadioGroupDialog(
+                activity = this@SettingsActivity,
+                items = items,
+                checkedItemId = config.longPressPlaybackSpeed.toPlaybackSpeedPercent()
+            ) {
+                config.longPressPlaybackSpeed = (it as Int).toPlaybackSpeed()
+                binding.settingsLongPressPlaybackSpeed.text = getLongPressPlaybackSpeedText()
+            }
+        }
+    }
+
+    private fun getLongPressPlaybackSpeedText() = formatPlaybackSpeed(config.longPressPlaybackSpeed)
+
+    private fun formatPlaybackSpeed(speed: Float) = getString(R.string.playback_speed_value, DecimalFormat("#.##").format(speed))
 
     private fun getVideoPlayerTypeText() = getString(
         when (config.videoPlayerType) {
@@ -1332,6 +1358,7 @@ class SettingsActivity : SimpleActivity() {
                 put(GESTURE_VIDEO_PLAYER, config.gestureVideoPlayer)
                 put(VIDEO_PLAYER_TYPE, config.videoPlayerType)
                 put(ALLOW_VIDEO_GESTURES, config.allowVideoGestures)
+                put(LONG_PRESS_PLAYBACK_SPEED, config.longPressPlaybackSpeed)
                 put(ANIMATE_GIFS, config.animateGifs)
                 put(CROP_THUMBNAILS, config.cropThumbnails)
                 put(SHOW_THUMBNAIL_VIDEO_DURATION, config.showThumbnailVideoDuration)
@@ -1542,6 +1569,7 @@ class SettingsActivity : SimpleActivity() {
                 GESTURE_VIDEO_PLAYER -> config.gestureVideoPlayer = value.toBoolean()
                 VIDEO_PLAYER_TYPE -> config.videoPlayerType = value.toInt()
                 ALLOW_VIDEO_GESTURES -> config.allowVideoGestures = value.toBoolean()
+                LONG_PRESS_PLAYBACK_SPEED -> config.longPressPlaybackSpeed = value.toString().toFloat()
                 ANIMATE_GIFS -> config.animateGifs = value.toBoolean()
                 CROP_THUMBNAILS -> config.cropThumbnails = value.toBoolean()
                 SHOW_THUMBNAIL_VIDEO_DURATION -> config.showThumbnailVideoDuration = value.toBoolean()
