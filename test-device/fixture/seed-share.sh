@@ -57,6 +57,26 @@ for entry in "${FIXTURE_TREE[@]}"; do
     done
 done
 
+# The renders. Noise rather than a pattern, so that the file is as large as its dimensions say;
+# ffmpeg picks the encoder off the extension, so the same command writes the JPEG and the PNGs,
+# and the name is whatever the manifest calls it -- Japanese included, which is what a share of
+# somebody's own files is named like
+make_render() {
+    local path="$1"
+    local side="$2"
+    [ -f "$path" ] && return 0
+    ffmpeg -loglevel error -y \
+        -f lavfi -i "nullsrc=size=${side}x${side},geq=random(1)*255:random(2)*255:random(3)*255" \
+        -frames:v 1 "$path"
+}
+
+mkdir -p "$FIXTURE_SHARE_DIR/$FIXTURE_RENDERS_FOLDER"
+for entry in "${FIXTURE_RENDERS[@]}"; do
+    name="${entry%:*}"
+    make_render "$FIXTURE_SHARE_DIR/$FIXTURE_RENDERS_FOLDER/$name" "${entry##*:}"
+    images=$((images + 1))
+done
+
 # the filler. One video each, copied rather than generated: what they are for is the number of
 # folders the walk has to get through, not what is in them
 if [ "$FIXTURE_FILLER_FOLDERS" -gt 0 ]; then
@@ -72,7 +92,24 @@ if [ "$FIXTURE_FILLER_FOLDERS" -gt 0 ]; then
     done
 fi
 
-echo "$videos videos, $images images in $((${#FIXTURE_TREE[@]} + FIXTURE_FILLER_FOLDERS)) folders"
+echo "$videos videos, $images images in $((${#FIXTURE_TREE[@]} + 1 + FIXTURE_FILLER_FOLDERS)) folders"
+
+# The renders are only worth having if they still land either side of the mark. ffmpeg's encoder
+# settling on a better compression would quietly leave every one of them under it, and the case
+# that checks the large ones draw would then be checking nothing at all
+for entry in "${FIXTURE_RENDERS[@]}"; do
+    name="${entry%:*}"
+    bytes="$(stat -c %s "$FIXTURE_SHARE_DIR/$FIXTURE_RENDERS_FOLDER/$name")"
+    if [ "$name" = "$FIXTURE_RENDERS_UNDER_THE_MARK" ]; then
+        if [ "$bytes" -gt "$FIXTURE_REWINDABLE_BYTES" ]; then
+            echo "$name is $bytes bytes, which is over the $FIXTURE_REWINDABLE_BYTES mark it is meant to stay under" >&2
+            exit 1
+        fi
+    elif [ "$bytes" -le "$FIXTURE_REWINDABLE_BYTES" ]; then
+        echo "$name is $bytes bytes, which is under the $FIXTURE_REWINDABLE_BYTES mark it is meant to be over" >&2
+        exit 1
+    fi
+done
 
 # the manifest is what the driving scripts assert on, so a mismatch here has to be loud: it would
 # otherwise turn into a failing test that looks like a bug in the app

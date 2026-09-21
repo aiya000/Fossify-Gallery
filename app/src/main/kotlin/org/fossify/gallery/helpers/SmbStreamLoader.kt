@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import com.bumptech.glide.Priority
@@ -38,7 +39,7 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         val medium = context.mediaDB.getMediumByPath(model) ?: return null
         return ModelLoader.LoadData(
             ObjectKey("$model:${medium.size}:${medium.modified}"),
-            Fetcher(context, model, medium.type == TYPE_VIDEOS, width, height)
+            Fetcher(context, model, medium.type == TYPE_VIDEOS, medium.size, width, height)
         )
     }
 
@@ -49,11 +50,21 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
     }
 
     private class Fetcher(
-        private val context: Context, private val path: String, private val isVideo: Boolean, private val width: Int, private val height: Int
+        private val context: Context,
+        private val path: String,
+        private val isVideo: Boolean,
+        private val size: Long,
+        private val width: Int,
+        private val height: Int
     ) : DataFetcher<InputStream> {
         @Volatile
         private var cancelled = false
         private var stream: InputStream? = null
+
+        // The file the stream is being read out of, when there is one. Closing the stream does
+        // not close it: smbj's own close() only drops its buffer, and the handle the share is
+        // holding open stays open until the file itself is closed
+        private var openFile: SmbClient.OpenFile? = null
 
         // what the bytes came from, so that a photo read straight off the share is not reported
         // as a local load
@@ -67,14 +78,15 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
 
             try {
                 val stream = if (isVideo) frameStream() else photoStream()
+                this.stream = stream
                 if (cancelled) {
-                    stream.close()
+                    cleanup()
                     return
                 }
 
-                this.stream = stream
                 callback.onDataReady(stream)
             } catch (e: Exception) {
+                cleanup()
                 callback.onLoadFailed(e)
             }
         }
@@ -82,13 +94,67 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         // the copy the viewer already fetched, if there is one, so that going back to the grid
         // does not read the file again; otherwise straight off the share
         private fun photoStream(): InputStream {
+            // a picture Glide cannot rewind is decoded here instead, whichever of the two it
+            // would have come from -- the bytes are the same bytes, and it is their number that
+            // Glide cannot get back past. See ThumbnailPolicy
+            if (ThumbnailPolicy.mustBeSampledBeforeGlide(path, size)) {
+                return sampledPhotoStream()
+            }
+
             val cached = SmbFileCache(context).peek(path)
             if (cached != null) {
                 source = DataSource.LOCAL
                 return FileInputStream(cached)
             }
 
-            return SmbClient.open(context, path).inputStream()
+            val open = SmbClient.open(context, path)
+            openFile = open
+            return open.inputStream()
+        }
+
+        // The same picture, decoded down to about the size of the tile it is going into and
+        // handed on as a stream of its own. Read once: the size comes out of the PNG's own
+        // header rather than out of a first pass over the file, so the share is asked for the
+        // bytes a single time however large the file is
+        private fun sampledPhotoStream(): InputStream {
+            val cached = SmbFileCache(context).peek(path)
+            val bitmap = if (cached != null) {
+                source = DataSource.LOCAL
+                val header = ByteArray(ThumbnailPolicy.PNG_HEADER_BYTES)
+                FileInputStream(cached).use { it.read(header) }
+                decodeSampled(header) { FileInputStream(cached) }
+            } else {
+                SmbClient.open(context, path).use { open ->
+                    val header = ByteArray(ThumbnailPolicy.PNG_HEADER_BYTES)
+                    open.readAt(0, header, 0, header.size)
+                    decodeSampled(header) { open.inputStream() }
+                }
+            }
+
+            // PNG for a picture that has one, because a picture with transparency in it turns
+            // black where it is see-through once it has been through JPEG; JPEG for everything
+            // else, which is most of them and a tenth of the bytes
+            val bytes = ByteArrayOutputStream()
+            if (bitmap.hasAlpha()) {
+                bitmap.compress(Bitmap.CompressFormat.PNG, FRAME_QUALITY, bytes)
+            } else {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, FRAME_QUALITY, bytes)
+            }
+
+            bitmap.recycle()
+            return ByteArrayInputStream(bytes.toByteArray())
+        }
+
+        private fun decodeSampled(header: ByteArray, openStream: () -> InputStream): Bitmap {
+            val (fullWidth, fullHeight) = ThumbnailPolicy.pngSizeOf(header)
+                ?: throw IllegalStateException("$path does not begin with a PNG header")
+
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = ThumbnailPolicy.sampleSizeFor(fullWidth, fullHeight, width, height)
+            }
+
+            return openStream().use { BitmapFactory.decodeStream(it, null, options) }
+                ?: throw IllegalStateException("$path could not be decoded")
         }
 
         // one frame, compressed to JPEG so that it can go down the same InputStream pipeline as
@@ -120,6 +186,8 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         override fun cleanup() {
             stream?.close()
             stream = null
+            openFile?.close()
+            openFile = null
         }
 
         override fun cancel() {

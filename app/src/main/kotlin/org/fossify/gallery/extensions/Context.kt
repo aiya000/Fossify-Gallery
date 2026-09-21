@@ -114,6 +114,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
+import org.fossify.gallery.helpers.ThumbnailPolicy
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_PORTRAITS
@@ -670,8 +671,10 @@ fun Context.loadImage(
             signature = signature,
             skipMemoryCacheAtPaths = skipMemoryCacheAtPaths,
             animate = animateGifs,
-            // Picasso reads files off the disk, which a pCloud thumbnail never is
-            tryLoadingWithPicasso = type == TYPE_IMAGES && path.isPng() && !path.isPCloudPath(),
+            // Picasso reads files off the disk, which a medium on a remote storage never is.
+            // ThumbnailPolicy says why that matters more than it looks: a fallback that cannot
+            // work is worse than none, because it swallows the error instead of showing it
+            tryLoadingWithPicasso = ThumbnailPolicy.canBeRetriedWithPicasso(type, path),
             onError = onError
         )
     }
