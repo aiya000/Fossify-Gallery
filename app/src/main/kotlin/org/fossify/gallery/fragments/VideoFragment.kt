@@ -7,7 +7,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Point
 import android.graphics.SurfaceTexture
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -94,7 +93,7 @@ import org.fossify.gallery.helpers.MEDIUM
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.SHOULD_INIT_FRAGMENT
 import org.fossify.gallery.helpers.SmbDataSource
-import org.fossify.gallery.helpers.SmbMediaDataSource
+import org.fossify.gallery.helpers.SmbVideoDuration
 import org.fossify.gallery.interfaces.PlaybackSpeedListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.views.MediaSideScroll
@@ -990,30 +989,10 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         }
     }
 
-    // A share tells nothing about a video's length, so it is read out of the file itself over
-    // the same random reads a thumbnail uses -- a few kilobytes, not the whole video. Blocks on
-    // the network, so it runs on the thread setupVideoDuration() already started
+    // Blocks on the network, so it runs on the thread setupVideoDuration() already started
     private fun smbDurationMs(): Long {
         val context = context ?: return 0L
-        val retriever = MediaMetadataRetriever()
-        val source = try {
-            SmbMediaDataSource(context, mMedium.path)
-        } catch (e: Exception) {
-            Log.w("SmbVideo", "Could not open ${mMedium.path} to read its duration", e)
-            retriever.release()
-            return 0L
-        }
-
-        return try {
-            retriever.setDataSource(source)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        } catch (e: Exception) {
-            Log.w("SmbVideo", "Could not read the duration of ${mMedium.path}", e)
-            0L
-        } finally {
-            retriever.release()
-            source.close()
-        }
+        return SmbVideoDuration.readMillis(context, mMedium.path)
     }
 
     private fun videoPrepared() {

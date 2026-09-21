@@ -81,6 +81,7 @@ import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudFolderHidden
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
@@ -200,13 +201,20 @@ class DirectoryAdapter(
         // gets none of them
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
+
+        // A folder on the share has no directory behind it either, and writing to the share is
+        // not in yet (#28), so everything that would write is off for it -- it was treated as a
+        // folder on the device until now, which offered actions that could only fail. What is
+        // left is what is only a setting here: pinning, locking, the cover image, and "move to",
+        // which for a folder of the share can only mean putting it in a group
+        val isAnySmbSelected = realPaths.any { it.isSmbPath() }
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
             findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !selectedPaths.contains(PCLOUD_RECYCLE_BIN) &&
-                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected))
+                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected)) && !isAnySmbSelected
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
@@ -216,15 +224,15 @@ class DirectoryAdapter(
             findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && (selectedPaths.first() == RECYCLE_BIN || selectedPaths.first() == PCLOUD_RECYCLE_BIN)
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
-            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && !isAnyPCloudSelected && !isAnySmbSelected
 
             // filesystem operations make no sense for virtual groups
-            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
+            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
             val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected && !isAnySmbSelected
             findItem(R.id.cab_move_to).isVisible = (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
-            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected
-            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly)
+            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
+            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isAnySmbSelected
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
 
             checkHideBtnVisibility(this, ArrayList(realPaths.filter { it != PCLOUD_RECYCLE_BIN }))
@@ -313,7 +321,7 @@ class DirectoryAdapter(
     // permission comes into it, see Config.pCloudHiddenFolders. Only a folder hidden by
     // itself is offered for unhiding, one under a hidden folder is hidden by its parent
     private fun checkHideBtnVisibility(menu: Menu, selectedPaths: ArrayList<String>) {
-        val (pCloudPaths, localPaths) = selectedPaths.partition { it.isPCloudPath() }
+        val (pCloudPaths, localPaths) = selectedPaths.filter { !it.isSmbPath() }.partition { it.isPCloudPath() }
         val canTouchLocalFolders = !isRPlus() || isExternalStorageManager()
         val hiddenPCloudFolders = config.pCloudHiddenFolders
 
@@ -785,17 +793,21 @@ class DirectoryAdapter(
                     return@handleLockedFolderOpeningForFolders
                 }
 
+                // A folder of the share has nowhere to move its media to until transfers are
+                // in (#28), so only a group is offered for it -- which is the whole point of
+                // moving one, and the only thing a group costs is a setting
+                val groupsOnly = groupIds.isNotEmpty() || folderPaths.any { it.isSmbPath() }
                 getMediaFileDirItems(folderPaths) { fileDirItems ->
                     val source = folderPaths.firstOrNull() ?: ""
                     PickDirectoryDialog(
                         activity = activity,
                         sourcePath = source,
-                        showOtherFolderButton = groupIds.isEmpty(),
+                        showOtherFolderButton = !groupsOnly,
                         showFavoritesBin = false,
                         isPickingCopyMoveDestination = true,
                         isPickingFolderForWidget = false,
                         excludedGroupIds = groupIds,
-                        allowFolderDestination = groupIds.isEmpty(),
+                        allowFolderDestination = !groupsOnly,
                         groupCallback = { destinationGroupId ->
                             moveToGroup(folderPaths, groupIds, destinationGroupId)
                         }

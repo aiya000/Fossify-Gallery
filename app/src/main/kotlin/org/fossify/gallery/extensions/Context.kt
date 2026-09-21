@@ -725,6 +725,35 @@ fun Context.effectiveStorageFilter(): Int {
     }
 }
 
+// The storages there are to choose between, in the order a swipe walks them. The device is
+// always one; a remote storage is only there once it is set up, and "all" only makes sense
+// once there is more than one to be all of
+fun Context.availableStorages(): List<Int> {
+    val storages = arrayListOf(STORAGE_FILTER_LOCAL)
+    if (config.isPCloudLoggedIn) {
+        storages.add(STORAGE_FILTER_PCLOUD)
+    }
+
+    if (config.isSmbConfigured) {
+        storages.add(STORAGE_FILTER_SMB)
+    }
+
+    if (storages.size > 1) {
+        storages.add(STORAGE_FILTER_ALL)
+    }
+
+    return storages
+}
+
+fun Context.storageLabel(storageFilter: Int) = getString(
+    when (storageFilter) {
+        STORAGE_FILTER_PCLOUD -> R.string.pcloud
+        STORAGE_FILTER_SMB -> R.string.smb
+        STORAGE_FILTER_ALL -> R.string.storage_all
+        else -> R.string.storage_local
+    }
+)
+
 // Which folders the storage filter lets through. Favorites and virtual groups belong to no
 // storage and always pass; the device's recycle bin has a device path, so it goes with the
 // device's folders, and the pCloud bin has a pCloud path and goes with pCloud's

@@ -20,6 +20,7 @@ import android.widget.RelativeLayout
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
@@ -113,7 +114,9 @@ import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
+import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
 import org.fossify.gallery.extensions.effectiveStorageFilter
@@ -176,6 +179,7 @@ import org.fossify.gallery.helpers.getPermissionsToRequest
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
 import org.fossify.gallery.jobs.NewPhotoFetcher
 import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbDurationService
 import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
@@ -580,6 +584,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 }
                 findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
                 findItem(R.id.rescan_smb).isVisible = config.isSmbConfigured
+                // shown for every group, not only for one that holds a folder of the share: a
+                // group does not say on its face what is inside it, and a menu item that comes
+                // and goes for a reason nobody can see is worse than one that reports nothing
+                // to do
+                findItem(R.id.read_smb_durations_group).isVisible = config.isSmbConfigured && mCurrentGroupId != null
             }
 
             // a freshly set icon has no tint yet
@@ -627,6 +636,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.storage_filter -> showStorageFilterDialog()
                 R.id.rescan_pcloud -> rescanPCloudManually()
                 R.id.rescan_smb -> rescanSmbManually()
+                R.id.read_smb_durations_group -> readSmbVideoDurationsOfGroup()
                 R.id.open_camera -> launchCamera()
                 R.id.show_all -> showAllMedia()
                 R.id.change_view_type -> changeViewType()
@@ -819,32 +829,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // The storages the folder list can be switched between, in the order the menu lists them and
     // a sideways swipe walks them. A storage that is not set up is not one of them, and with
     // only the device there is nothing to switch to, so "all storages" is left out as well
-    private fun availableStorages(): List<Int> {
-        val storages = arrayListOf(STORAGE_FILTER_LOCAL)
-        if (config.isPCloudLoggedIn) {
-            storages.add(STORAGE_FILTER_PCLOUD)
-        }
-
-        if (config.isSmbConfigured) {
-            storages.add(STORAGE_FILTER_SMB)
-        }
-
-        if (storages.size > 1) {
-            storages.add(STORAGE_FILTER_ALL)
-        }
-
-        return storages
-    }
-
-    private fun storageLabel(storageFilter: Int) = getString(
-        when (storageFilter) {
-            STORAGE_FILTER_PCLOUD -> R.string.pcloud
-            STORAGE_FILTER_SMB -> R.string.smb
-            STORAGE_FILTER_ALL -> R.string.storage_all
-            else -> R.string.storage_local
-        }
-    )
-
     private fun switchStorage(newFilter: Int) {
         if (newFilter == config.storageFilter) {
             return
@@ -1108,6 +1092,39 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun rescanSmbManually() {
         toast(R.string.smb_rescanning)
         rescanSmb(reportCounts = true)
+    }
+
+    // The folders inside the group being looked at, including the ones in its subgroups. Read
+    // out of the membership alone, by path, so it holds for a folder that the storage filter is
+    // hiding as much as for one on screen. Which of them are on the share is the query's
+    // business, not this one's
+    private fun foldersOfCurrentGroup(): List<String> {
+        val groupId = mCurrentGroupId ?: return emptyList()
+        val groups = config.parseFolderGroups()
+        return config.parseFolderGroupMembers()
+            .filterValues { config.isFolderGroupDescendantOrSelf(it, groupId, groups) }
+            .keys
+            .toList()
+    }
+
+    // The same as the folder's own version in MediaActivity, over every folder of the share in
+    // this group. A group gathers what belongs together, which is the unit worth waiting for
+    private fun readSmbVideoDurationsOfGroup() {
+        val folders = foldersOfCurrentGroup()
+        ensureBackgroundThread {
+            val paths = folders.flatMap { mediaDB.getVideoPathsWithoutDuration(it) }
+            runOnUiThread {
+                if (paths.isEmpty()) {
+                    // nothing to ask about, so it is reported as the run that it was
+                    toast(getString(R.string.smb_read_durations_done, 0))
+                    return@runOnUiThread
+                }
+
+                ConfirmationDialog(this, getString(R.string.smb_read_durations_confirmation_group, paths.size)) {
+                    SmbDurationService.start(this, paths)
+                }
+            }
+        }
     }
 
     // the menu item lists the whole account again: it is the way out when the diff sync

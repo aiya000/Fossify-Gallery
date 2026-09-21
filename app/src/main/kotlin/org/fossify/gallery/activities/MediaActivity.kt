@@ -15,6 +15,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.SimpleTarget
 import com.bumptech.glide.request.transition.Transition
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.appLockManager
@@ -125,6 +126,7 @@ import org.fossify.gallery.helpers.VIDEO_PLAYER_APP
 import org.fossify.gallery.helpers.VIDEO_PLAYER_SYSTEM
 import org.fossify.gallery.interfaces.MediaOperationsListener
 import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbDurationService
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
@@ -227,10 +229,15 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // a copy or move to or from pCloud ends in the background; the list is read again then
     private val pCloudTransferListener: () -> Unit = { getMedia() }
 
+    // and so does the reading of the lengths of the videos on the share, which leaves new
+    // values in the rows this grid is drawing
+    private val smbDurationListener: () -> Unit = { getMedia() }
+
     override fun onResume() {
         super.onResume()
         updateMenuColors()
         PCloudTransferService.addListener(pCloudTransferListener)
+        SmbDurationService.addListener(smbDurationListener)
         if (mStoredAnimateGifs != config.animateGifs) {
             getMediaAdapter()?.updateAnimateGifs(config.animateGifs)
         }
@@ -305,6 +312,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     override fun onPause() {
         super.onPause()
         PCloudTransferService.removeListener(pCloudTransferListener)
+        SmbDurationService.removeListener(smbDurationListener)
         mIsGettingMedia = false
         binding.mediaRefreshLayout.isRefreshing = false
         storeStateVariables()
@@ -393,6 +401,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     && !mPath.isSmbPath()
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn
             findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
+            // offered on every folder, not only on one of the share: a folder does not always
+            // say which storage it is on, and an item that comes and goes for a reason nobody
+            // can see is worse than one that reports it had nothing to read
+            findItem(R.id.read_smb_durations).isVisible = config.isSmbConfigured
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
             findItem(R.id.temporarily_show_hidden).isVisible = !config.shouldShowHidden
@@ -434,6 +446,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 R.id.create_new_folder -> createNewFolder()
                 R.id.rescan_pcloud_folder -> rescanPCloudFolderManually()
                 R.id.rescan_smb_folder -> rescanSmbFolderManually()
+                R.id.read_smb_durations -> readSmbVideoDurations()
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.temporarily_show_hidden -> tryToggleTemporarilyShowHidden()
                 R.id.stop_showing_hidden -> tryToggleTemporarilyShowHidden()
@@ -815,6 +828,26 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
         mDidRescanSmbFolder = true
         rescanSmbFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+    }
+
+    // Fills in the lengths of the videos in this folder, which the scan cannot know: it walks
+    // listings and never opens a file. Each one is a file opened over the share, so the count
+    // is put to the user before any of it happens
+    private fun readSmbVideoDurations() {
+        ensureBackgroundThread {
+            val paths = mediaDB.getVideoPathsWithoutDuration(mPath)
+            runOnUiThread {
+                if (paths.isEmpty()) {
+                    // nothing to ask about, so it is reported as the run that it was
+                    toast(getString(R.string.smb_read_durations_done, 0))
+                    return@runOnUiThread
+                }
+
+                ConfirmationDialog(this, getString(R.string.smb_read_durations_confirmation, paths.size)) {
+                    SmbDurationService.start(this, paths)
+                }
+            }
+        }
     }
 
     private fun rescanSmbFolderManually() {
