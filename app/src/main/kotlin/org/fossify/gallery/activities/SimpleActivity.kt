@@ -5,7 +5,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
+import android.util.Log
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.FilePickerDialog
@@ -16,9 +18,17 @@ import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.StoragePermissionRequiredDialog
 import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.fetchPCloudMediumForEditing
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.openEditor
+import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.updateDirectoryPath
+import org.fossify.gallery.extensions.withEditableMediaFile
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.UPSTREAM_APP_ID
 import org.fossify.gallery.helpers.getPermissionsToRequest
+import java.io.File
+import java.util.concurrent.CountDownLatch
 
 open class SimpleActivity : BaseSimpleActivity() {
 
@@ -100,6 +110,119 @@ open class SimpleActivity : BaseSimpleActivity() {
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             }
         }
+    }
+
+    // An edit of a pCloud medium in flight. The editor is handed a copy of its own, and what
+    // comes back has to be written over the original on pCloud. It lives here rather than in
+    // one screen because the editor's result lands on whichever activity opened it -- the
+    // fullscreen view and the grid both do
+    protected data class PCloudEdit(val pCloudPath: String, val localPath: String, val size: Long, val lastModified: Long)
+
+    protected var pCloudEdit: PCloudEdit? = null
+
+    // Opens the editor on a medium wherever it lives: a local one is edited in place as it
+    // always was, a pCloud one through a copy of its own
+    fun editMedium(path: String) {
+        if (!path.isPCloudPath()) {
+            openEditor(path)
+            return
+        }
+
+        withEditableMediaFile(path) { localPath ->
+            val copy = File(localPath)
+            pCloudEdit = PCloudEdit(path, localPath, copy.length(), copy.lastModified())
+            openEditor(localPath)
+        }
+    }
+
+    // Belongs at the top of onActivityResult() for REQUEST_EDIT_IMAGE. Answers whether an
+    // edit of a pCloud medium was the one that came back, so that a caller can leave its own
+    // handling of a local edit alone. [onWritten] runs once pCloud has taken the edit
+    protected fun handlePCloudEditResult(resultCode: Int, onWritten: () -> Unit): Boolean {
+        val edit = pCloudEdit ?: return false
+        pCloudEdit = null
+        // what counts is whether the copy the editor was handed came back changed; the result
+        // code only says whether it thinks it saved anything at all
+        writeEditBackToPCloud(edit, resultCode == RESULT_OK, onWritten)
+        return true
+    }
+
+    // The copy is left where it is whatever happens: it is the only place the edit exists
+    // until pCloud has taken it, and when pCloud will not take it the user is told where it
+    // is rather than losing the work
+    private fun writeEditBackToPCloud(edit: PCloudEdit, editorSaidItSaved: Boolean, onWritten: () -> Unit) {
+        val copy = File(edit.localPath)
+        if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
+            // the editor was left without saving. When it says it saved and the copy is
+            // untouched all the same, it wrote somewhere else, and going quiet here is what
+            // makes that look like the write back did nothing at all
+            if (editorSaidItSaved) {
+                Log.w("PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
+                toast(R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
+            }
+
+            return
+        }
+
+        toast(R.string.pcloud_writing_back)
+        writeToPCloud(listOf(edit.pCloudPath.getParentPath()), { overwriteFile(edit.pCloudPath, edit.localPath) }) { success ->
+            runOnUiThread {
+                if (success) {
+                    toast(org.fossify.commons.R.string.file_saved)
+                    onWritten()
+                } else {
+                    // writeToPCloud already said what went wrong; this says what is left
+                    toast(getString(R.string.pcloud_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
+                }
+            }
+        }
+    }
+
+    // Rotates media wherever they live, one after the other, and writes a pCloud one back
+    // over itself: there is no folder on the device to save it beside, and "save a copy
+    // somewhere else" is what copying to this device is for. A JPEG only gets its
+    // Orientation tag turned, which pCloud's own web and app honour
+    fun rotateMedia(paths: List<String>, degrees: Int, onDone: () -> Unit) {
+        val (pCloudPaths, localPaths) = paths.partition { it.isPCloudPath() }
+        toast(org.fossify.commons.R.string.saving)
+        ensureBackgroundThread {
+            localPaths.forEach { path ->
+                saveRotatedImageToFile(path, path, degrees, true) {}
+            }
+
+            pCloudPaths.forEach { path ->
+                rotatePCloudMediumAndWait(path, degrees)
+            }
+
+            runOnUiThread {
+                onDone()
+            }
+        }
+    }
+
+    // Blocks until this one medium is through, so that a selection of them goes up one at a
+    // time rather than all at once
+    private fun rotatePCloudMediumAndWait(path: String, degrees: Int) {
+        val latch = CountDownLatch(1)
+        val localPath = try {
+            fetchPCloudMediumForEditing(path)
+        } catch (e: Exception) {
+            Log.w("PCloudTransfer", "Could not fetch $path to rotate it", e)
+            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+            return
+        }
+
+        saveRotatedImageToFile(localPath, localPath, degrees, true) {
+            writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { success ->
+                if (!success) {
+                    toast(getString(R.string.pcloud_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                }
+
+                latch.countDown()
+            }
+        }
+
+        latch.await()
     }
 
     protected fun registerFileUpdateListener() {

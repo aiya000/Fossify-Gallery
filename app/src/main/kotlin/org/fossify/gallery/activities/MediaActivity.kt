@@ -351,7 +351,14 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            if (resultCode == RESULT_OK && resultData != null) {
+            // an edit of a pCloud medium comes back as a copy that still has to be written
+            // back, and the grid is refreshed once pCloud has taken it rather than now
+            val wasPCloudEdit = handlePCloudEditResult(resultCode) {
+                mMedia.clear()
+                refreshItems()
+            }
+
+            if (!wasPCloudEdit && resultCode == RESULT_OK && resultData != null) {
                 mMedia.clear()
                 refreshItems()
             }

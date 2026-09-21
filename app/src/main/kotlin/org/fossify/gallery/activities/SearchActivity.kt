@@ -7,6 +7,7 @@ import android.widget.RelativeLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.extensions.*
+import org.fossify.commons.helpers.REQUEST_EDIT_IMAGE
 import org.fossify.commons.helpers.VIEW_TYPE_GRID
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.FileDirItem
@@ -256,6 +257,16 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun refreshItems() {
         startAsyncTask(true)
+    }
+
+    // an edit of a pCloud medium comes back as a copy that still has to be written back, and
+    // the results are refreshed once pCloud has taken it
+    override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
+        if (requestCode == REQUEST_EDIT_IMAGE) {
+            handlePCloudEditResult(resultCode) { refreshItems() }
+        }
+
+        super.onActivityResult(requestCode, resultCode, resultData)
     }
 
     override fun tryDeleteFiles(fileDirItems: ArrayList<FileDirItem>, skipRecycleBin: Boolean) {
