@@ -16,6 +16,7 @@
 | 共有から読んだストリームを閉じても、サーバ側のハンドルが残る | smbj の `FileInputStream.close()` はハンドルを閉じない。`OpenFile` を持ち回して閉じるようにした | [agents/smb/closing-the-stream-does-not-close-the-file.md](./agents/smb/closing-the-stream-does-not-close-the-file.md) |
 | 端末を動かすテストで、2回目の完了を待ったのに、待たずに素通りした | 1回目のログがバッファに残っていた。2回目の操作の直前に `logcat_reset` を入れた | [agents/tests/waiting-for-a-log-line-that-is-already-there.md](./agents/tests/waiting-for-a-log-line-that-is-already-there.md) |
 | 端末を動かすテストが「ストレージのチップが画面に無い」で落ちた。チップは何も変えていない | フォルダの中にいたまま探していた。チップはフォルダ一覧のもの。戻ってから探すようにした | [agents/tests/the-toolbar-chips-belong-to-the-folder-list.md](./agents/tests/the-toolbar-chips-belong-to-the-folder-list.md) |
+| 共有へ書き込んだら `STATUS_ACCESS_DENIED`。読み取りはずっと動いていた | アプリではなくフィクスチャ側。samba のイメージが `force user` で uid を固定していた | [agents/tests/the-fixture-share-was-never-writable.md](./agents/tests/the-fixture-share-was-never-writable.md) |
 
 ### この索引に足すこと
 

@@ -10,6 +10,15 @@
 # The share's user is created with the host user's own uid and gid. Without that the container
 # takes the tree over, and seed-share.sh -- which is a plain script run by the host user -- cannot
 # add anything to it afterwards.
+#
+# The two "force user"/"force group" lines are what make the share writable, and they are not
+# optional. This image's own smb.conf carries `force user = smbuser` (uid 100) globally, so every
+# file operation happens as that user however the share and its users are declared -- and the tree
+# belongs to the host user, mode 775, so uid 100 can read it and cannot write a byte. Reading hid
+# the problem for as long as nothing wrote: the first copy *onto* the share came back
+# STATUS_ACCESS_DENIED from Create, which reads exactly like an app that asked for the wrong
+# access. `-g` appends to the global section, and the last setting of a parameter is the one samba
+# keeps, so these override the image's.
 
 services:
   fixture-share:
@@ -23,6 +32,8 @@ services:
     command: >
       -u "${FIXTURE_SMB_USER:-gallery};${FIXTURE_SMB_PASSWORD:-gallery};${FIXTURE_UID:-1000};${FIXTURE_SMB_USER:-gallery};${FIXTURE_GID:-1000}"
       -s "${FIXTURE_SHARE_NAME:-gallery};/share;yes;no;no;${FIXTURE_SMB_USER:-gallery}"
+      -g "force user = ${FIXTURE_SMB_USER:-gallery}"
+      -g "force group = ${FIXTURE_SMB_USER:-gallery}"
     volumes:
       # seed-share.sh builds this. It is generated, so it is not checked in -- see .gitignore
       - "${FIXTURE_SHARE_DIR:-./share}:/share:rw"
