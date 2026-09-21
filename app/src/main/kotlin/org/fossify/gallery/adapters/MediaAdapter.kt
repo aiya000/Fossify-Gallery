@@ -238,11 +238,12 @@ class MediaAdapter(
         // a remote medium has no file behind it, so nothing that reads one on the device is
         // offered while any is selected. Deleting, copying, moving, and renaming one at a
         // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing storages gets none of them. The share has no such API yet -- writing to it
-        // is not implemented at all -- so a selection of its media is offered favorites and
-        // the video download alone, both of which work by path
+        // mixing storages gets none of them. The share can only be read (#28), so a selection
+        // of its media is offered copying away from it, favorites and the video download --
+        // everything that would change something on the share is still off
         val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
+        val isSmbOnly = selectedPaths.all { it.isSmbPath() }
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
@@ -280,8 +281,9 @@ class MediaAdapter(
             // knows rather than from a file on the device
             findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly
             // a medium in the pCloud bin is restored or deleted for good, nothing else: copying
-            // it would go by a remote path the bin does not keep
-            findItem(R.id.cab_copy_to).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
+            // it would go by a remote path the bin does not keep. Media of the share are copied
+            // off it by SmbTransferService; "move to" stays off, it would delete from the share
+            findItem(R.id.cab_copy_to).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin) || isSmbOnly
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -710,8 +712,8 @@ class MediaAdapter(
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
-        // a pCloud source has no MediaStore entry to manage
-        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+        // a remote source has no MediaStore entry to manage
+        if (getFirstSelectedItemPath()?.isRemotePath() == true) {
             copyMoveTo(isCopyOperation)
             return
         }

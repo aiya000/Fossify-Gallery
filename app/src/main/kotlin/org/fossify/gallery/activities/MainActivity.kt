@@ -183,6 +183,7 @@ import org.fossify.gallery.jobs.NewPhotoFetcher
 import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.jobs.RemoteScanService
 import org.fossify.gallery.jobs.SmbDurationService
+import org.fossify.gallery.jobs.SmbTransferService
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -356,8 +357,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
     }
 
-    // a copy or move to or from pCloud ends in the background; the folders are read again then
-    private val pCloudTransferListener: () -> Unit = { getDirectories() }
+    // a copy or move to or from a remote storage ends in the background; the folders are read
+    // again then
+    private val transferListener: () -> Unit = { getDirectories() }
 
     // and so does a scan of a remote storage, which runs in a foreground service and outlives
     // whatever screen asked for it
@@ -366,7 +368,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override fun onResume() {
         super.onResume()
         updateMenuColors()
-        PCloudTransferService.addListener(pCloudTransferListener)
+        PCloudTransferService.addListener(transferListener)
+        SmbTransferService.addListener(transferListener)
         RemoteScanService.addListener(remoteScanListener)
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
@@ -434,7 +437,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onPause() {
         super.onPause()
-        PCloudTransferService.removeListener(pCloudTransferListener)
+        PCloudTransferService.removeListener(transferListener)
+        SmbTransferService.removeListener(transferListener)
         RemoteScanService.removeListener(remoteScanListener)
         binding.directoriesRefreshLayout.isRefreshing = false
         mIsGettingDirs = false

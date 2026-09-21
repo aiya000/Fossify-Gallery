@@ -14,6 +14,7 @@
 | 共有のフォルダで、サムネがぜんぶ出ない。警告アイコンも出ない。再スキャンしても変わらない | 5 MiB を超える PNG だけが落ちていた。Glide に渡す前に自分で縮めるようにした | [agents/thumbnails/no-thumbnail-for-a-big-png.md](./agents/thumbnails/no-thumbnail-for-a-big-png.md) |
 | 端末を動かすテストが、直しを外したビルドでも緑になった | 「絵があるか」の測りかたを、色のばらつきから「1色が占める割合」に変えた | [agents/tests/a-driving-script-that-passes-without-the-fix.md](./agents/tests/a-driving-script-that-passes-without-the-fix.md) |
 | 共有から読んだストリームを閉じても、サーバ側のハンドルが残る | smbj の `FileInputStream.close()` はハンドルを閉じない。`OpenFile` を持ち回して閉じるようにした | [agents/smb/closing-the-stream-does-not-close-the-file.md](./agents/smb/closing-the-stream-does-not-close-the-file.md) |
+| 端末を動かすテストで、2回目の完了を待ったのに、待たずに素通りした | 1回目のログがバッファに残っていた。2回目の操作の直前に `logcat_reset` を入れた | [agents/tests/waiting-for-a-log-line-that-is-already-there.md](./agents/tests/waiting-for-a-log-line-that-is-already-there.md) |
 
 ### この索引に足すこと
 

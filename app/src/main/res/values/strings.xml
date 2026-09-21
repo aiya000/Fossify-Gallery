@@ -184,6 +184,12 @@
     <string name="smb_video_cache_summary">Videos downloaded for watching are dropped a day after they were last watched</string>
     <string name="smb_video_cache_cleared">Deleted the downloaded videos.</string>
     <string name="smb_no_write_destination">Writing to the network share is not supported yet, so a folder on it cannot be a destination.</string>
+    <string name="smb_transfer_channel">Network share copies</string>
+    <string name="smb_transfer_started">Copying started, the notification shows its progress</string>
+    <string name="smb_copying_to_device">Copying to this device (%1$d/%2$d)</string>
+    <string name="smb_copying_to_pcloud">Copying to pCloud (%1$d/%2$d)</string>
+    <string name="smb_transfer_done">Network share: %1$d files copied</string>
+    <string name="smb_transfer_done_with_failures">Network share: %1$d files copied, %2$d failed</string>
     <string name="shared_media_none">No images or videos were shared</string>
     <string name="shared_media_unreadable">The shared images and videos could not be read</string>
     <string name="shared_media_preparing">Preparing the shared media…</string>
