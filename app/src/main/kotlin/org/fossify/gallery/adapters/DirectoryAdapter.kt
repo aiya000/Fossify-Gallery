@@ -876,12 +876,28 @@ class DirectoryAdapter(
                             return@PickDirectoryDialog
                         }
 
-                        activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
-                            onFilesCopiedMoved(fileDirItems, it)
+                        // Moving folders onto a folder is not a nesting: every media file of the
+                        // selection lands in the destination and the folders become one, which is
+                        // hard to walk back. Ask first, and name the way to keep them apart
+                        confirmFolderJoin(destinationPath, fileDirItems.size) {
+                            activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
+                                onFilesCopiedMoved(fileDirItems, it)
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private fun confirmFolderJoin(destinationPath: String, mediaCount: Int, callback: () -> Unit) {
+        ConfirmationDialog(
+            activity = activity,
+            message = activity.getString(R.string.move_folder_into_folder_confirmation, destinationPath.getFilenameFromPath(), mediaCount),
+            positive = org.fossify.commons.R.string.yes,
+            negative = org.fossify.commons.R.string.no
+        ) {
+            callback()
         }
     }
 

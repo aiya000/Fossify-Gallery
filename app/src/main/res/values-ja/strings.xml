@@ -22,6 +22,7 @@
     <string name="ungroup">グループを解除</string>
     <string name="ungroup_confirmation">選択したグループを解除しますか？中のフォルダーとグループは削除されず、ひとつ上の階層に移動します。</string>
     <string name="cannot_move_group_into_itself">グループを自分自身やそのサブグループの中に移動することはできません</string>
+    <string name="move_folder_into_folder_confirmation">選択したフォルダのメディア %2$d 件を「%1$s」に移動しますか？\n移動したメディアは移動先にあるものと一緒になり、空になったフォルダは一覧から消えます。\nフォルダを1つにまとめずに整理したいときは、キャンセルして「グループ化する」を使ってください。</string>
     <string name="pick_a_destination_by_tapping">コピーや移動の宛先は、一覧からフォルダをタップして選んでください。</string>
     <string name="group_is_not_a_destination">グループに入れられるのはフォルダだけです。\nファイルの宛先にはフォルダを選んでください。フォルダは「グループ化する」や「移動」でグループに入れられます。</string>
     <string name="pick_a_group">移動先のグループを選択するか、OK を押して現在の階層に移動してください</string>
