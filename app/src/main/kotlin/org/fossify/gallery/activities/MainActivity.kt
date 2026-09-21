@@ -168,6 +168,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.SmbSyncPolicy
+import org.fossify.gallery.helpers.SmbVideoCache
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_RAWS
@@ -1150,6 +1151,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val smbPolicy = SmbSyncPolicy(this)
         if (smbPolicy.rescanOnLaunch && isSmbShown() && smbPolicy.isFullScanDue()) {
             rescanSmb(reportCounts = false)
+        }
+
+        sweepDownloadedSmbVideos()
+    }
+
+    // A video downloaded for watching is kept for a day after it was last watched and then
+    // dropped, which nothing can schedule: the system is free to kill the app long before the
+    // day is up. So the sweep runs when the app starts, which is the app's own version of
+    // "a day later", and again whenever a download finishes
+    private fun sweepDownloadedSmbVideos() {
+        ensureBackgroundThread {
+            SmbVideoCache(this).sweepExpired()
         }
     }
 

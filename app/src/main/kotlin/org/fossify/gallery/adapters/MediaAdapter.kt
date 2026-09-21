@@ -77,6 +77,7 @@ import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
 import org.fossify.gallery.extensions.loadImage
@@ -103,12 +104,14 @@ import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
+import org.fossify.gallery.helpers.SmbVideoCache
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_RECYCLE_BIN
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_RAWS
 import org.fossify.gallery.interfaces.MediaOperationsListener
+import org.fossify.gallery.jobs.SmbDownloadService
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
@@ -253,6 +256,10 @@ class MediaAdapter(
             // original, the same as the fullscreen view does it
             findItem(R.id.cab_edit).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && isOneItemSelected && !isInRecycleBin
             findItem(R.id.cab_set_as).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
+            // only a video on the share is read as it plays, so only those can be had in hand
+            // first. Offered whenever the selection holds one, whatever else is in it: the run
+            // takes the share's videos out of the selection and says how many that was
+            findItem(R.id.cab_smb_download_videos).isVisible = selectedItems.any { it.path.isSmbPath() && it.isVideo() }
             // a pCloud image is fetched, resized and sent back to a folder the user picks.
             // Resizing a selection of them writes each one back over itself, which is not
             // built yet, so pCloud gets the one-at-a-time resize only
@@ -297,6 +304,7 @@ class MediaAdapter(
             R.id.cab_remove_from_favorites -> toggleFavorites(false)
             R.id.cab_restore_recycle_bin_files -> restoreFiles()
             R.id.cab_share -> shareMedia()
+            R.id.cab_smb_download_videos -> downloadSelectedSmbVideos()
             R.id.cab_rotate_right -> rotateSelection(90)
             R.id.cab_rotate_left -> rotateSelection(270)
             R.id.cab_rotate_one_eighty -> rotateSelection(180)
@@ -937,6 +945,44 @@ class MediaAdapter(
                 listener?.updateMediaGridDecoration(media)
                 removeSelectedItems(positions)
                 currentMediaHash = media.hashCode()
+            }
+        }
+    }
+
+    // "Download the selected videos": the same fetch the viewer's menu does for one video, over
+    // as many as were picked. The share is read one video at a time, so the order they go in
+    // matters, and it is the order they were tapped in -- selectedKeys is a LinkedHashSet, so
+    // the selection keeps it, and picking one again moves it to the end
+    private fun downloadSelectedSmbVideos() {
+        val videos = getSelectedItems().filter { it.path.isSmbPath() && it.isVideo() }
+        if (videos.isEmpty()) {
+            activity.toast(R.string.smb_download_videos_no_videos)
+            return
+        }
+
+        ensureBackgroundThread {
+            // asking the file system whether each copy is already there, which a selection of
+            // hundreds makes worth keeping off the main thread
+            val cache = SmbVideoCache(activity)
+            val wanted = videos.filter { cache.peek(it.path, it.size, it.modified) == null }
+            val totalSize = wanted.sumByLong { it.size }
+            activity.runOnUiThread {
+                if (wanted.isEmpty()) {
+                    activity.toast(R.string.smb_download_videos_none)
+                    finishActMode()
+                    return@runOnUiThread
+                }
+
+                // a selection can run to tens of gigabytes, so the size is named as well as the
+                // count -- the count alone does not say what is about to be pulled over the network
+                val question = activity.getString(R.string.smb_download_videos_confirmation, wanted.size, totalSize.formatSize())
+                ConfirmationDialog(activity, question) {
+                    if (SmbDownloadService.start(activity, wanted.map { it.path })) {
+                        finishActMode()
+                    } else {
+                        activity.toast(R.string.smb_download_busy)
+                    }
+                }
             }
         }
     }

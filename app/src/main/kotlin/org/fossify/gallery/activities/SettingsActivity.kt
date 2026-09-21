@@ -279,6 +279,35 @@ class SettingsActivity : SimpleActivity() {
         }
 
         setupSmbRescanPolicy()
+        setupSmbVideoCache()
+    }
+
+    // The videos fetched by "download first, then play". They empty themselves a day after they
+    // were last watched, so this row is not something the user has to remember -- it is here for
+    // when a few gigabytes are wanted back before that day is up. The general "clear cache" row
+    // wipes these too, along with everything else cached; this one takes only the videos
+    private fun setupSmbVideoCache() {
+        binding.settingsSmbVideoCacheHolder.beVisibleIf(config.isSmbConfigured)
+        refreshSmbVideoCacheSize()
+
+        binding.settingsSmbVideoCacheHolder.setOnClickListener {
+            ensureBackgroundThread {
+                SmbVideoCache(this).clear()
+                runOnUiThread {
+                    toast(R.string.smb_video_cache_cleared)
+                    refreshSmbVideoCacheSize()
+                }
+            }
+        }
+    }
+
+    private fun refreshSmbVideoCacheSize() {
+        ensureBackgroundThread {
+            val size = SmbVideoCache(this).size().formatSize()
+            runOnUiThread {
+                binding.settingsSmbVideoCacheSize.text = size
+            }
+        }
     }
 
     private fun showSmbShareOptions() {

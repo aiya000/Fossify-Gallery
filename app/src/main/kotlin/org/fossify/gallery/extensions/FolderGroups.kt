@@ -91,7 +91,8 @@ fun collectFolderGroupContents(
 }
 
 // The direct children of a group (real folders and subgroups) in the order they are displayed in
-private fun Context.getSortedGroupChildren(
+// Public so the download queue can walk a group the way the folder list draws it
+fun Context.getSortedGroupChildren(
     groupId: Long,
     groups: List<FolderGroup>,
     members: Map<String, Long>,

@@ -1292,6 +1292,37 @@
 
             </RelativeLayout>
 
+            <RelativeLayout
+                android:id="@+id/settings_smb_video_cache_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_video_cache_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_video_cache" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_video_cache_size"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_smb_video_cache_label"
+                    tools:text="0 B" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_video_cache_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_smb_video_cache_size"
+                    android:text="@string/smb_video_cache_summary" />
+
+            </RelativeLayout>
+
             <include
                 android:id="@+id/settings_smb_divider"
                 layout="@layout/divider" />

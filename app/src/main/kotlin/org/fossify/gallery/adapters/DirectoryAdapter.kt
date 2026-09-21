@@ -58,7 +58,9 @@ import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.SHOW_ALL_TABS
 import org.fossify.commons.helpers.SORT_BY_CUSTOM
 import org.fossify.commons.helpers.VIEW_TYPE_LIST
+import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.helpers.sumByLong
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.interfaces.ItemMoveCallback
 import org.fossify.commons.interfaces.ItemTouchHelperContract
@@ -112,13 +114,17 @@ import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
+import org.fossify.gallery.helpers.SmbDownloadQueue
+import org.fossify.gallery.helpers.SmbVideoCache
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_RAWS
 import org.fossify.gallery.helpers.TYPE_SVGS
 import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
+import org.fossify.gallery.jobs.SmbDownloadService
 import org.fossify.gallery.models.AlbumCover
+import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.isFolderGroupPath
 import org.fossify.gallery.models.toFolderGroupId
@@ -234,6 +240,10 @@ class DirectoryAdapter(
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isAnySmbSelected
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
+            // offered wherever a share is set up, on folders and on groups alike. A selection
+            // holding none of the share's videos answers with "nothing to download" rather than
+            // going missing, so nobody has to work out why it is not there
+            findItem(R.id.cab_smb_download_videos).isVisible = config.isSmbConfigured
 
             checkHideBtnVisibility(this, ArrayList(realPaths.filter { it != PCLOUD_RECYCLE_BIN }))
             checkPinBtnVisibility(this, selectedPaths)
@@ -265,6 +275,7 @@ class DirectoryAdapter(
             R.id.cab_select_all -> selectAll()
             R.id.cab_create_shortcut -> tryCreateShortcut()
             R.id.cab_ungroup -> askConfirmUngroup()
+            R.id.cab_smb_download_videos -> downloadSmbVideosOfSelection()
             R.id.cab_delete -> askConfirmDelete()
             R.id.cab_select_photo -> tryChangeAlbumCover(false)
             R.id.cab_use_default -> tryChangeAlbumCover(true)
@@ -1120,6 +1131,46 @@ class DirectoryAdapter(
         config.albumCovers = Gson().toJson(albumCovers)
         finishActMode()
         listener?.refreshItems()
+    }
+
+    // "Download the videos in the selection, then play them": the whole of a folder or a group,
+    // rather than videos named one by one in the grid. The order is SmbDownloadQueue's -- every
+    // level as it is shown, walked depth first -- and the top level is the order these rows were
+    // tapped in, which the selection keeps
+    private fun downloadSmbVideosOfSelection() {
+        val selected = getSelectedItems()
+        ensureBackgroundThread {
+            val videos = SmbDownloadQueue.videosOf(activity, selected)
+            val cache = SmbVideoCache(activity)
+            // the queue is every video, so that playback runs through the lot; only the fetching
+            // skips the ones already on the device
+            val wanted = videos.filter { cache.peek(it.path, it.size, it.modified) == null }
+            val totalSize = wanted.sumByLong { it.size }
+            activity.runOnUiThread {
+                when {
+                    videos.isEmpty() -> activity.toast(R.string.smb_download_videos_none_found)
+                    wanted.isEmpty() -> {
+                        activity.toast(R.string.smb_download_videos_none)
+                        finishActMode()
+                    }
+
+                    else -> confirmDownloadOfSelection(videos, wanted, totalSize)
+                }
+            }
+        }
+    }
+
+    private fun confirmDownloadOfSelection(videos: List<Medium>, wanted: List<Medium>, totalSize: Long) {
+        // a group can run to tens of gigabytes, so the size is named as well as the count -- the
+        // count alone does not say what is about to come over the network
+        val question = activity.getString(R.string.smb_download_videos_confirmation, wanted.size, totalSize.formatSize())
+        ConfirmationDialog(activity, question) {
+            if (SmbDownloadService.start(activity, wanted.map { it.path }, playlist = videos.map { it.path })) {
+                finishActMode()
+            } else {
+                activity.toast(R.string.smb_download_busy)
+            }
+        }
     }
 
     private fun getSelectedItems() = selectedKeys.mapNotNull { getItemWithKey(it) } as ArrayList<Directory>

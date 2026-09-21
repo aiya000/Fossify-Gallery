@@ -110,6 +110,11 @@ const val CUSTOM_MEDIA_ORDER_SEPARATOR = "|||"
 // the paths selected in the media grid, handed to the fullscreen view and back again
 const val SELECTED_PATHS = "selected_paths"
 
+// The media the fullscreen view is to show, in the order it is to show them, instead of the
+// folder it would otherwise list. A queue of downloaded videos crosses folders, and the swipe
+// has to follow the queue rather than whichever folder the first video happens to sit in
+const val QUEUE_PATHS = "queue_paths"
+
 // not a sorting criterion of its own, it is combined with SORT_BY_DATE_TAKEN or
 // SORT_BY_DATE_MODIFIED. The commons SORT_BY_* flags end at SORT_BY_COUNT (524288)
 const val SORT_GROUP_BY_FILENAME = 1048576
@@ -201,6 +206,11 @@ const val SMB_PATH_PREFIX = "$SMB_PATH_SCHEME/"
 // under the cache directory: the local copies of SMB files, for the parts of the app that need
 // a real file. See SmbFileCache
 const val SMB_CACHE_DIR = "smb"
+
+// under the cache directory as well, but kept apart from SMB_CACHE_DIR: the videos the user
+// asked to have in hand before watching them. Those are far bigger than anything else cached
+// here, so they are swept by age rather than held to a size. See SmbVideoCache
+const val SMB_VIDEO_CACHE_DIR = "smb-videos"
 
 // the share is reached with these; the password is kept in the app's private prefs like the
 // pCloud token is. An empty user name means a guest connection
