@@ -329,11 +329,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         currentMedium.isFavorite = mFavoritePaths.contains(currentMedium.path)
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
 
-        // a pCloud medium has no file on the device, but it is fetched into one before
+        // a remote medium has no file on the device, but it is fetched into one before
         // anything that needs a file, so those actions are offered for it like they are for a
         // local medium. What stays hidden is what the device's own file system is part of:
-        // hiding with a .nomedia and pinning a shortcut to a path
-        val isLocal = !currentMedium.path.isPCloudPath()
+        // hiding by renaming the file with a leading dot, and pinning a shortcut to a path
+        val isLocal = !currentMedium.path.isRemotePath()
         // a medium in the pCloud bin is restored or deleted for good, nothing else; copying it
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
@@ -1133,7 +1133,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val currentMedium = getCurrentMedium()
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
         // the same gating as refreshMenuItems(): no file, no file operations
-        val isLocal = currentMedium?.path?.isPCloudPath() != true
+        val isLocal = currentMedium?.path?.isRemotePath() != true
         val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         val hasFile = !isInPCloudBin
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)

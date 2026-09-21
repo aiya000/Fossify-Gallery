@@ -77,6 +77,7 @@ import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
@@ -234,11 +235,13 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
 
-        // pCloud media have no file behind them, so nothing that reads one on the device is
+        // a remote medium has no file behind it, so nothing that reads one on the device is
         // offered while any is selected. Deleting, copying, moving, and renaming one at a
         // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing both storages gets none of them. Favorites work
-        val isLocal = selectedPaths.none { it.isPCloudPath() }
+        // mixing storages gets none of them. The share has no such API yet -- writing to it
+        // is not implemented at all -- so a selection of its media is offered favorites and
+        // the video download alone, both of which work by path
+        val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
@@ -436,9 +439,12 @@ class MediaAdapter(
 
     fun isASectionTitle(position: Int) = media.getOrNull(position) is ThumbnailSection
 
+    // a medium is hidden by renaming its file with a leading dot, which is a write. Neither
+    // remote storage can be written to that way, so this is offered for local media alone --
+    // a folder of either one is hidden by a setting instead, see DirectoryAdapter
     private fun checkHideBtnVisibility(menu: Menu, selectedItems: ArrayList<Medium>) {
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
-        val isLocal = selectedItems.none { it.path.isPCloudPath() }
+        val isLocal = selectedItems.none { it.path.isRemotePath() }
         menu.findItem(R.id.cab_hide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { !it.isHidden() }
         menu.findItem(R.id.cab_unhide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { it.isHidden() }
     }
