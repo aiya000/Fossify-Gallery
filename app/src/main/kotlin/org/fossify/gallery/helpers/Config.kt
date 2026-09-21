@@ -213,6 +213,11 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(PLAYBACK_SPEED_PROGRESS, -1)
         set(playbackSpeedProgress) = prefs.edit().putInt(PLAYBACK_SPEED_PROGRESS, playbackSpeedProgress).apply()
 
+    // the speed a video runs at while the screen is held down, which used to be a fixed 2x
+    var longPressPlaybackSpeed: Float
+        get() = prefs.getFloat(LONG_PRESS_PLAYBACK_SPEED, DEFAULT_LONG_PRESS_PLAYBACK_SPEED)
+        set(longPressPlaybackSpeed) = prefs.edit().putFloat(LONG_PRESS_PLAYBACK_SPEED, longPressPlaybackSpeed).apply()
+
     var cropThumbnails: Boolean
         get() = prefs.getBoolean(CROP_THUMBNAILS, true)
         set(cropThumbnails) = prefs.edit().putBoolean(CROP_THUMBNAILS, cropThumbnails).apply()

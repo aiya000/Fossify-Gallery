@@ -24,6 +24,7 @@ const val MAX_BRIGHTNESS = "max_brightness"
 const val ULTRA_HDR_RENDERING = "ultra_hdr_rendering"
 const val PLAYBACK_SPEED = "playback_speed"
 const val PLAYBACK_SPEED_PROGRESS = "playback_speed_progress"
+const val LONG_PRESS_PLAYBACK_SPEED = "long_press_playback_speed"
 const val CROP_THUMBNAILS = "crop_thumbnails"
 const val SHOW_THUMBNAIL_VIDEO_DURATION = "show_thumbnail_video_duration"
 const val SCREEN_ROTATION = "screen_rotation"
@@ -334,6 +335,16 @@ const val ROTATE_BY_ASPECT_RATIO = 2
 // video player type
 const val VIDEO_PLAYER_APP = 0
 const val VIDEO_PLAYER_SYSTEM = 1
+
+// the speed a video runs at while the screen is held down. The gesture came in as a fixed 2x,
+// which stays the default; the settings offer these steps instead of a free number, and carry
+// them as whole percents so that a RadioItem's Int id can hold one
+const val DEFAULT_LONG_PRESS_PLAYBACK_SPEED = 2f
+val LONG_PRESS_PLAYBACK_SPEEDS = listOf(1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f, 4f)
+
+fun Float.toPlaybackSpeedPercent() = Math.round(this * 100)
+
+fun Int.toPlaybackSpeed() = this / 100f
 
 // file loading priority
 const val PRIORITY_SPEED = 0

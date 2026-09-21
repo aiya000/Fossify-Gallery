@@ -6,4 +6,6 @@
     <string name="svg">SVG</string>
     <string name="package_name">org.fossify.gallery</string>
     <string name="playback_speed_display_text">2x >></string>
+    <string name="playback_speed_pill_format">%sx >></string>
+    <string name="playback_speed_value">%sx</string>
 </resources>

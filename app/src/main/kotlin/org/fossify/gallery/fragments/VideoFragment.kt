@@ -111,7 +111,6 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         private const val PROGRESS = "progress"
         private const val UPDATE_INTERVAL_MS = 250L
         private const val TOUCH_HOLD_DURATION_MS = 500L
-        private const val TOUCH_HOLD_SPEED_MULTIPLIER = 2.0f
         private const val TOUCH_SLOP_DIVIDER = 3
     }
 
@@ -190,8 +189,11 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         mIsLongPressActive = true
         mOriginalPlaybackSpeed = mExoPlayer?.playbackParameters?.speed ?: mConfig.playbackSpeed
         mView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        updatePlaybackSpeed(TOUCH_HOLD_SPEED_MULTIPLIER)
+        val holdSpeed = mConfig.longPressPlaybackSpeed
+        updatePlaybackSpeed(holdSpeed)
 
+        // the pill used to read a fixed "2x", which is now whatever the setting says
+        mPlaybackSpeedPill.text = getString(R.string.playback_speed_pill_format, DecimalFormat("#.##").format(holdSpeed))
         mPlaybackSpeedPill.fadeIn()
     }
 

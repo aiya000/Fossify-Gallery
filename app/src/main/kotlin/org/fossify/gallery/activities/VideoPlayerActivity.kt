@@ -151,11 +151,19 @@ open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeLi
             callbacks = VideoGestureCallbacks(
                 isPlaying = { mIsPlaying },
                 getCurrentSpeed = { config.playbackSpeed },
+                getHoldSpeed = { config.longPressPlaybackSpeed },
                 setPlaybackSpeed = { speed ->
-                    mExoPlayer?.setPlaybackSpeed(speed) // Set to 2x speed
+                    mExoPlayer?.setPlaybackSpeed(speed)
                     updatePlaybackSpeed(speed)
                 },
-                showPill = { mPlaybackSpeedPill.fadeIn() },
+                showPill = {
+                    // the pill used to read a fixed "2x", which is now whatever the setting says
+                    mPlaybackSpeedPill.text = getString(
+                        R.string.playback_speed_pill_format,
+                        DecimalFormat("#.##").format(config.longPressPlaybackSpeed)
+                    )
+                    mPlaybackSpeedPill.fadeIn()
+                },
                 hidePill = { mPlaybackSpeedPill.fadeOut() },
                 performHaptic = { contentHolder.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) },
                 disallowParentIntercept = { contentHolder.parent.requestDisallowInterceptTouchEvent(true) })
