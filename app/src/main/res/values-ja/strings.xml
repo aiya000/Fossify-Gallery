@@ -132,7 +132,11 @@
     <string name="smb_rescan">ネットワーク共有を再スキャン</string>
     <string name="smb_rescanning">ネットワーク共有をスキャンしています…</string>
     <string name="smb_rescan_done">ネットワーク共有: %1$d フォルダ、%2$d ファイル</string>
+    <string name="smb_rescan_done_with_skipped">ネットワーク共有: %1$d フォルダ、%2$d ファイル。%3$d 個のフォルダを読み取れなかったため、そのままにしました。</string>
     <string name="smb_scan_failed">ネットワーク共有をスキャンできませんでした。共有のメディアはそのままにしました。</string>
+    <string name="smb_scan_channel">ネットワーク共有のスキャン</string>
+    <string name="smb_scan_progress">ネットワーク共有: %1$d フォルダ、%2$d ファイル</string>
+    <string name="smb_scan_stop">中止</string>
     <string name="smb_rescan_on_launch">起動時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>

@@ -164,7 +164,6 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
-import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
@@ -177,6 +176,7 @@ import org.fossify.gallery.helpers.getPermissionsToRequest
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
 import org.fossify.gallery.jobs.NewPhotoFetcher
 import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -348,10 +348,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // a copy or move to or from pCloud ends in the background; the folders are read again then
     private val pCloudTransferListener: () -> Unit = { getDirectories() }
 
+    // and so does a walk of the network share, which runs in a foreground service and outlives
+    // whatever screen asked for it
+    private val smbScanListener: () -> Unit = { getDirectories() }
+
     override fun onResume() {
         super.onResume()
         updateMenuColors()
         PCloudTransferService.addListener(pCloudTransferListener)
+        SmbScanService.addListener(smbScanListener)
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
         mTimeFormat = getTimeFormat()
@@ -419,6 +424,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override fun onPause() {
         super.onPause()
         PCloudTransferService.removeListener(pCloudTransferListener)
+        SmbScanService.removeListener(smbScanListener)
         binding.directoriesRefreshLayout.isRefreshing = false
         mIsGettingDirs = false
         storeStateVariables()
@@ -849,9 +855,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             PCloudScanner.abortCurrent()
         }
 
-        if (!isSmbShown()) {
-            SmbScanner.abortCurrent()
-        }
+        // The share is not called off. Walking it takes minutes and now runs in a foreground
+        // service with its own notification, which outlives this screen on purpose; throwing
+        // that away because the list was swiped sideways would cost every folder walked so far,
+        // and the gesture is an easy one to make while scrolling. The notification's stop action
+        // is how a scan is called off. See #59 for ranking the scans against each other
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
         // refreshes the list a second time once it is through
@@ -863,7 +871,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         val smbPolicy = SmbSyncPolicy(this)
         if (smbPolicy.rescanOnStorageSwitch && isSmbShown() && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
+            rescanSmb(reportCounts = false)
         }
     }
 
@@ -1070,26 +1078,31 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     // A pull refreshes the remote storages on screen too; the local folders are rechecked by
-    // getDirectories() either way, and that is also what stops the spinner. With both remote
-    // storages showing, the scans run one after the other: each claims its own scanner, but
-    // the list is only worth rebuilding once they are both through
+    // getDirectories() either way, and that is also what stops the spinner. The share is walked
+    // by a foreground service and can take minutes, far longer than a pull should hold the
+    // spinner, so it is started alongside rather than waited on: its listener builds the list
+    // again when it is through
     private fun refreshDirectories() {
-        when {
-            isPCloudShown() && isSmbShown() -> rescanPCloud(reportCounts = false) {
-                rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
-            }
+        // a pull walks the share only when the settings ask for it, and they do not by default:
+        // the gesture is an easy one to make while scrolling, and a share of any size is minutes
+        // of work to start by accident
+        if (isSmbShown() && SmbSyncPolicy(this).rescanOnPullToRefresh) {
+            rescanSmb(reportCounts = false)
+        }
 
-            isPCloudShown() -> rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
-            isSmbShown() -> rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
-            else -> getDirectories()
+        if (isPCloudShown()) {
+            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+        } else {
+            getDirectories()
         }
     }
 
-    // the menu item walks the whole share again, the way the pCloud one lists the whole account
+    // the menu item walks the whole share again, the way the pCloud one lists the whole account.
+    // The spinner is not started for it: the walk outlives this screen, and its progress is in
+    // the notification the service puts up
     private fun rescanSmbManually() {
         toast(R.string.smb_rescanning)
-        binding.directoriesRefreshLayout.isRefreshing = true
-        rescanSmb(reportCounts = true) { runOnUiThread { getDirectories() } }
+        rescanSmb(reportCounts = true)
     }
 
     // the menu item lists the whole account again: it is the way out when the diff sync
@@ -1114,7 +1127,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         val smbPolicy = SmbSyncPolicy(this)
         if (smbPolicy.rescanOnLaunch && isSmbShown() && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
+            rescanSmb(reportCounts = false)
         }
     }
 

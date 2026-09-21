@@ -401,6 +401,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".jobs.SmbScanService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <activity-alias
             android:name=".activities.SplashActivity.Red"
             android:enabled="false"

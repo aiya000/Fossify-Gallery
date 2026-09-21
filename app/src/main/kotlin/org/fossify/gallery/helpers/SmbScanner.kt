@@ -84,11 +84,17 @@ class SmbScanner(private val context: Context) {
     }
 
     // Walks the whole share and replaces the SMB rows with what it found. Blocks and talks to
-    // the network, so call it off the main thread
-    fun scanAll(): Result {
+    // the network, so call it off the main thread.
+    //
+    // onProgress is called as each folder is left behind, with what the walk holds so far and
+    // the folder it has just come out of. A share has no count to work towards -- what is in it
+    // is only known once it has all been walked -- so this is the only thing that can tell the
+    // user a scan is moving rather than stuck. It runs on the scanning thread: keep it quick,
+    // and do not touch a view from it
+    fun scanAll(onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
         val media = ArrayList<Medium>()
         val directories = ArrayList<Directory>()
-        val collector = Collector(media, directories)
+        val collector = Collector(media, directories, onProgress)
         collector.collect(SMB_PATH_SCHEME, 0)
 
         store(media, directories, collector.skippedPaths)
@@ -100,7 +106,7 @@ class SmbScanner(private val context: Context) {
     // earlier scan gave them
     fun scanFolder(path: String): Result {
         val entries = try {
-            SmbClient.list(context, path)
+            listWithOneRetry(path)
         } catch (e: Exception) {
             throwIfAborted()
             throw e
@@ -162,7 +168,8 @@ class SmbScanner(private val context: Context) {
     // recheck of the displayed folders finds nothing to change in them
     private inner class Collector(
         private val media: ArrayList<Medium>,
-        private val directories: ArrayList<Directory>
+        private val directories: ArrayList<Directory>,
+        private val onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }
     ) {
         private val config = context.config
         private val favoritePaths = context.getFavoritePaths()
@@ -200,6 +207,7 @@ class SmbScanner(private val context: Context) {
             }
 
             collectOne(path, entries)
+            onProgress(directories.size, media.size, path)
             if (depth >= MAX_DEPTH) {
                 return
             }

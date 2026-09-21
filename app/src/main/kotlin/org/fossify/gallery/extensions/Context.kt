@@ -130,6 +130,7 @@ import org.fossify.gallery.interfaces.FavoritesDao
 import org.fossify.gallery.interfaces.MediumDao
 import org.fossify.gallery.interfaces.PCloudItemDao
 import org.fossify.gallery.interfaces.WidgetsDao
+import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.AlbumCover
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Favorite
@@ -831,22 +832,20 @@ private fun Context.runPCloudScan(onDone: () -> Unit, scan: (PCloudScanner) -> U
     }
 }
 
-// Brings the SMB cache up to date off the main thread and tells the user in a toast how it
-// went: the counts when asked for, otherwise only what failed. A share has no diff stream, so
-// there is only the one kind of refresh -- the whole share is walked. onDone runs in every case
-// but a scan that SmbScanner.abortCurrent() called off, on whatever thread the scan ended on
-fun Context.rescanSmb(reportCounts: Boolean, onDone: () -> Unit = {}) {
+// Brings the SMB cache up to date. A share has no diff stream, so there is only the one kind of
+// refresh -- the whole share is walked -- and that takes minutes, longer than the user will sit
+// looking at the folder list. It therefore runs in SmbScanService, a foreground service, which
+// is what keeps the system from taking the network away the moment the app is left; the counts
+// and anything that failed are reported from there, in a notification that outlives the screen.
+//
+// Nothing is handed back here. A screen that wants its folders again once a scan is through
+// adds itself to SmbScanService.addListener()
+fun Context.rescanSmb(reportCounts: Boolean) {
     if (!config.isSmbConfigured) {
-        onDone()
         return
     }
 
-    runSmbScan(onDone) { scanner ->
-        val result = scanner.scanAll()
-        if (reportCounts) {
-            toast(getString(R.string.smb_rescan_done, result.folderCount, result.mediaCount))
-        }
-    }
+    SmbScanService.start(this, reportCounts)
 }
 
 // Refreshes the given folders of the share one by one, non-recursively; the counts toast sums
