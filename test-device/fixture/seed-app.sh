@@ -52,6 +52,10 @@ prefs="$RUN_DIR/Prefs.xml"
 # - the groups of #64: a group holding a folder and a subgroup, which is the shape that shows
 #   whether a subgroup is walked where it sits or after the plain folders
 # - the folder list opens on the share, sorted by name, so the order is the one the tests assume
+# - the pCloud account, which is empty unless a script passes one in: a token and a host is the
+#   whole of what signing in leaves behind, so 60-copy-to-pcloud.sh points the app at the stub
+#   without driving the OAuth screen. An app with no token asks pCloud nothing, which is what
+#   every other script wants
 # - app_run_count keeps the welcome and rating prompts out of the way
 #
 # &quot; because those values are JSON living inside XML.
@@ -75,6 +79,17 @@ cat > "$prefs" <<XML
     <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID}</string>
     <int name="storage_filter" value="$FIXTURE_STORAGE_FILTER" />
     <int name="directory_sort_order" value="$FIXTURE_DIRECTORY_SORT" />
+    <string name="pcloud_access_token">$FIXTURE_PCLOUD_ACCESS_TOKEN</string>
+    <string name="pcloud_api_host">$FIXTURE_PCLOUD_API_HOST</string>
+    <string name="pcloud_account_email">fixture@example.invalid</string>
+    <long name="pcloud_diff_id" value="0" />
+    <boolean name="pcloud_rescan_on_launch" value="false" />
+    <boolean name="pcloud_rescan_on_storage_switch" value="false" />
+    <boolean name="pcloud_rescan_on_folder_open" value="false" />
+    <boolean name="pcloud_rescan_on_group_open" value="false" />
+    <boolean name="pcloud_rescan_after_write" value="true" />
+    <boolean name="pcloud_rescan_on_unmetered_only" value="false" />
+    <int name="pcloud_rescan_interval_minutes" value="0" />
     <int name="app_run_count" value="5" />
 </map>
 XML

@@ -368,11 +368,11 @@ object PCloudApi {
     // link answers carry a list of hosts and a path, any host serves the path
     private fun toLink(json: JSONObject): String {
         val host = json.getJSONArray("hosts").getString(0)
-        return "https://$host${json.getString("path")}"
+        return pCloudUrl(host, json.getString("path"))
     }
 
     private fun buildRequest(apiHost: String, accessToken: String, method: String, params: Map<String, String>): Request {
-        val url = "https://$apiHost/$method".toHttpUrl()
+        val url = pCloudUrl(apiHost, method).toHttpUrl()
             .newBuilder()
             .apply { params.forEach { (key, value) -> addQueryParameter(key, value) } }
             .build()
