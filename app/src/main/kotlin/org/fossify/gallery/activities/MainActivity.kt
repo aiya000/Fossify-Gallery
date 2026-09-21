@@ -116,7 +116,6 @@ import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.isPCloudPath
-import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
@@ -1095,22 +1094,23 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         rescanSmb(reportCounts = true)
     }
 
-    // The folders of the share inside the group being looked at, including the ones in its
-    // subgroups. Read out of the membership alone, by path, so it holds for a folder that the
-    // storage filter is hiding as much as for one on screen
-    private fun smbFoldersOfCurrentGroup(): List<String> {
+    // The folders inside the group being looked at, including the ones in its subgroups. Read
+    // out of the membership alone, by path, so it holds for a folder that the storage filter is
+    // hiding as much as for one on screen. Which of them are on the share is the query's
+    // business, not this one's
+    private fun foldersOfCurrentGroup(): List<String> {
         val groupId = mCurrentGroupId ?: return emptyList()
         val groups = config.parseFolderGroups()
         return config.parseFolderGroupMembers()
             .filterValues { config.isFolderGroupDescendantOrSelf(it, groupId, groups) }
             .keys
-            .filter { it.isSmbPath() }
+            .toList()
     }
 
     // The same as the folder's own version in MediaActivity, over every folder of the share in
     // this group. A group gathers what belongs together, which is the unit worth waiting for
     private fun readSmbVideoDurationsOfGroup() {
-        val folders = smbFoldersOfCurrentGroup()
+        val folders = foldersOfCurrentGroup()
         ensureBackgroundThread {
             val paths = folders.flatMap { mediaDB.getVideoPathsWithoutDuration(it) }
             runOnUiThread {

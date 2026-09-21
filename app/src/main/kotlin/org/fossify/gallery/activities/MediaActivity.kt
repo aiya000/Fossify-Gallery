@@ -401,7 +401,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     && !mPath.isSmbPath()
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn
             findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
-            findItem(R.id.read_smb_durations).isVisible = mPath.isSmbPath() && config.isSmbConfigured
+            // offered on every folder, not only on one of the share: a folder does not always
+            // say which storage it is on, and an item that comes and goes for a reason nobody
+            // can see is worse than one that reports it had nothing to read
+            findItem(R.id.read_smb_durations).isVisible = config.isSmbConfigured
             findItem(R.id.open_recycle_bin).isVisible = config.useRecycleBin && mPath != RECYCLE_BIN
 
             findItem(R.id.temporarily_show_hidden).isVisible = !config.shouldShowHidden
