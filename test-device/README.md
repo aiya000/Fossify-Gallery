@@ -79,6 +79,15 @@ at afterwards.
 - **`30-download-group.sh`** — #64: a whole group fetched and played in turn, and the order it is
   fetched in. The fixture's group holds a folder and a subgroup on purpose, because the rule worth
   pinning is that a subgroup is walked where it sits rather than after the plain folders
+- **`40-share-thumbnails.sh`** — every medium in `Renders/` gets a thumbnail, whatever size the
+  file is. The check is on the pixels rather than on the view tree, because the failure it was
+  written for drew nothing at all — not even the warning icon — and a view tree says the same
+  thing either way. It walks the whole share first, so on its own it is about five minutes
+- **`50-copy-off-share.sh`** — #28: a medium of the share copied onto the device, and the file
+  actually arriving, whole and with the share's modification time. It also checks what must *not*
+  be there: "Move to" is kept out of the selection's menu, because the share cannot be written to
+  and a move would have to delete from it. Copying the same file twice pins the numbering that
+  `AvailableNameTest` covers in the small, through the whole path
 
 ## What is not covered yet
 

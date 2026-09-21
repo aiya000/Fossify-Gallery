@@ -200,6 +200,11 @@ class SmbTransferService : Service() {
         }
 
         settle(job, newLocalPaths)
+        // said once per job, after the destination has been brought up to date, so that it means
+        // "the copies are there and the lists would show them". Everything else this service says
+        // is a failure, and a log with nothing but failures in it cannot tell a copy that never
+        // ran from one that went through
+        Log.i(TAG, "Copied $done of $total off the share to ${job.destination}, $failed failed")
         return Pair(done, failed)
     }
 
