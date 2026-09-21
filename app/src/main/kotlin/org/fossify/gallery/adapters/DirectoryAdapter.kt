@@ -83,6 +83,7 @@ import org.fossify.gallery.extensions.checkAppendingHidden
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudFolderHidden
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbFolderHidden
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
@@ -209,12 +210,14 @@ class DirectoryAdapter(
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
 
-        // A folder on the share has no directory behind it either, and writing to the share is
-        // not in yet (#28), so everything that would write is off for it -- it was treated as a
-        // folder on the device until now, which offered actions that could only fail. What is
-        // left is what is only a setting here: pinning, locking, the cover image, and "move to",
-        // which for a folder of the share can only mean putting it in a group
+        // A folder on the share has no directory behind it either, and the share can only be
+        // read (#28), so everything that would change something on it is off -- it was treated
+        // as a folder on the device until now, which offered actions that could only fail. What
+        // is left is what only reads the share ("copy to", which copies its media away) or is
+        // only a setting here: pinning, locking, the cover image, and "move to", which for a
+        // folder of the share can only mean putting it in a group
         val isAnySmbSelected = realPaths.any { it.isSmbPath() }
+        val isSmbOnly = realPaths.isNotEmpty() && realPaths.all { it.isSmbPath() }
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
@@ -236,7 +239,11 @@ class DirectoryAdapter(
             // filesystem operations make no sense for virtual groups
             findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
             val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected && !isAnySmbSelected
+            // the media of a folder of the share are copied off it by SmbTransferService, so
+            // "copy to" is offered for a selection that is all share; mixing storages is not,
+            // the same as it is not for pCloud
+            findItem(R.id.cab_copy_to).isVisible =
+                !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected && (!isAnySmbSelected || isSmbOnly)
             findItem(R.id.cab_move_to).isVisible = (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isAnySmbSelected
@@ -952,7 +959,9 @@ class DirectoryAdapter(
         ensureBackgroundThread {
             val paths = ArrayList<String>()
             folderPaths.forEach {
-                if (it.isPCloudPath()) {
+                // a remote folder has no directory on the device to list; what it holds is
+                // what the last scan of it wrote down
+                if (it.isRemotePath()) {
                     activity.mediaDB.getMediaFromPath(it).mapTo(paths) { medium -> medium.path }
                     return@forEach
                 }

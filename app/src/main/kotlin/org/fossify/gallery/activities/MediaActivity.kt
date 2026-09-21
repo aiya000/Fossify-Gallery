@@ -128,6 +128,7 @@ import org.fossify.gallery.helpers.VIDEO_PLAYER_SYSTEM
 import org.fossify.gallery.interfaces.MediaOperationsListener
 import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.jobs.SmbDurationService
+import org.fossify.gallery.jobs.SmbTransferService
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
@@ -227,8 +228,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
     }
 
-    // a copy or move to or from pCloud ends in the background; the list is read again then
-    private val pCloudTransferListener: () -> Unit = { getMedia() }
+    // a copy or move to or from a remote storage ends in the background; the list is read
+    // again then
+    private val transferListener: () -> Unit = { getMedia() }
 
     // and so does the reading of the lengths of the videos on the share, which leaves new
     // values in the rows this grid is drawing
@@ -237,7 +239,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     override fun onResume() {
         super.onResume()
         updateMenuColors()
-        PCloudTransferService.addListener(pCloudTransferListener)
+        PCloudTransferService.addListener(transferListener)
+        SmbTransferService.addListener(transferListener)
         SmbDurationService.addListener(smbDurationListener)
         if (mStoredAnimateGifs != config.animateGifs) {
             getMediaAdapter()?.updateAnimateGifs(config.animateGifs)
@@ -312,7 +315,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     override fun onPause() {
         super.onPause()
-        PCloudTransferService.removeListener(pCloudTransferListener)
+        PCloudTransferService.removeListener(transferListener)
+        SmbTransferService.removeListener(transferListener)
         SmbDurationService.removeListener(smbDurationListener)
         mIsGettingMedia = false
         binding.mediaRefreshLayout.isRefreshing = false

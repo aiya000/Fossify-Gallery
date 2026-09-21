@@ -15,7 +15,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.extensions.deleteFromMediaStore
 import org.fossify.commons.extensions.getFileOutputStreamSync
-import org.fossify.commons.extensions.getFilenameExtension
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getMimeType
 import org.fossify.commons.extensions.getParentPath
@@ -39,6 +38,7 @@ import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RemoteScanScheduler
+import org.fossify.gallery.helpers.availableName
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -272,7 +272,7 @@ class PCloudTransferService : Service() {
     // view already fetched one, from pCloud otherwise. A name that is taken there gets a
     // number appended. Answers the new local path
     private fun download(path: String, destinationFolder: String): String {
-        val target = availableLocalName(destinationFolder, path.getFilenameFromPath())
+        val target = availableName(destinationFolder, path.getFilenameFromPath()) { File(it).exists() }
         val out = getFileOutputStreamSync(target, path.getMimeType()) ?: throw IOException("Could not open $target for writing")
         out.use { output ->
             val cached = PCloudFileCache(this).peek(path)
@@ -299,25 +299,6 @@ class PCloudTransferService : Service() {
         }
 
         return target
-    }
-
-    private fun availableLocalName(folder: String, name: String): String {
-        val first = "$folder/$name"
-        if (!File(first).exists()) {
-            return first
-        }
-
-        val extension = name.getFilenameExtension()
-        val base = if (extension.isEmpty() || extension == name) name else name.removeSuffix(".$extension")
-        var index = 1
-        while (true) {
-            val candidate = if (extension.isEmpty() || extension == name) "$folder/$base ($index)" else "$folder/$base ($index).$extension"
-            if (!File(candidate).exists()) {
-                return candidate
-            }
-
-            index++
-        }
     }
 
     // the local half of a move to pCloud, once the upload is through: the file, its

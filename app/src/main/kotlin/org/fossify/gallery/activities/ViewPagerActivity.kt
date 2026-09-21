@@ -144,6 +144,7 @@ import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
 import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbTransferService
 import org.fossify.gallery.helpers.BOTTOM_ACTION_CHANGE_ORIENTATION
 import org.fossify.gallery.helpers.BOTTOM_ACTION_COPY
 import org.fossify.gallery.helpers.BOTTOM_ACTION_DELETE
@@ -280,9 +281,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         initFavorites()
     }
 
-    // a move to or from pCloud ends after this screen was left alone for a while; the list
-    // is read again so that a page that went away goes away here too
-    private val pCloudTransferListener: () -> Unit = { refreshViewPager(refetchPosition = true) }
+    // a move to or from a remote storage ends after this screen was left alone for a while;
+    // the list is read again so that a page that went away goes away here too
+    private val transferListener: () -> Unit = { refreshViewPager(refetchPosition = true) }
 
     override fun onResume() {
         super.onResume()
@@ -291,7 +292,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             return
         }
 
-        PCloudTransferService.addListener(pCloudTransferListener)
+        PCloudTransferService.addListener(transferListener)
+        SmbTransferService.addListener(transferListener)
         initBottomActions()
         mOriginalBrightness = window.updateBrightness(config.maxBrightness, mOriginalBrightness)
         setupOrientation()
@@ -303,7 +305,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onPause() {
         super.onPause()
-        PCloudTransferService.removeListener(pCloudTransferListener)
+        PCloudTransferService.removeListener(transferListener)
+        SmbTransferService.removeListener(transferListener)
         stopSlideshow()
     }
 
@@ -338,6 +341,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
         val hasFile = !isInPCloudBin
+        // the share can only be read (#28): a medium on it is copied away from it, never moved,
+        // which would have to delete the original off the share
+        val isOnShare = currentMedium.path.isSmbPath()
 
         runOnUiThread {
             val rotationDegrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
@@ -353,7 +359,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_set_as).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = hasFile && currentMedium.isImage()
                 findItem(R.id.menu_copy_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
-                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
+                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && !isOnShare && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
@@ -911,8 +917,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
-        // a pCloud source has no MediaStore entry to manage
-        if (getCurrentPath().isPCloudPath()) {
+        // a remote source has no MediaStore entry to manage
+        if (getCurrentPath().isRemotePath()) {
             copyMoveTo(isCopyOperation)
             return
         }
@@ -1136,6 +1142,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val isLocal = currentMedium?.path?.isRemotePath() != true
         val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         val hasFile = !isInPCloudBin
+        val isOnShare = currentMedium?.path?.isSmbPath() == true
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
@@ -1229,7 +1236,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             checkMediaManagementAndCopy(true)
         }
 
-        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
+        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && !isOnShare && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
         binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()
