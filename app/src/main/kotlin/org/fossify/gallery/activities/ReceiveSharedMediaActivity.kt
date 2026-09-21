@@ -15,6 +15,7 @@ import org.fossify.commons.models.FileDirItem
 import org.fossify.gallery.R
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.helpers.SHARED_MEDIA_DIR
+import org.fossify.gallery.jobs.PCloudTransferService
 import java.io.File
 
 // Takes the images and videos handed over by Android's share sheet and copies them into a
@@ -26,12 +27,25 @@ import java.io.File
 // is shared as, and those files are what the ordinary copy then moves on. The conflict
 // dialog, the progress and the media scan come along with it unchanged.
 //
-// The destination picker is narrowed to this device: copying into pCloud is #53.
+// A pCloud folder can be picked too, and then the ordinary copy hands the staged files to the
+// transfer service. That service outlives this screen and reads the staged files as it
+// uploads, so each share stages into a folder of its own and drops it only once the transfers
+// are through. A name already taken on pCloud is uploaded as "name (2)" without asking, the
+// way every other copy into pCloud does it.
 //
 // The activity has no layout of its own, so nothing is left on screen once the picker is
 // gone. That is why the picker reports a cancel: without it this would sit there invisible,
 // swallowing every tap
 class ReceiveSharedMediaActivity : SimpleActivity() {
+    companion object {
+        // a staging folder left behind by a share that never reached its destination. Long
+        // enough that a transfer still running is never swept away under it
+        private const val STALE_STAGING_MILLIS = 24 * 60 * 60 * 1000L
+    }
+
+    // one per share, so that a new share cannot delete what an upload is still reading
+    private val stagingDir by lazy { File(File(cacheDir, SHARED_MEDIA_DIR), System.currentTimeMillis().toString()) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -85,8 +99,8 @@ class ReceiveSharedMediaActivity : SimpleActivity() {
                 tryCopyMoveFilesTo(
                     fileDirItems = staged,
                     isCopyOperation = true,
-                    localDestinationOnly = true,
-                    onCancelled = ::dropStagedMediaAndFinish
+                    onCancelled = ::dropStagedMediaAndFinish,
+                    onPCloudTransferQueued = ::leaveStagedMediaToTheTransferAndFinish
                 ) {
                     dropStagedMediaAndFinish()
                 }
@@ -97,8 +111,7 @@ class ReceiveSharedMediaActivity : SimpleActivity() {
     // Reads every shared uri into the staging folder. One that cannot be read is left out
     // rather than failing the whole share: the rest of a multiple share is still worth copying
     private fun stageSharedMedia(uris: List<Uri>): ArrayList<FileDirItem> {
-        val stagingDir = stagingDir()
-        stagingDir.deleteRecursively()
+        dropStaleStagingDirs()
         stagingDir.mkdirs()
 
         val staged = ArrayList<FileDirItem>()
@@ -153,15 +166,41 @@ class ReceiveSharedMediaActivity : SimpleActivity() {
         return file
     }
 
-    // The staged copies are of no use once the copy is through. A share that never got that
-    // far leaves them behind; the next share empties the folder before it writes into it
+    // The staged copies are of no use once the copy into a folder on this device is through
     private fun dropStagedMediaAndFinish() {
+        val stagingDir = stagingDir
         ensureBackgroundThread {
-            stagingDir().deleteRecursively()
+            stagingDir.deleteRecursively()
         }
 
         finish()
     }
 
-    private fun stagingDir() = File(cacheDir, SHARED_MEDIA_DIR)
+    // An upload reads the staged copies from the transfer service, which carries on without
+    // this screen, so they are dropped when the run of transfers ends rather than now. The
+    // listener holds the folder and not this activity, and a run that never ends leaves the
+    // folder to the sweep at the top of the next share
+    private fun leaveStagedMediaToTheTransferAndFinish() {
+        val stagingDir = stagingDir
+        lateinit var onTransfersEnded: () -> Unit
+        onTransfersEnded = {
+            PCloudTransferService.removeListener(onTransfersEnded)
+            ensureBackgroundThread {
+                stagingDir.deleteRecursively()
+            }
+        }
+
+        PCloudTransferService.addListener(onTransfersEnded)
+        finish()
+    }
+
+    // Everything a share left behind long enough ago that nothing can still be reading it
+    private fun dropStaleStagingDirs() {
+        val staleBefore = System.currentTimeMillis() - STALE_STAGING_MILLIS
+        File(cacheDir, SHARED_MEDIA_DIR).listFiles()?.forEach { dir ->
+            if (dir.isDirectory && dir.lastModified() < staleBefore) {
+                dir.deleteRecursively()
+            }
+        }
+    }
 }

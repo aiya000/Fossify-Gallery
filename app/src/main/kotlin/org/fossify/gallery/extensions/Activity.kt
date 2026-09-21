@@ -441,13 +441,15 @@ fun BaseSimpleActivity.toggleFileVisibility(oldPath: String, hide: Boolean, call
 }
 
 // [localDestinationOnly] keeps pCloud out of the picker, for a caller whose files can only go
-// to the device. [onCancelled] fires when the picker is left without a destination, for a
-// caller that has nothing else on screen
+// to the device. [onCancelled] fires when the picker is left without a destination, and
+// [onPCloudTransferQueued] once a pCloud destination's transfer is with the service, both for
+// a caller that has nothing else on screen
 fun BaseSimpleActivity.tryCopyMoveFilesTo(
     fileDirItems: ArrayList<FileDirItem>,
     isCopyOperation: Boolean,
     localDestinationOnly: Boolean = false,
     onCancelled: (() -> Unit)? = null,
+    onPCloudTransferQueued: (() -> Unit)? = null,
     callback: (destinationPath: String) -> Unit
 ) {
     if (fileDirItems.isEmpty()) {
@@ -467,7 +469,7 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
         localDestinationOnly = localDestinationOnly,
         onCancelled = onCancelled
     ) {
-        copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, callback)
+        copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, onPCloudTransferQueued, callback)
     }
 }
 
@@ -480,10 +482,11 @@ fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
     source: String,
     destination: String,
     isCopyOperation: Boolean,
+    onPCloudTransferQueued: (() -> Unit)? = null,
     callback: (destinationPath: String) -> Unit
 ) {
     if (source.isPCloudPath() || destination.isPCloudPath()) {
-        startPCloudTransfer(fileDirItems, source, destination, isCopyOperation)
+        startPCloudTransfer(fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued)
         return
     }
 
@@ -497,8 +500,18 @@ fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
 // Queues the transfer once the storage permissions the local side needs are in: a move away
 // from the device deletes the sources afterwards, a download writes into the destination.
 // The notification permission is asked for so that the progress can be seen; the transfer
-// runs without it too
-fun BaseSimpleActivity.startPCloudTransfer(fileDirItems: ArrayList<FileDirItem>, source: String, destination: String, isCopyOperation: Boolean) {
+// runs without it too.
+//
+// [onQueued] fires once the job is with the service, which is several dialogs later than this
+// returns. A caller whose only business was this transfer waits for it rather than for the
+// copy callback, which never comes for a pCloud transfer
+fun BaseSimpleActivity.startPCloudTransfer(
+    fileDirItems: ArrayList<FileDirItem>,
+    source: String,
+    destination: String,
+    isCopyOperation: Boolean,
+    onQueued: (() -> Unit)? = null
+) {
     if (!config.isPCloudLoggedIn) {
         toast(R.string.pcloud_log_in_required)
         return
@@ -525,6 +538,7 @@ fun BaseSimpleActivity.startPCloudTransfer(fileDirItems: ArrayList<FileDirItem>,
 
             PCloudTransferService.enqueue(this, PCloudTransferService.Job(kind, paths, destination, isCopyOperation))
             toast(R.string.pcloud_transfer_started)
+            onQueued?.invoke()
         }
     }
 
