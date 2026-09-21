@@ -84,6 +84,7 @@ import org.fossify.gallery.extensions.getBottomActionsHeight
 import org.fossify.gallery.extensions.getFormattedDuration
 import org.fossify.gallery.extensions.getFriendlyMessage
 import org.fossify.gallery.extensions.launchGesturePlayer
+import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.parseFileChannel
 import org.fossify.gallery.helpers.Config
 import org.fossify.gallery.helpers.EXOPLAYER_MAX_BUFFER_MS
@@ -954,7 +955,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
             mDuration = when {
                 // the scanner keeps the duration pCloud reports, there is no file to ask
                 mMedium.path.isPCloudPath() -> mMedium.videoDuration * 1000L
-                mMedium.path.isSmbPath() -> smbDurationMs()
+                mMedium.path.isSmbPath() -> smbDurationMs().also { rememberSmbDuration(it) }
                 else -> context?.getDuration(mMedium.path)?.times(1000L)?.coerceAtLeast(0L) ?: 0L
             }
 
@@ -962,6 +963,30 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
                 setupTimeHolder()
                 setPosition(0)
             }
+        }
+    }
+
+    // Keeps the length this screen just read, so that the grid can show it without opening the
+    // file again. The scan cannot record it -- it walks a listing and never reads a byte of
+    // content, and asking the share for the length of all fourteen thousand videos on it would
+    // turn a walk of minutes into one of hours. Neither may the grid read it while drawing a
+    // thumbnail: that would put a file open behind every video that scrolls past, competing for
+    // the share with whatever is playing. A video whose length is not known yet shows none,
+    // rather than the "00:00" that a zero used to be drawn as
+    private fun rememberSmbDuration(durationMs: Long) {
+        val context = context ?: return
+        val seconds = Math.round(durationMs / 1000.0).toInt()
+        if (seconds <= 0 || seconds == mMedium.videoDuration) {
+            return
+        }
+
+        mMedium.videoDuration = seconds
+        try {
+            context.mediaDB.updateVideoDuration(mMedium.path, seconds)
+        } catch (e: Exception) {
+            // the video is playing either way; a length that could not be kept is not worth
+            // interrupting that for, only worth being able to find afterwards
+            Log.w("SmbVideo", "Could not keep the duration of ${mMedium.path}", e)
         }
     }
 

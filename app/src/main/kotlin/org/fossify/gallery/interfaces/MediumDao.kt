@@ -80,6 +80,12 @@ interface MediumDao {
     @Query("UPDATE media SET is_favorite = 0")
     fun clearFavorites()
 
+    // A video on a remote storage is scanned without its content being read, so its duration is
+    // not known until something opens the file. Whatever first does -- the grid asking for a
+    // thumbnail frame -- writes it back here, and the row carries it from then on
+    @Query("UPDATE media SET video_duration = :duration WHERE full_path = :path COLLATE NOCASE")
+    fun updateVideoDuration(path: String, duration: Int)
+
     // the device's bin only, the pCloud one is emptied through PCloudWriter
     @Query("DELETE FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun clearRecycleBin()
