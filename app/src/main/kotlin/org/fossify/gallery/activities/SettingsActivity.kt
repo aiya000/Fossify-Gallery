@@ -288,20 +288,26 @@ class SettingsActivity : SimpleActivity() {
                 ConfirmationDialog(this, getString(R.string.smb_clear_confirmation)) {
                     config.clearSmbShare()
                     SmbClient.disconnect()
-                    ensureBackgroundThread { SmbScanner(this).forgetAll() }
                     onSmbShareChanged()
                 }
             }
         }
     }
 
-    // the share that was there is not the one that is there now, so its cached folders are of no
-    // use; they are replaced by the next scan, and dropped here so that nothing stale is shown
-    // in between
+    // The share that was there is not the one that is there now, so its cached folders are of no
+    // use and are dropped. A share that is still set up is then walked right away, with its
+    // counts toasted: otherwise nothing would be scanned until the folder list was switched to
+    // it and told to rescan, and a share just typed in would look like one that holds nothing
     private fun onSmbShareChanged() {
-        ensureBackgroundThread { SmbScanner(this).forgetAll() }
         setupSmbShare()
         updateTextColors(binding.settingsHolder)
+        ensureBackgroundThread {
+            SmbScanner(this).forgetAll()
+            if (config.isSmbConfigured) {
+                toast(R.string.smb_rescanning)
+                rescanSmb(reportCounts = true)
+            }
+        }
     }
 
     // one row per event that can ask for a rescan, see SmbSyncPolicy. Nothing here applies
