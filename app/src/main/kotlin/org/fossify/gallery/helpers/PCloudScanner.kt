@@ -41,13 +41,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 // they are parsed, so memory follows the number of media files rather than the answer size
 class PCloudScanner(private val context: Context) {
     companion object {
-        // one scan at a time. Context.rescanPCloud() claims this before it starts one
+        // one scan at a time. RemoteScanService claims this before it runs one, and it is the
+        // only thing that does: the scans are ranked and queued by RemoteScanScheduler now,
+        // which is what decides who waits for whom
         val isRunning = AtomicBoolean(false)
 
-        // The scan the screens started, while it runs, so that a screen can call it off:
-        // Context.rescanPCloud() and rescanPCloudFolders() register theirs through start()
-        // and finish(). The transfer service holds isRunning on its own without registering,
-        // its refresh after a transfer is not one to interrupt
+        // The scan that runs, while it runs, so that it can be called off -- by the scheduler
+        // when something outranks it, or by the notification's stop action
         @Volatile
         private var current: PCloudScanner? = null
 

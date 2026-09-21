@@ -153,11 +153,11 @@ import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
-import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
@@ -181,8 +181,8 @@ import org.fossify.gallery.helpers.getPermissionsToRequest
 import org.fossify.gallery.interfaces.DirectoryOperationsListener
 import org.fossify.gallery.jobs.NewPhotoFetcher
 import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.RemoteScanService
 import org.fossify.gallery.jobs.SmbDurationService
-import org.fossify.gallery.jobs.SmbScanService
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -359,15 +359,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // a copy or move to or from pCloud ends in the background; the folders are read again then
     private val pCloudTransferListener: () -> Unit = { getDirectories() }
 
-    // and so does a walk of the network share, which runs in a foreground service and outlives
+    // and so does a scan of a remote storage, which runs in a foreground service and outlives
     // whatever screen asked for it
-    private val smbScanListener: () -> Unit = { getDirectories() }
+    private val remoteScanListener: () -> Unit = { getDirectories() }
 
     override fun onResume() {
         super.onResume()
         updateMenuColors()
         PCloudTransferService.addListener(pCloudTransferListener)
-        SmbScanService.addListener(smbScanListener)
+        RemoteScanService.addListener(remoteScanListener)
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
         mTimeFormat = getTimeFormat()
@@ -435,7 +435,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override fun onPause() {
         super.onPause()
         PCloudTransferService.removeListener(pCloudTransferListener)
-        SmbScanService.removeListener(smbScanListener)
+        RemoteScanService.removeListener(remoteScanListener)
         binding.directoriesRefreshLayout.isRefreshing = false
         mIsGettingDirs = false
         storeStateVariables()
@@ -529,7 +529,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
             val due = getPCloudFoldersDueForRescan(members)
             if (due.isNotEmpty()) {
-                rescanPCloudFolders(due, reportCounts = false) { runOnUiThread { getDirectories() } }
+                rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getDirectories() } }
             }
         }
     }
@@ -845,30 +845,32 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         config.storageFilter = newFilter
         refreshMenuItems()
 
-        // a scan of a storage the list has just left is of no use to it, and the reload it would
-        // end in only sends the folders on screen through their recheck once more. A switch to
-        // that storage lets its scan run, that list wants its result
+        // A scan of a storage the list has just left is of no use to it, and the reload it would
+        // end in only sends the folders on screen through their recheck once more. The scheduler
+        // decides whether it actually goes: a switch outranks the settings' automatic scan, and
+        // does not outrank a walk the user asked for by hand. A sideways drag is the easiest
+        // gesture in the app to make by accident, and a share takes minutes to walk, so the
+        // deliberate one is the one that survives (#59)
         if (!isPCloudShown()) {
-            PCloudScanner.abortCurrent()
+            RemoteScanScheduler.leftBehind(RemoteScanScheduler.Storage.PCLOUD)
         }
 
-        // The share is not called off. Walking it takes minutes and now runs in a foreground
-        // service with its own notification, which outlives this screen on purpose; throwing
-        // that away because the list was swiped sideways would cost every folder walked so far,
-        // and the gesture is an easy one to make while scrolling. The notification's stop action
-        // is how a scan is called off. See #59 for ranking the scans against each other
+        if (!isSmbShown()) {
+            RemoteScanScheduler.leftBehind(RemoteScanScheduler.Storage.SMB)
+        }
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
-        // refreshes the list a second time once it is through
+        // refreshes the list a second time once it is through. It is queued at the switch's own
+        // rank: this list is waiting on it, which the settings' scans are not
         reloadDirectories()
         val pCloudPolicy = PCloudSyncPolicy(this)
         if (pCloudPolicy.rescanOnStorageSwitch && isPCloudShown() && pCloudPolicy.isFullScanDue()) {
-            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+            rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_SWITCH) { runOnUiThread { getDirectories() } }
         }
 
         val smbPolicy = SmbSyncPolicy(this)
         if (smbPolicy.rescanOnStorageSwitch && isSmbShown() && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false)
+            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_SWITCH)
         }
     }
 
@@ -1084,11 +1086,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // the gesture is an easy one to make while scrolling, and a share of any size is minutes
         // of work to start by accident
         if (isSmbShown() && SmbSyncPolicy(this).rescanOnPullToRefresh) {
-            rescanSmb(reportCounts = false)
+            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL)
         }
 
         if (isPCloudShown()) {
-            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+            rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getDirectories() } }
         } else {
             getDirectories()
         }
@@ -1099,7 +1101,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // the notification the service puts up
     private fun rescanSmbManually() {
         toast(R.string.smb_rescanning)
-        rescanSmb(reportCounts = true)
+        rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL)
     }
 
     // The folders inside the group being looked at, including the ones in its subgroups. Read
@@ -1140,7 +1142,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun rescanPCloudManually() {
         toast(R.string.pcloud_rescanning)
         binding.directoriesRefreshLayout.isRefreshing = true
-        rescanPCloud(reportCounts = true, full = true) { runOnUiThread { getDirectories() } }
+        rescanPCloud(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, full = true) { runOnUiThread { getDirectories() } }
     }
 
     // the cached folders are on screen before this runs, so the scan never keeps the user waiting
@@ -1152,12 +1154,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mShouldRescanPCloudOnLaunch = false
         val policy = PCloudSyncPolicy(this)
         if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
-            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+            rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getDirectories() } }
         }
 
         val smbPolicy = SmbSyncPolicy(this)
         if (smbPolicy.rescanOnLaunch && isSmbShown() && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false)
+            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO)
         }
 
         sweepDownloadedSmbVideos()

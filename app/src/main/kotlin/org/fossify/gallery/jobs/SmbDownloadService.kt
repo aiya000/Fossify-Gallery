@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 // and costs only what is watched -- but a share that cannot keep up stalls part way through, and
 // then having the whole file in hand first is the only thing that helps.
 //
-// A foreground service for the same reason SmbScanService and SmbDurationService are: the system
+// A foreground service for the same reason RemoteScanService and SmbDurationService are: the system
 // takes the network away from a process nobody is looking at, and a gigabyte over a slow share
 // is minutes of work that the user will not sit and watch. The notification carries the progress
 // and the stop action, so the download survives leaving the app

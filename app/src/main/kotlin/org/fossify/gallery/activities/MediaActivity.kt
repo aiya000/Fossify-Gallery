@@ -114,6 +114,7 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SELECTED_PATHS
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -786,10 +787,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private fun refreshMedia() {
         when {
             mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn ->
-                rescanPCloudFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+                rescanPCloudFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
 
             mPath.isSmbPath() && config.isSmbConfigured ->
-                rescanSmbFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+                rescanSmbFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
 
             else -> getMedia()
         }
@@ -798,7 +799,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private fun rescanPCloudFolderManually() {
         toast(R.string.pcloud_rescanning)
         binding.mediaRefreshLayout.isRefreshing = true
-        rescanPCloudFolders(listOf(mPath), reportCounts = true) { runOnUiThread { getMedia() } }
+        rescanPCloudFolders(listOf(mPath), reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
     }
 
     // Runs once per screen, after the cached media is up, so the scan never keeps the user
@@ -813,7 +814,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         ensureBackgroundThread {
             val due = getPCloudFoldersDueForRescan(listOf(mPath))
             if (due.isNotEmpty()) {
-                rescanPCloudFolders(due, reportCounts = false) { runOnUiThread { getMedia() } }
+                rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } }
             }
         }
     }
@@ -827,7 +828,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
 
         mDidRescanSmbFolder = true
-        rescanSmbFolders(listOf(mPath), reportCounts = false) { runOnUiThread { getMedia() } }
+        rescanSmbFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } }
     }
 
     // Fills in the lengths of the videos in this folder, which the scan cannot know: it walks
@@ -853,7 +854,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private fun rescanSmbFolderManually() {
         toast(R.string.smb_rescanning)
         binding.mediaRefreshLayout.isRefreshing = true
-        rescanSmbFolders(listOf(mPath), reportCounts = true) { runOnUiThread { getMedia() } }
+        rescanSmbFolders(listOf(mPath), reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
     }
 
     private fun startAsyncTask() {

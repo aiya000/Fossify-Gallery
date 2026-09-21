@@ -32,17 +32,19 @@ import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudFileCache
-import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.PCloudWriter
+import org.fossify.gallery.helpers.RemoteScanScheduler
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // Copies and moves between the device and pCloud, and within pCloud, as a foreground service
@@ -70,10 +72,9 @@ class PCloudTransferService : Service() {
         private const val PROGRESS_NOTIFICATION_ID = 7001
         private const val RESULT_NOTIFICATION_ID = 7002
 
-        // how long a job waits for another scan to let go of the scanner before it gives up
-        // on refreshing the folders it touched
-        private const val SCAN_LOCK_WAIT_MILLIS = 60_000L
-        private const val SCAN_LOCK_POLL_MILLIS = 250L
+        // how long a job waits for its refresh to come round in the scan queue before it gives
+        // up on it and lets the next scan pick the folders up instead
+        private const val SCAN_WAIT_MILLIS = 60_000L
 
         private val queue = ConcurrentLinkedQueue<Job>()
         private val isWorking = AtomicBoolean(false)
@@ -246,47 +247,24 @@ class PCloudTransferService : Service() {
         }
     }
 
-    // Refreshes the folders here rather than through Context.rescanPCloudFolders(), which
-    // steps aside when another scan holds the scanner: a folder just written to has to reach
-    // the cache, or what was transferred stays out of sight until the next sync. So this
-    // waits for the scanner instead, within reason. What goes wrong here is logged and
-    // toasted, the transfer itself is through by now
+    // Refreshes the folders a transfer wrote to, and waits for it, so that the listeners fire
+    // once the lists would show the result. It is queued at PRIORITY_TRANSFER, which goes to the
+    // front of the scan queue and cuts short whatever is running: this is short, and what was
+    // transferred stays out of sight until it has run, while the scan it interrupts is minutes
+    // nobody is waiting on (#59). It used to spin on the scanner's lock instead, which is the
+    // "hope they do not collide" the queue was built to replace.
+    //
+    // The wait is bounded all the same: a turn that somehow never comes must not hold up the
+    // transfer's own report, and the next scan picks the folder up either way
     private fun rescanPCloudFoldersAndWait(paths: List<String>) {
         if (!config.isPCloudLoggedIn) {
             return
         }
 
-        val deadline = System.currentTimeMillis() + SCAN_LOCK_WAIT_MILLIS
-        while (!PCloudScanner.isRunning.compareAndSet(false, true)) {
-            if (System.currentTimeMillis() >= deadline) {
-                Log.w(TAG, "another scan kept the scanner busy, not refreshed: ${paths.joinToString()}")
-                return
-            }
-
-            Thread.sleep(SCAN_LOCK_POLL_MILLIS)
-        }
-
-        try {
-            val scanner = PCloudScanner(this)
-            paths.forEach { path ->
-                try {
-                    scanner.scanFolder(path)
-                } catch (e: PCloudException) {
-                    Log.w(TAG, "refreshing $path: $e")
-                    if (e.requiresLogIn) {
-                        config.clearPCloudAccount()
-                        toast(R.string.pcloud_log_in_required)
-                        return
-                    }
-
-                    showErrorToast(e)
-                } catch (e: Exception) {
-                    Log.w(TAG, "refreshing $path failed", e)
-                    showErrorToast(e)
-                }
-            }
-        } finally {
-            PCloudScanner.isRunning.set(false)
+        val refreshed = CountDownLatch(1)
+        rescanPCloudFolders(paths, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) { refreshed.countDown() }
+        if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
+            Log.w(TAG, "the refresh of ${paths.joinToString()} did not finish in time; the next scan picks it up")
         }
     }
 

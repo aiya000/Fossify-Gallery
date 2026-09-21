@@ -402,7 +402,7 @@
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".jobs.SmbScanService"
+            android:name=".jobs.RemoteScanService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

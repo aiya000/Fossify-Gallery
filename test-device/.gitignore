@@ -1,0 +1,6 @@
+# screenshots, view trees and logs of a run. They are of the fixture, not of anything personal,
+# but there is no reason to carry them
+runs/
+
+# what python leaves behind when one of the helpers here is imported rather than run
+__pycache__/

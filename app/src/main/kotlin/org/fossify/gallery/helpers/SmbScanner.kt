@@ -31,7 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 // to keep it off the critical path
 class SmbScanner(private val context: Context) {
     companion object {
-        // one scan at a time, claimed by Context.rescanSmb()
+        // one scan at a time, claimed by RemoteScanService. Which scan gets to be that one, and
+        // what happens to it when something else wants the network, is RemoteScanScheduler's
         val isRunning = AtomicBoolean(false)
 
         @Volatile
