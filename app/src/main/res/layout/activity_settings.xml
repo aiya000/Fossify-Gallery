@@ -1165,6 +1165,123 @@
                 layout="@layout/divider" />
 
             <TextView
+                android:id="@+id/settings_smb_label"
+                style="@style/SettingsSectionLabelStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/smb_share" />
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_share_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_share_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_share" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_share"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_smb_share_label"
+                    tools:text="@string/smb_not_configured" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_rescan_on_unmetered_only_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_smb_rescan_on_unmetered_only"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_rescan_on_unmetered_only" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_rescan_on_launch_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_smb_rescan_on_launch"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_rescan_on_launch" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_rescan_on_storage_switch_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_smb_rescan_on_storage_switch"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_rescan_on_storage_switch" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_rescan_on_folder_open_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_smb_rescan_on_folder_open"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_rescan_on_folder_open" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_smb_rescan_interval_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_rescan_interval_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/smb_rescan_interval" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_smb_rescan_interval"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_smb_rescan_interval_label"
+                    tools:text="@string/pcloud_rescan_interval_always" />
+
+            </RelativeLayout>
+
+            <include
+                android:id="@+id/settings_smb_divider"
+                layout="@layout/divider" />
+
+            <TextView
                 android:id="@+id/settings_migrating_label"
                 style="@style/SettingsSectionLabelStyle"
                 android:layout_width="match_parent"

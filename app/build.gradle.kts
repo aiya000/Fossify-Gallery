@@ -182,6 +182,10 @@ dependencies {
     // picasso keeps using its own downloader, the pCloud client is what needs okhttp at runtime
     implementation(libs.okhttp)
 
+    // the SMB client. Apache-2.0, SMB2/3; jcifs-ng would be LGPL, which the README's FOSS note
+    // is not written for
+    implementation(libs.smbj)
+
     ksp(libs.glide.compiler)
     implementation(libs.zjupure.webpdecoder)
 

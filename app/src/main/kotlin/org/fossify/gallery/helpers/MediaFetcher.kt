@@ -39,10 +39,10 @@ class MediaFetcher(val context: Context) {
         val curMedia = ArrayList<Medium>()
         if (curPath == PCLOUD_RECYCLE_BIN) {
             // the deleted pCloud rows, wherever they were deleted from
-            curMedia.addAll(filterPCloudMedia(context.mediaDB.getPCloudDeletedMedia(), isPickImage, isPickVideo, filterMedia, favoritePaths))
-        } else if (curPath.isPCloudPath()) {
+            curMedia.addAll(filterRemoteMedia(context.mediaDB.getPCloudDeletedMedia(), isPickImage, isPickVideo, filterMedia, favoritePaths))
+        } else if (curPath.isRemotePath()) {
             // the cache is the only source there is, the network is touched by a rescan alone
-            curMedia.addAll(getMediaOnPCloud(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths))
+            curMedia.addAll(getRemoteMedia(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths))
         } else if (context.isPathOnOTG(curPath)) {
             if (context.hasOTGConnected()) {
                 val newMedia = getMediaOnOTG(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths, getVideoDurations)
@@ -84,7 +84,7 @@ class MediaFetcher(val context: Context) {
 
             // the favorites on pCloud have no file to list, they come from the cache
             if (curPath == FAVORITES) {
-                curMedia.addAll(getPCloudFavorites(favoritePaths, isPickImage, isPickVideo, filterMedia))
+                curMedia.addAll(getRemoteFavorites(favoritePaths, isPickImage, isPickVideo, filterMedia))
             }
         }
 
@@ -316,8 +316,8 @@ class MediaFetcher(val context: Context) {
         val fileSizes = if (checkProperFileSize || checkFileExistence) getFolderSizes(folder) else HashMap()
 
         val files = when (folder) {
-            // a pCloud favorite is no file, getFilesFrom() adds it from the cache
-            FAVORITES -> favoritePaths.filter { !it.isPCloudPath() && (showHidden || !it.contains("/.")) }.map { File(it) }.toMutableList() as ArrayList<File>
+            // a remote favorite is no file, getFilesFrom() adds it from the cache
+            FAVORITES -> favoritePaths.filter { !it.isRemotePath() && (showHidden || !it.contains("/.")) }.map { File(it) }.toMutableList() as ArrayList<File>
             RECYCLE_BIN -> deletedMedia.map { File(it.path) }.toMutableList() as ArrayList<File>
             else -> File(folder).listFiles()?.toMutableList() ?: return media
         }
@@ -620,31 +620,40 @@ class MediaFetcher(val context: Context) {
         return media
     }
 
-    // the cached pCloud folders, for "show all" when the storage filter lets pCloud through.
-    // They join the local folders and are read from the cache like any other pCloud folder;
-    // a folder hidden in this app stays out like a .nomedia one does, unless hidden ones are shown
-    fun getPCloudFoldersToShow(): List<String> {
+    // the cached folders of the remote storages, for "show all" when the storage filter lets one
+    // through. They join the local folders and are read from the cache like any other remote
+    // folder; a pCloud folder hidden in this app stays out like a .nomedia one does, unless
+    // hidden ones are shown
+    fun getRemoteFoldersToShow(): List<String> {
         val config = context.config
-        return if (config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL) {
-            val showHidden = config.shouldShowHidden
-            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it != PCLOUD_RECYCLE_BIN && (showHidden || !context.isPCloudFolderHidden(it)) }
-        } else {
-            emptyList()
+        val filter = context.effectiveStorageFilter()
+        val showHidden = config.shouldShowHidden
+        val folders = ArrayList<String>()
+        if (config.isPCloudLoggedIn && (filter == STORAGE_FILTER_PCLOUD || filter == STORAGE_FILTER_ALL)) {
+            folders.addAll(
+                context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it != PCLOUD_RECYCLE_BIN && (showHidden || !context.isPCloudFolderHidden(it)) }
+            )
         }
+
+        if (config.isSmbConfigured && (filter == STORAGE_FILTER_SMB || filter == STORAGE_FILTER_ALL)) {
+            folders.addAll(context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME))
+        }
+
+        return folders
     }
 
-    // what PCloudScanner wrote for the folder, narrowed the way getMediaOnOTG narrows a real one
-    private fun getMediaOnPCloud(folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
+    // what a scanner wrote for the folder, narrowed the way getMediaOnOTG narrows a real one
+    private fun getRemoteMedia(folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
         val cached = try {
             context.mediaDB.getMediaFromPath(folder)
         } catch (e: Exception) {
             emptyList()
         }
 
-        return filterPCloudMedia(cached, isPickImage, isPickVideo, filterMedia, favoritePaths)
+        return filterRemoteMedia(cached, isPickImage, isPickVideo, filterMedia, favoritePaths)
     }
 
-    private fun filterPCloudMedia(cached: List<Medium>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
+    private fun filterRemoteMedia(cached: List<Medium>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList<String>): ArrayList<Medium> {
         val showHidden = context.config.shouldShowHidden
         val media = cached.filter { medium ->
             val isWanted = when (medium.type) {
@@ -660,13 +669,13 @@ class MediaFetcher(val context: Context) {
         return media.toMutableList() as ArrayList<Medium>
     }
 
-    // the pCloud part of the Favorites folder: the cache rows of the favorites, read folder by folder
-    // the way any pCloud folder is, so the media type filter and the hidden files rule apply the same
-    private fun getPCloudFavorites(favoritePaths: ArrayList<String>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int): ArrayList<Medium> {
-        val wanted = favoritePaths.filter { it.isPCloudPath() }.toHashSet()
+    // the remote part of the Favorites folder: the cache rows of the favorites, read folder by folder
+    // the way any remote folder is, so the media type filter and the hidden files rule apply the same
+    private fun getRemoteFavorites(favoritePaths: ArrayList<String>, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int): ArrayList<Medium> {
+        val wanted = favoritePaths.filter { it.isRemotePath() }.toHashSet()
         val media = ArrayList<Medium>()
         wanted.map { it.getParentPath() }.distinct().forEach { folder ->
-            media.addAll(getMediaOnPCloud(folder, isPickImage, isPickVideo, filterMedia, favoritePaths).filter { it.path in wanted })
+            media.addAll(getRemoteMedia(folder, isPickImage, isPickVideo, filterMedia, favoritePaths).filter { it.path in wanted })
         }
 
         return media

@@ -36,6 +36,8 @@ class SettingsActivity : SimpleActivity() {
         // the commons exportSettings() names the file itself, so the export is driven from here
         // instead, with a request code of its own
         private const val SELECT_EXPORT_SETTINGS_FILE = 6
+        private const val SMB_OPTION_EDIT = 1
+        private const val SMB_OPTION_FORGET = 2
     }
 
     private var mRecycleBinContentSize = 0L
@@ -114,6 +116,7 @@ class SettingsActivity : SimpleActivity() {
         setupShowRecycleBinLast()
         setupEmptyRecycleBin()
         setupPCloudAccount()
+        setupSmbShare()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupExportFavorites()
@@ -255,6 +258,98 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
+    // The row says which share is set up, or that none is. Tapping it opens the settings; when
+    // one is already there, it offers to forget it first, because that is the only way back to
+    // no share at all and its cached folders have to go with it
+    private fun setupSmbShare() {
+        val isConfigured = config.isSmbConfigured
+        binding.settingsSmbShare.text = if (isConfigured) "\\\\${config.smbHost}\\${config.smbShare}" else getString(R.string.smb_not_configured)
+        binding.settingsSmbShareHolder.setOnClickListener {
+            if (isConfigured) {
+                showSmbShareOptions()
+            } else {
+                SmbShareDialog(this) { onSmbShareChanged() }
+            }
+        }
+
+        setupSmbRescanPolicy()
+    }
+
+    private fun showSmbShareOptions() {
+        val items = arrayListOf(
+            RadioItem(SMB_OPTION_EDIT, getString(R.string.smb_share)),
+            RadioItem(SMB_OPTION_FORGET, getString(R.string.smb_clear))
+        )
+
+        RadioGroupDialog(this, items) {
+            if (it as Int == SMB_OPTION_EDIT) {
+                SmbShareDialog(this) { onSmbShareChanged() }
+            } else {
+                ConfirmationDialog(this, getString(R.string.smb_clear_confirmation)) {
+                    config.clearSmbShare()
+                    SmbClient.disconnect()
+                    ensureBackgroundThread { SmbScanner(this).forgetAll() }
+                    onSmbShareChanged()
+                }
+            }
+        }
+    }
+
+    // the share that was there is not the one that is there now, so its cached folders are of no
+    // use; they are replaced by the next scan, and dropped here so that nothing stale is shown
+    // in between
+    private fun onSmbShareChanged() {
+        ensureBackgroundThread { SmbScanner(this).forgetAll() }
+        setupSmbShare()
+        updateTextColors(binding.settingsHolder)
+    }
+
+    // one row per event that can ask for a rescan, see SmbSyncPolicy. Nothing here applies
+    // without a share, so the rows are hidden until one is set up
+    private fun setupSmbRescanPolicy() {
+        val isConfigured = config.isSmbConfigured
+        binding.settingsSmbRescanOnUnmeteredOnlyHolder.beVisibleIf(isConfigured)
+        binding.settingsSmbRescanOnLaunchHolder.beVisibleIf(isConfigured)
+        binding.settingsSmbRescanOnStorageSwitchHolder.beVisibleIf(isConfigured)
+        binding.settingsSmbRescanOnFolderOpenHolder.beVisibleIf(isConfigured)
+        binding.settingsSmbRescanIntervalHolder.beVisibleIf(isConfigured)
+
+        binding.settingsSmbRescanOnUnmeteredOnly.isChecked = config.smbRescanOnUnmeteredOnly
+        binding.settingsSmbRescanOnUnmeteredOnlyHolder.setOnClickListener {
+            binding.settingsSmbRescanOnUnmeteredOnly.toggle()
+            config.smbRescanOnUnmeteredOnly = binding.settingsSmbRescanOnUnmeteredOnly.isChecked
+        }
+
+        binding.settingsSmbRescanOnLaunch.isChecked = config.smbRescanOnLaunch
+        binding.settingsSmbRescanOnLaunchHolder.setOnClickListener {
+            binding.settingsSmbRescanOnLaunch.toggle()
+            config.smbRescanOnLaunch = binding.settingsSmbRescanOnLaunch.isChecked
+        }
+
+        binding.settingsSmbRescanOnStorageSwitch.isChecked = config.smbRescanOnStorageSwitch
+        binding.settingsSmbRescanOnStorageSwitchHolder.setOnClickListener {
+            binding.settingsSmbRescanOnStorageSwitch.toggle()
+            config.smbRescanOnStorageSwitch = binding.settingsSmbRescanOnStorageSwitch.isChecked
+        }
+
+        binding.settingsSmbRescanOnFolderOpen.isChecked = config.smbRescanOnFolderOpen
+        binding.settingsSmbRescanOnFolderOpenHolder.setOnClickListener {
+            binding.settingsSmbRescanOnFolderOpen.toggle()
+            config.smbRescanOnFolderOpen = binding.settingsSmbRescanOnFolderOpen.isChecked
+        }
+
+        binding.settingsSmbRescanInterval.text = getPCloudRescanIntervalText(config.smbRescanIntervalMinutes)
+        binding.settingsSmbRescanIntervalHolder.setOnClickListener {
+            val items = ArrayList(PCLOUD_RESCAN_INTERVAL_CHOICES.map { RadioItem(it, getPCloudRescanIntervalText(it)) })
+            RadioGroupDialog(this, items, config.smbRescanIntervalMinutes) {
+                config.smbRescanIntervalMinutes = it as Int
+                binding.settingsSmbRescanInterval.text = getPCloudRescanIntervalText(it)
+            }
+        }
+    }
+
+    // the interval choices read the same for both remote storages, so the pCloud wording is used
+    // for the share too rather than a second set of strings saying the same thing
     private fun getPCloudRescanIntervalText(minutes: Int) = when {
         minutes <= 0 -> getString(R.string.pcloud_rescan_interval_always)
         minutes < 60 -> getString(R.string.pcloud_interval_minutes, minutes)

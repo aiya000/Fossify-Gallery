@@ -114,9 +114,11 @@ import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isShownByStorageFilter
+import org.fossify.gallery.extensions.effectiveStorageFilter
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.rescanSmb
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
@@ -159,6 +161,9 @@ import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
+import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
+import org.fossify.gallery.helpers.SmbScanner
+import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_RAWS
@@ -554,10 +559,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     !resources.getBoolean(org.fossify.commons.R.bool.hide_google_relations)
                 // the item doubles as the sign of which storage is on screen
                 findItem(R.id.storage_filter).apply {
-                    isVisible = config.isPCloudLoggedIn
-                    setIcon(storageIconRes(config.storageFilter))
+                    isVisible = availableStorages().size > 1
+                    setIcon(storageIconRes(effectiveStorageFilter()))
                 }
                 findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
+                findItem(R.id.rescan_smb).isVisible = config.isSmbConfigured
             }
 
             // a freshly set icon has no tint yet
@@ -604,6 +610,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.filter -> showFilterMediaDialog()
                 R.id.storage_filter -> showStorageFilterDialog()
                 R.id.rescan_pcloud -> rescanPCloudManually()
+                R.id.rescan_smb -> rescanSmbManually()
                 R.id.open_camera -> launchCamera()
                 R.id.show_all -> showAllMedia()
                 R.id.change_view_type -> changeViewType()
@@ -787,16 +794,40 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     private fun showStorageFilterDialog() {
-        val items = arrayListOf(
-            RadioItem(STORAGE_FILTER_LOCAL, getString(R.string.storage_local)),
-            RadioItem(STORAGE_FILTER_PCLOUD, getString(R.string.pcloud)),
-            RadioItem(STORAGE_FILTER_ALL, getString(R.string.storage_local_and_pcloud))
-        )
-
-        RadioGroupDialog(this, items, config.storageFilter) {
+        val items = availableStorages().map { RadioItem(it, storageLabel(it)) } as ArrayList<RadioItem>
+        RadioGroupDialog(this, items, effectiveStorageFilter()) {
             switchStorage(it as Int)
         }
     }
+
+    // The storages the folder list can be switched between, in the order the menu lists them and
+    // a sideways swipe walks them. A storage that is not set up is not one of them, and with
+    // only the device there is nothing to switch to, so "all storages" is left out as well
+    private fun availableStorages(): List<Int> {
+        val storages = arrayListOf(STORAGE_FILTER_LOCAL)
+        if (config.isPCloudLoggedIn) {
+            storages.add(STORAGE_FILTER_PCLOUD)
+        }
+
+        if (config.isSmbConfigured) {
+            storages.add(STORAGE_FILTER_SMB)
+        }
+
+        if (storages.size > 1) {
+            storages.add(STORAGE_FILTER_ALL)
+        }
+
+        return storages
+    }
+
+    private fun storageLabel(storageFilter: Int) = getString(
+        when (storageFilter) {
+            STORAGE_FILTER_PCLOUD -> R.string.pcloud
+            STORAGE_FILTER_SMB -> R.string.smb
+            STORAGE_FILTER_ALL -> R.string.storage_all
+            else -> R.string.storage_local
+        }
+    )
 
     private fun switchStorage(newFilter: Int) {
         if (newFilter == config.storageFilter) {
@@ -806,24 +837,34 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         config.storageFilter = newFilter
         refreshMenuItems()
 
-        // a pCloud scan still running is of no use to a list of local folders, and the reload
-        // it would end in only sends the local folders through their recheck once more. A
-        // switch to pCloud lets it run, that list wants its result
-        if (newFilter == STORAGE_FILTER_LOCAL) {
+        // a scan of a storage the list has just left is of no use to it, and the reload it would
+        // end in only sends the folders on screen through their recheck once more. A switch to
+        // that storage lets its scan run, that list wants its result
+        if (!isPCloudShown()) {
             PCloudScanner.abortCurrent()
+        }
+
+        if (!isSmbShown()) {
+            SmbScanner.abortCurrent()
         }
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
         // refreshes the list a second time once it is through
         reloadDirectories()
-        val policy = PCloudSyncPolicy(this)
-        if (policy.rescanOnStorageSwitch && isPCloudShown() && policy.isFullScanDue()) {
+        val pCloudPolicy = PCloudSyncPolicy(this)
+        if (pCloudPolicy.rescanOnStorageSwitch && isPCloudShown() && pCloudPolicy.isFullScanDue()) {
             rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+        }
+
+        val smbPolicy = SmbSyncPolicy(this)
+        if (smbPolicy.rescanOnStorageSwitch && isSmbShown() && smbPolicy.isFullScanDue()) {
+            rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
         }
     }
 
     private fun storageIconRes(storageFilter: Int) = when (storageFilter) {
         STORAGE_FILTER_PCLOUD -> R.drawable.ic_cloud_vector
+        STORAGE_FILTER_SMB -> R.drawable.ic_storage_vector
         STORAGE_FILTER_ALL -> R.drawable.ic_devices_vector
         else -> R.drawable.ic_smartphone_vector
     }
@@ -845,6 +886,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private var dragging = false
         private var animating = false
         private var target = 0
+
+        // which way the drag that picked the target went: -1 to the left, 1 to the right. With
+        // more than two storages the direction no longer follows from which one was picked
+        private var direction = 0
         private var velocityTracker: VelocityTracker? = null
 
         override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
@@ -872,7 +917,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                             // the list starts moving from here, not a slop behind the finger
                             startX = e.x
                             rv.parent.requestDisallowInterceptTouchEvent(true)
-                            showHint(target, uncoveredOnTheRight = dx < 0)
+                            showHint(target, uncoveredOnTheRight = direction < 0)
                             return true
                         }
                     }
@@ -896,9 +941,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     recycleTracker()
                     dragging = false
 
-                    val towardsTarget = if (target == STORAGE_FILTER_PCLOUD) dx < 0 else dx > 0
+                    val towardsTarget = if (direction < 0) dx < 0 else dx > 0
                     val farEnough = abs(dx) >= rv.width / STORAGE_SWIPE_COMMIT_FRACTION
-                    val flungThatWay = abs(velocityX) >= minFlingVelocity && (if (target == STORAGE_FILTER_PCLOUD) velocityX < 0 else velocityX > 0)
+                    val flungThatWay = abs(velocityX) >= minFlingVelocity && (if (direction < 0) velocityX < 0 else velocityX > 0)
                     if (towardsTarget && (farEnough || flungThatWay)) {
                         commit(target)
                     } else {
@@ -920,16 +965,26 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // screen, which a switch stops anyway (reloadDirectories() raises mShouldStopFetching),
         // or for a pCloud scan, which runs on in the background and only fills the cache
         private fun canSwipeStorage(): Boolean {
-            return config.isPCloudLoggedIn
+            return availableStorages().size > 1
                 && !animating
                 && !config.scrollHorizontally
                 && getRecyclerAdapter()?.isSelecting() != true
         }
 
-        // the storage a drag in this direction leads to, 0 when the list is there already
+        // The storage a drag in this direction leads to, 0 when there is none that way: the
+        // storages are walked in the order the menu lists them, dragging left towards the next
+        // one and right towards the one before. The ends do not wrap, so a drag off either end
+        // leaves the list where it is
         private fun targetFor(dx: Float): Int {
-            val storage = if (dx < 0) STORAGE_FILTER_PCLOUD else STORAGE_FILTER_LOCAL
-            return if (storage == config.storageFilter) 0 else storage
+            val storages = availableStorages()
+            val current = storages.indexOf(effectiveStorageFilter())
+            if (current < 0) {
+                return 0
+            }
+
+            direction = if (dx < 0) -1 else 1
+            val next = if (direction < 0) current + 1 else current - 1
+            return storages.getOrElse(next) { 0 }
         }
 
         private fun recycleTracker() {
@@ -941,7 +996,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             val textColor = getProperTextColor()
             binding.directoriesStorageHintIcon.setImageResource(storageIconRes(storage))
             binding.directoriesStorageHintIcon.applyColorFilter(textColor)
-            binding.directoriesStorageHintLabel.text = getString(if (storage == STORAGE_FILTER_PCLOUD) R.string.pcloud else R.string.storage_local)
+            binding.directoriesStorageHintLabel.text = storageLabel(storage)
             binding.directoriesStorageHintLabel.setTextColor(textColor)
             (binding.directoriesStorageHintContent.layoutParams as FrameLayout.LayoutParams).gravity =
                 (if (uncoveredOnTheRight) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
@@ -952,7 +1007,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // the list follows the finger towards the target only; the hint fades in with the distance
         private fun follow(dx: Float) {
-            val clamped = if (target == STORAGE_FILTER_PCLOUD) minOf(dx, 0f) else maxOf(dx, 0f)
+            val clamped = if (direction < 0) minOf(dx, 0f) else maxOf(dx, 0f)
             binding.directoriesRefreshLayout.translationX = clamped
             val commitDistance = binding.directoriesRefreshLayout.width / STORAGE_SWIPE_COMMIT_FRACTION
             binding.directoriesStorageHint.alpha = minOf(1f, abs(clamped) / commitDistance)
@@ -962,7 +1017,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private fun commit(storage: Int) {
             val list = binding.directoriesRefreshLayout
             val width = list.width.toFloat()
-            val outX = if (storage == STORAGE_FILTER_PCLOUD) -width else width
+            val outX = if (direction < 0) -width else width
             animating = true
             list.animate()
                 .translationX(outX)
@@ -1001,16 +1056,35 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         getDirectories()
     }
 
-    private fun isPCloudShown() = config.isPCloudLoggedIn && config.storageFilter != STORAGE_FILTER_LOCAL
+    private fun isPCloudShown() = config.isPCloudLoggedIn && effectiveStorageFilter().let {
+        it == STORAGE_FILTER_PCLOUD || it == STORAGE_FILTER_ALL
+    }
 
-    // a pull refreshes pCloud too while it is on screen; the local folders are rechecked by
-    // getDirectories() either way, and that is also what stops the spinner
+    private fun isSmbShown() = config.isSmbConfigured && effectiveStorageFilter().let {
+        it == STORAGE_FILTER_SMB || it == STORAGE_FILTER_ALL
+    }
+
+    // A pull refreshes the remote storages on screen too; the local folders are rechecked by
+    // getDirectories() either way, and that is also what stops the spinner. With both remote
+    // storages showing, the scans run one after the other: each claims its own scanner, but
+    // the list is only worth rebuilding once they are both through
     private fun refreshDirectories() {
-        if (isPCloudShown()) {
-            rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
-        } else {
-            getDirectories()
+        when {
+            isPCloudShown() && isSmbShown() -> rescanPCloud(reportCounts = false) {
+                rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
+            }
+
+            isPCloudShown() -> rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+            isSmbShown() -> rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
+            else -> getDirectories()
         }
+    }
+
+    // the menu item walks the whole share again, the way the pCloud one lists the whole account
+    private fun rescanSmbManually() {
+        toast(R.string.smb_rescanning)
+        binding.directoriesRefreshLayout.isRefreshing = true
+        rescanSmb(reportCounts = true) { runOnUiThread { getDirectories() } }
     }
 
     // the menu item lists the whole account again: it is the way out when the diff sync
@@ -1031,6 +1105,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val policy = PCloudSyncPolicy(this)
         if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
             rescanPCloud(reportCounts = false) { runOnUiThread { getDirectories() } }
+        }
+
+        val smbPolicy = SmbSyncPolicy(this)
+        if (smbPolicy.rescanOnLaunch && isSmbShown() && smbPolicy.isFullScanDue()) {
+            rescanSmb(reportCounts = false) { runOnUiThread { getDirectories() } }
         }
     }
 

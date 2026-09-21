@@ -9,6 +9,7 @@ import com.bumptech.glide.annotation.GlideModule
 import com.bumptech.glide.module.AppGlideModule
 import com.caverock.androidsvg.SVG
 import org.fossify.gallery.helpers.PCloudStreamLoader
+import org.fossify.gallery.helpers.SmbStreamLoader
 
 import java.io.InputStream
 
@@ -20,6 +21,9 @@ class SvgModule : AppGlideModule() {
         // pCloud media reaches Glide as a "pcloud:" path string like any other medium; prepended
         // so that it is asked before Glide's own StringLoader, which would read the path as a Uri
         registry.prepend(String::class.java, InputStream::class.java, PCloudStreamLoader.Factory(context.applicationContext))
+
+        // and the same for SMB media, which reaches Glide as an "smb:" path string
+        registry.prepend(String::class.java, InputStream::class.java, SmbStreamLoader.Factory(context.applicationContext))
     }
 
     override fun isManifestParsingEnabled() = false

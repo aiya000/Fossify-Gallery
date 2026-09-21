@@ -21,3 +21,15 @@ native <methods>;
 
 # Reprint
 -keep class com.github.ajalt.reprint.module.** { *; }
+
+# smbj, and what it pulls in. The client picks its dialects, authenticators and crypto
+# implementations through named factories it looks up at runtime, so R8 cannot see who uses
+# them; bouncycastle is the provider behind SMB3 encryption and mbassador dispatches by
+# annotated method
+-keep class com.hierynomus.** { *; }
+-keep class net.engio.mbassy.** { *; }
+-keep class org.bouncycastle.** { *; }
+-dontwarn com.hierynomus.**
+-dontwarn org.bouncycastle.**
+-dontwarn javax.naming.**
+-dontwarn org.slf4j.**
