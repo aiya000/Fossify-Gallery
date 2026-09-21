@@ -660,7 +660,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
             return
         }
 
-        if (!SmbDownloadService.start(context, mMedium.path)) {
+        if (!SmbDownloadService.start(context, listOf(mMedium.path))) {
             context.toast(R.string.smb_download_busy)
             return
         }

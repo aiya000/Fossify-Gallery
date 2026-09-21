@@ -156,7 +156,14 @@
     <string name="smb_download_channel">Downloading a video from the network share</string>
     <string name="smb_download_preparing">Downloading the video…</string>
     <string name="smb_download_progress">Downloading the video: %1$s of %2$s</string>
+    <string name="smb_download_progress_queue">Downloading video %1$d of %2$d: %3$s of %4$s</string>
+    <string name="smb_download_videos">Download the selected videos</string>
+    <string name="smb_download_videos_confirmation">%1$d of the selected videos are not on the device yet, %2$s in all.\nDownload them from the share? They are fetched one after another, in the order they were picked.</string>
+    <string name="smb_download_videos_none">The selected videos are already on the device.</string>
+    <string name="smb_download_videos_no_videos">No videos of the share are selected.</string>
     <string name="smb_download_done">Downloaded \'%1$s\'.</string>
+    <string name="smb_download_done_many">Downloaded %1$d videos.</string>
+    <string name="smb_download_done_with_failed">Downloaded %1$d videos. %2$d could not be downloaded.</string>
     <string name="smb_download_failed">Could not download the video from the network share.</string>
     <string name="smb_download_busy">Another video is being downloaded. Wait for it to finish, or stop it from its notification.</string>
     <string name="smb_download_already">This video is already on the device and is played from there.</string>

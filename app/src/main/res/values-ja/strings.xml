@@ -158,7 +158,14 @@
     <string name="smb_download_channel">ネットワーク共有からの動画の読み込み</string>
     <string name="smb_download_preparing">動画を読み込んでいます…</string>
     <string name="smb_download_progress">動画を読み込んでいます: %1$s / %2$s</string>
+    <string name="smb_download_progress_queue">動画を読み込んでいます (%1$d / %2$d): %3$s / %4$s</string>
+    <string name="smb_download_videos">選択した動画を読み込む</string>
+    <string name="smb_download_videos_confirmation">選択した動画のうち、まだ読み込んでいないものが %1$d 本（合計 %2$s）あります。\n共有から読み込みますか？ 選んだ順に、1 本ずつ読み込みます。</string>
+    <string name="smb_download_videos_none">選択した動画は、すべて読み込み済みです。</string>
+    <string name="smb_download_videos_no_videos">共有の動画が選択されていません。</string>
     <string name="smb_download_done">\'%1$s\' を読み込みました。</string>
+    <string name="smb_download_done_many">%1$d 本の動画を読み込みました。</string>
+    <string name="smb_download_done_with_failed">%1$d 本の動画を読み込みました。%2$d 本は読み込めませんでした。</string>
     <string name="smb_download_failed">ネットワーク共有から動画を読み込めませんでした。</string>
     <string name="smb_download_busy">ほかの動画を読み込んでいます。終わるまで待つか、通知から中止してください。</string>
     <string name="smb_download_already">この動画は読み込み済みで、端末から再生しています。</string>

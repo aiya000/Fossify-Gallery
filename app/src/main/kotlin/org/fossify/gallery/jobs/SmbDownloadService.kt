@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.extensions.formatSize
+import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isQPlus
 import org.fossify.gallery.R
@@ -40,7 +41,7 @@ class SmbDownloadService : Service() {
         private const val CHANNEL_ID = "smb_downloads"
         private const val PROGRESS_NOTIFICATION_ID = 7007
         private const val RESULT_NOTIFICATION_ID = 7008
-        private const val EXTRA_PATH = "path"
+        private const val EXTRA_PATHS = "paths"
 
         // the notification's stop action comes back in as this
         private const val ACTION_ABORT = "org.fossify.gallery.ABORT_SMB_DOWNLOAD"
@@ -55,15 +56,25 @@ class SmbDownloadService : Service() {
         @Volatile
         private var workingPath: String? = null
 
-        // one video at a time: a second download would be a second read over the same share,
-        // competing with the one already going, which is the very thing the user is here to
-        // avoid. Returns false when one is already running, so the caller can say so
-        fun start(context: Context, path: String): Boolean {
+        // where the video being fetched sits in the run, so the notification can say "3 of 12"
+        @Volatile
+        private var queuePosition = 0
+
+        @Volatile
+        private var queueSize = 0
+
+        // One run at a time, and one video at a time inside it: a second read over the same
+        // share would compete with the one already going, which is the very thing the user is
+        // here to avoid. Returns false when a run is already going, so the caller can say so.
+        //
+        // The order of the list is the order they are fetched in, and the caller decides it --
+        // from the grid that is the order the user tapped them in
+        fun start(context: Context, paths: List<String>): Boolean {
             if (isWorking.get()) {
                 return false
             }
 
-            val intent = Intent(context, SmbDownloadService::class.java).putExtra(EXTRA_PATH, path)
+            val intent = Intent(context, SmbDownloadService::class.java).putStringArrayListExtra(EXTRA_PATHS, ArrayList(paths))
             ContextCompat.startForegroundService(context, intent)
             return true
         }
@@ -104,55 +115,91 @@ class SmbDownloadService : Service() {
         // this returns, whatever it then decides to do
         showProgress(buildNotification(getString(R.string.smb_download_preparing), null))
 
-        val path = intent?.getStringExtra(EXTRA_PATH)
-        if (path == null) {
-            finish(path = null, file = null)
+        val paths = intent?.getStringArrayListExtra(EXTRA_PATHS).orEmpty()
+        if (paths.isEmpty()) {
+            stop()
             return START_NOT_STICKY
         }
 
         if (!isWorking.compareAndSet(false, true)) {
-            Log.w(TAG, "A video is already being downloaded, not starting a second one")
+            Log.w(TAG, "A video is already being downloaded, not starting a second run")
             return START_NOT_STICKY
         }
 
-        workingPath = path
         isAborted.set(false)
         ensureBackgroundThread {
-            work(path)
+            work(paths)
         }
 
         return START_NOT_STICKY
     }
 
-    private fun work(path: String) {
+    private fun work(paths: List<String>) {
         val cache = SmbVideoCache(this)
-        var downloaded: File? = null
+        var done = 0
+        var failed = 0
         try {
-            val target = cache.targetOf(path)
-            if (target == null) {
-                // no scanned row, so there is no name to give the copy. Nothing the user can do
-                // about it from here, and a rescan is what fixes it
-                Log.w(TAG, "No scanned row for $path, so it cannot be downloaded")
-                showResult(getString(R.string.smb_download_failed))
-            } else if (target.isFile && target.length() > 0) {
-                downloaded = target
-            } else {
-                downloaded = download(path, target)
+            for ((index, path) in paths.withIndex()) {
+                if (isAborted.get()) {
+                    Log.i(TAG, "The downloads were called off after $index of ${paths.size}")
+                    break
+                }
+
+                workingPath = path
+                queuePosition = index
+                queueSize = paths.size
+                // each video is finished and reported before the next one starts, so a run that
+                // is called off, or that loses the share halfway, keeps everything it has got
+                val file = downloadOne(cache, path)
+                finished(path, file)
+                when {
+                    file != null -> done++
+                    isAborted.get() -> Unit
+                    else -> failed++
+                }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not download $path from the share", e)
-            // the usual failure is a session the server has given up on; dropping the connection
-            // means the next attempt opens a fresh one instead of failing the same way
-            SmbClient.disconnect()
-            showResult(getString(R.string.smb_download_failed))
+
+            showResult(resultText(done, failed, paths))
         } finally {
             // a copy that has just been written is the newest thing here, so the sweep can only
             // take what has really gone a day unwatched
             cache.sweepExpired()
-            isWorking.set(false)
             workingPath = null
-            finish(path, downloaded)
+            isWorking.set(false)
+            stop()
         }
+    }
+
+    // null when the video could not be fetched, or when the run was called off part way
+    private fun downloadOne(cache: SmbVideoCache, path: String): File? {
+        return try {
+            val target = cache.targetOf(path)
+            when {
+                // no scanned row, so there is no name to give the copy. A rescan is what fixes
+                // it, and there is nothing the user can do about it from here
+                target == null -> {
+                    Log.w(TAG, "No scanned row for $path, so it cannot be downloaded")
+                    null
+                }
+
+                target.isFile && target.length() > 0 -> target
+                else -> download(path, target)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not download $path from the share", e)
+            // the usual failure is a session the server has given up on; dropping the connection
+            // means the next video opens a fresh one instead of failing the same way
+            SmbClient.disconnect()
+            null
+        }
+    }
+
+    private fun resultText(done: Int, failed: Int, paths: List<String>): String = when {
+        done == 0 -> getString(R.string.smb_download_failed)
+        // the single video the viewer's menu asks for is worth naming; a selection is not
+        done == 1 && paths.size == 1 -> getString(R.string.smb_download_done, paths.first().substringAfterLast('/'))
+        failed > 0 -> getString(R.string.smb_download_done_with_failed, done, failed)
+        else -> getString(R.string.smb_download_done_many, done)
     }
 
     // returns the finished copy, or null when the download was called off part way
@@ -207,12 +254,14 @@ class SmbDownloadService : Service() {
         }
     }
 
-    private fun finish(path: String?, file: File?) {
+    private fun finished(path: String, file: File?) {
         Handler(Looper.getMainLooper()).post {
-            if (path != null) {
-                listeners.forEach { it.onSmbDownloadFinished(path, file) }
-            }
+            listeners.forEach { it.onSmbDownloadFinished(path, file) }
+        }
+    }
 
+    private fun stop() {
+        Handler(Looper.getMainLooper()).post {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
@@ -227,7 +276,15 @@ class SmbDownloadService : Service() {
         }
 
         lastProgressAt = now
-        val text = getString(R.string.smb_download_progress, done.formatSize(), total.formatSize())
+        val bytes = getString(R.string.smb_download_progress, done.formatSize(), total.formatSize())
+        // one video says how far through the file it is; a selection says which video as well,
+        // since that is what the user is waiting on
+        val text = if (queueSize > 1) {
+            getString(R.string.smb_download_progress_queue, queuePosition + 1, queueSize, done.formatSize(), total.formatSize())
+        } else {
+            bytes
+        }
+
         showProgress(buildNotification(text, path.substringAfterLast('/'), done, total))
         Handler(Looper.getMainLooper()).post {
             listeners.forEach { it.onSmbDownloadProgress(path, done, total) }
@@ -242,8 +299,10 @@ class SmbDownloadService : Service() {
         }
     }
 
-    // the one notification that stays behind, for a download that ended while the app was off screen
+    // the one notification that stays behind, for a run that ended while the app was off screen.
+    // The toast is for when it did not, which is the usual case for a single video
     private fun showResult(text: String) {
+        toast(text)
         val notification = NotificationCompat.Builder(this, ensureChannel())
             .setSmallIcon(R.drawable.ic_storage_vector)
             .setContentTitle(text)
