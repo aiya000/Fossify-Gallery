@@ -1,0 +1,26 @@
+# The fixture share: a Samba server holding generated test patterns and nothing else.
+#
+# It exists so that no check of this app has to read the maintainer's own share. That share holds
+# thousands of personal videos, and every screenshot, logcat capture or scan count taken from it is
+# personal data leaving the device -- which is what #78 is about, more than the automation is.
+#
+# Published on 4450 rather than 445: on a WSL host Windows already holds 445. The app takes a port
+# in its share settings, so nothing is lost by moving it.
+
+services:
+  fixture-share:
+    image: dperson/samba
+    container_name: gallery-fixture-share
+    ports:
+      - "${FIXTURE_SMB_PORT:-4450}:445"
+    environment:
+      # SMB2 and above only, which is all the app's client speaks
+      TZ: "UTC"
+    command: >
+      -u "${FIXTURE_SMB_USER:-gallery};${FIXTURE_SMB_PASSWORD:-gallery}"
+      -s "${FIXTURE_SHARE_NAME:-gallery};/share;yes;no;no;${FIXTURE_SMB_USER:-gallery}"
+      -p
+    volumes:
+      # seed-share.sh builds this. It is generated, so it is not checked in -- see .gitignore
+      - "${FIXTURE_SHARE_DIR:-./share}:/share:rw"
+    restart: "no"
