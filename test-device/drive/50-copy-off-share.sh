@@ -116,12 +116,12 @@ else
     finish
 fi
 
-# moving between the share and anywhere else is not built; a move offered here would copy and
-# then have nothing to finish with
+# moving off the share is built now, and it is this menu that offers it. What the move itself
+# does is driven by 95-move-on-the-share.sh; here it is only that the entry is present
 if python3 "$DRIVE_DIR/ui.py" "$menu" --text "Move to" --exact > /dev/null; then
-    fail "'Move to' is offered, and moving off the share is not built"
+    pass "'Move to' is offered as well"
 else
-    pass "'Move to' is kept away, moving off the share is not built yet"
+    fail "'Move to' is not offered for a medium of the share (view tree in $menu)"
 fi
 
 step "copying it to the device"

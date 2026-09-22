@@ -540,23 +540,17 @@ fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
     onPCloudTransferQueued: (() -> Unit)? = null,
     callback: (destinationPath: String) -> Unit
 ) {
-    // The share is copied off and copied onto, and that is all it does so far (#28). A move
-    // would have to delete the side it came from once the copy landed, which is not built in
-    // either direction; a copy onto the share starts from a file on the device, because
-    // anything already remote would have to be staged first. The picker turns both away and
-    // the menus offer no move for the share's media; this is the backstop for all of it
+    // The share is copied off, copied onto, and moved in either direction and within itself
+    // (#28). What still cannot be done is arriving from another remote storage: what goes onto
+    // the share is read off a file of the device, and anything already remote would have to be
+    // staged on the way. The picker turns that away too; this is the backstop for it
     if (source.isSmbPath() || destination.isSmbPath()) {
-        if (!isCopyOperation) {
-            toast(R.string.smb_no_move_yet, Toast.LENGTH_LONG)
-            return
-        }
-
-        if (destination.isSmbPath() && source.isRemotePath()) {
+        if (destination.isSmbPath() && source.isRemotePath() && !source.isSmbPath()) {
             toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
             return
         }
 
-        startSmbCopy(fileDirItems, destination, onPCloudTransferQueued)
+        startSmbTransfer(fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued)
         return
     }
 
@@ -646,17 +640,20 @@ fun BaseSimpleActivity.startPCloudTransfer(
     }
 }
 
-// Queues a copy off the share, or onto it, once the permissions the destination needs are in:
-// a folder on the device is written into, a folder on pCloud wants an account, and a folder on
-// the share wants neither. The notification permission is asked for so that the progress can be
-// seen; the copy runs without it too.
+// Queues a copy or a move that has the share on one side, once the permissions it needs are in:
+// a folder on the device is written into, a folder on pCloud wants an account, a move away from
+// the device deletes the files it read, and a move inside the share wants nothing at all. The
+// notification permission is asked for so that the progress can be seen; the transfer runs
+// without it too.
 //
 // [onQueued] fires once the job is with the service, which is several dialogs later than this
-// returns. A caller whose only business was this copy waits for it rather than for the copy
+// returns. A caller whose only business was this transfer waits for it rather than for the copy
 // callback, which never comes for a transfer
-fun BaseSimpleActivity.startSmbCopy(
+fun BaseSimpleActivity.startSmbTransfer(
     fileDirItems: ArrayList<FileDirItem>,
+    source: String,
     destination: String,
+    isCopyOperation: Boolean,
     onQueued: (() -> Unit)? = null
 ) {
     if (!config.isSmbConfigured) {
@@ -670,6 +667,7 @@ fun BaseSimpleActivity.startSmbCopy(
     }
 
     val kind = when {
+        source.isSmbPath() && destination.isSmbPath() -> SmbTransferService.Kind.WITHIN_SHARE
         destination.isSmbPath() -> SmbTransferService.Kind.FROM_DEVICE
         destination.isPCloudPath() -> SmbTransferService.Kind.TO_PCLOUD
         else -> SmbTransferService.Kind.TO_DEVICE
@@ -680,24 +678,43 @@ fun BaseSimpleActivity.startSmbCopy(
         return
     }
 
+    // a move within the share is a move whatever the caller thought it was asking for: there is
+    // no copy within the share, see SmbTransferService.Job
+    val isCopy = isCopyOperation && kind != SmbTransferService.Kind.WITHIN_SHARE
     val enqueue = {
         handleNotificationPermission {
-            // a copy into the temporary folder tile turns it into a real folder, the way a
-            // local copy drops the tile; the service rebuilds the folder's row
+            // a transfer into the temporary folder tile turns it into a real folder, the way a
+            // local copy or move drops the tile; the service rebuilds the folder's row
             if (destination == config.tempFolderPath) {
                 config.tempFolderPath = ""
             }
 
-            SmbTransferService.enqueue(this, SmbTransferService.Job(kind, paths, destination))
-            toast(R.string.smb_transfer_started)
+            SmbTransferService.enqueue(this, SmbTransferService.Job(kind, paths, destination, isCopy))
+            toast(if (isCopy) R.string.smb_transfer_started else R.string.smb_move_started)
             onQueued?.invoke()
         }
     }
 
     when (kind) {
-        // neither destination is a folder of the device, so there is no SAF access to ask for;
-        // what a copy onto the share reads is media the app already lists
-        SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.FROM_DEVICE -> enqueue()
+        // nothing of the device is touched, so there is nothing to ask for
+        SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.WITHIN_SHARE -> enqueue()
+
+        // what a copy onto the share reads is media the app already lists; a move also deletes
+        // those files afterwards, which is what the storage permissions are wanted for
+        SmbTransferService.Kind.FROM_DEVICE -> if (isCopy) {
+            enqueue()
+        } else {
+            handleSAFDialog(source) { granted ->
+                if (granted) {
+                    checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
+                        if (allowed) {
+                            enqueue()
+                        }
+                    }
+                }
+            }
+        }
+
         SmbTransferService.Kind.TO_DEVICE -> handleSAFDialog(destination) { granted ->
             if (granted) {
                 handleSAFDialogSdk30(destination) { allowed ->

@@ -129,72 +129,11 @@ for item in "Copy to" "Move to"; do
     fi
 done
 
-# The one that would cost a file. A move has to delete the original once the copy has landed, and
-# the share cannot delete anything yet -- so the picker must refuse the destination rather than
-# start a copy it will not be able to finish
-step "what happens when the share is picked as a move destination"
-ui_tap_text "Move to" "70-tap-move"
-sleep 2
-
-if ! ui_wait_exact_text "Network share" 30 "70-picker-move"; then
-    fail "the folder picker has no network share chip, so the refusal cannot be reached"
-    screenshot "70-no-share-chip"
-    finish
-fi
-
-ui_tap_text "Network share" "70-pick-share-for-move"
-sleep 2
-
-if ! ui_wait_exact_text "$FIXTURE_SHARE_DESTINATION_FOLDER" 30 "70-picker-move-share"; then
-    fail "$FIXTURE_SHARE_DESTINATION_FOLDER is not in the picker; the share's folders have no rows"
-    screenshot "70-no-share-folder"
-    finish
-fi
-
-logcat_reset
-ui_tap_text "$FIXTURE_SHARE_DESTINATION_FOLDER" "70-move-destination"
-# long enough for a transfer that should not exist to have said something, and for a picker that
-# should not have closed to have closed
-sleep 8
-screenshot "70-move-refused"
-
-if [ -f "$first_copy_on_host" ]; then
-    fail "a move put $FIXTURE_DEVICE_SOURCE_FILE on the share; it would have deleted the original next"
-else
-    pass "the share gained nothing from the move"
-fi
-
-capture_log "70-move"
-refute_log "onto the share" "no transfer onto the share was started for a move"
-
-if "${ADB[@]}" shell "[ -f '$device_source' ] && echo yes" 2> /dev/null | tr -d '\r' | rg -q yes; then
-    pass "and the file is still on the device"
-else
-    fail "$device_source is gone; a refused move deleted the original"
-    finish
-fi
-
-# the picker is still standing, having refused rather than dismissed. Back out of it and the
-# selection, so that the copy below starts from the grid
-"${ADB[@]}" shell input keyevent KEYCODE_BACK
-sleep 2
-
+# What the move does with the same destination is 95-move-on-the-share.sh's; this script stops at
+# the entry being offered. It used to drive a move here and assert that the picker refused it,
+# which is no longer the app's answer -- the move runs, and it deletes the file this script is
+# about to copy
 step "copying it onto the share"
-if ! ui_wait_text "$FIXTURE_DEVICE_SOURCE_FILE" 60 "70-grid-after-move"; then
-    fail "the grid did not come back after the refused move"
-    screenshot "70-no-grid"
-    finish
-fi
-
-if ! in_selection_mode "70-still-selected"; then
-    if ! select_row "$FIXTURE_DEVICE_SOURCE_FILE" "70-select-again"; then
-        screenshot "70-not-selected-again"
-        finish
-    fi
-fi
-
-open_overflow_menu
-sleep 1
 ui_tap_text "Copy to" "70-tap-copy"
 sleep 2
 

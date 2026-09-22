@@ -13,10 +13,12 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import org.fossify.commons.extensions.deleteFromMediaStore
 import org.fossify.commons.extensions.getFileInputStreamSync
 import org.fossify.commons.extensions.getFileOutputStreamSync
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getMimeType
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getSomeDocumentFile
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.toast
@@ -26,6 +28,7 @@ import org.fossify.commons.helpers.isQPlus
 import org.fossify.gallery.R
 import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.rescanSmbFolders
@@ -36,6 +39,7 @@ import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.availableName
 import java.io.File
 import java.io.IOException
@@ -53,10 +57,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 // -- jobs handed over through enqueue() rather than in the Intent, one job at a time in the
 // order they came, the service stopping once the queue is empty.
 //
-// Copying only (#28). Moving would have to delete the side it came from once the copy landed,
-// and neither direction does that yet; the menus offer no move where the share is involved.
-// A copy onto the share starts from a file on the device -- pCloud straight onto the share
-// would have to stage the file the way a copy to pCloud does, which is not built either.
+// Copies and moves. A move to another storage is the copy with the source dropped once the copy
+// has landed, one file at a time, so a run that stops halfway leaves the files it never reached
+// where they were rather than half gone.
+//
+// A move within the share is none of that. WITHIN_SHARE is one request per file and no bytes at
+// all, because the share can put a file in another folder itself -- see SmbClient.moveTo(). It
+// goes through this service all the same, for the progress and for the one-job-at-a-time queue.
+//
+// A copy or a move onto the share starts from a file on the device: pCloud straight onto the
+// share would have to stage the file the way a copy to pCloud does, which is not built (#28).
 //
 // Every file is one unit of progress. What went wrong with one file does not stop the others:
 // a share drops a connection mid-folder often enough that giving up on the rest would be the
@@ -65,12 +75,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 // screens learn of it through the listeners, because the callback of
 // copyMoveFilesToPickedDestination() never fires for a transfer
 class SmbTransferService : Service() {
-    enum class Kind { TO_DEVICE, TO_PCLOUD, FROM_DEVICE }
+    enum class Kind { TO_DEVICE, TO_PCLOUD, FROM_DEVICE, WITHIN_SHARE }
 
     // For TO_DEVICE and TO_PCLOUD the sourcePaths are pseudo paths on the share and the
     // destination is a folder on the device or on pCloud. FROM_DEVICE is the other way round:
-    // the sources are files on the device and the destination is a folder on the share
-    class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String)
+    // the sources are files on the device and the destination is a folder on the share.
+    // WITHIN_SHARE has the share on both sides.
+    //
+    // [isCopy] false leaves nothing behind on the side the files came from. WITHIN_SHARE is
+    // always a move -- a copy within the share would have to read every byte back out and write
+    // it again, and nobody has asked for that
+    class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String, val isCopy: Boolean = true)
 
     companion object {
         private const val TAG = "SmbTransfer"
@@ -132,6 +147,9 @@ class SmbTransferService : Service() {
     private fun work() {
         var copied = 0
         var failed = 0
+        // what the result is called. A run that only moved says so; one that copied anything at
+        // all keeps the copy wording, since there is one line for the whole run
+        var movesOnly = true
         lastFailure = null
         try {
             while (true) {
@@ -143,6 +161,7 @@ class SmbTransferService : Service() {
                     }
                 } ?: break
 
+                movesOnly = movesOnly && !job.isCopy
                 val result = run(job)
                 copied += result.first
                 failed += result.second
@@ -150,7 +169,7 @@ class SmbTransferService : Service() {
         } finally {
             isWorking.set(false)
             if (copied + failed > 0) {
-                showResult(copied, failed)
+                showResult(copied, failed, movesOnly)
             }
 
             Handler(Looper.getMainLooper()).post {
@@ -172,6 +191,7 @@ class SmbTransferService : Service() {
         val total = job.sourcePaths.size
         var done = 0
         var failed = 0
+        val writer = SmbWriter(this)
         val newLocalPaths = ArrayList<String>()
 
         for ((index, path) in job.sourcePaths.withIndex()) {
@@ -183,9 +203,30 @@ class SmbTransferService : Service() {
 
             try {
                 when (job.kind) {
-                    Kind.TO_DEVICE -> newLocalPaths.add(copyToDevice(path, job.destination))
-                    Kind.TO_PCLOUD -> copyToPCloud(path, job.destination)
-                    Kind.FROM_DEVICE -> copyFromDevice(path, job.destination)
+                    // the share's own copy goes only once the new one is whole: what the writer
+                    // drops here is the file this loop has just read to the end
+                    Kind.TO_DEVICE -> {
+                        newLocalPaths.add(copyToDevice(path, job.destination))
+                        if (!job.isCopy) {
+                            writer.deleteFiles(listOf(path))
+                        }
+                    }
+
+                    Kind.TO_PCLOUD -> {
+                        copyToPCloud(path, job.destination)
+                        if (!job.isCopy) {
+                            writer.deleteFiles(listOf(path))
+                        }
+                    }
+
+                    Kind.FROM_DEVICE -> {
+                        copyFromDevice(path, job.destination)
+                        if (!job.isCopy) {
+                            deleteLocalFile(path)
+                        }
+                    }
+
+                    Kind.WITHIN_SHARE -> writer.moveFileTo(path, job.destination)
                 }
                 done++
             } catch (e: PCloudException) {
@@ -210,8 +251,13 @@ class SmbTransferService : Service() {
         // "the copies are there and the lists would show them". Everything else this service says
         // is a failure, and a log with nothing but failures in it cannot tell a copy that never
         // ran from one that went through
-        val direction = if (job.kind == Kind.FROM_DEVICE) "onto the share" else "off the share"
-        Log.i(TAG, "Copied $done of $total $direction to ${job.destination}, $failed failed")
+        val direction = when (job.kind) {
+            Kind.FROM_DEVICE -> "onto the share"
+            Kind.WITHIN_SHARE -> "within the share"
+            else -> "off the share"
+        }
+
+        Log.i(TAG, "${if (job.isCopy) "Copied" else "Moved"} $done of $total $direction to ${job.destination}, $failed failed")
         return Pair(done, failed)
     }
 
@@ -228,6 +274,12 @@ class SmbTransferService : Service() {
                     updateDirectoryPath(job.destination)
                 }
             }
+
+            // Nothing is walked for a move within the share. SmbWriter carried every row with
+            // the file it moved, both folders included, which is what writeToShare() does for
+            // every other write -- a walk would only confirm what the cache already says, and a
+            // walk of a share is minutes
+            Kind.WITHIN_SHARE -> Unit
 
             Kind.TO_PCLOUD -> {
                 if (!config.isPCloudLoggedIn) {
@@ -260,6 +312,11 @@ class SmbTransferService : Service() {
 
                 if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
                     Log.w(TAG, "the refresh of ${job.destination} did not finish in time; the next scan picks it up")
+                }
+
+                // the folders on the device the files left; their rows count what is in them
+                if (!job.isCopy) {
+                    job.sourcePaths.map { it.getParentPath() }.distinct().forEach { updateDirectoryPath(it) }
                 }
             }
         }
@@ -370,6 +427,28 @@ class SmbTransferService : Service() {
         }
     }
 
+    // The device half of a move onto the share, once the copy is through: the file, its MediaStore
+    // entry and its cache row. The screen that started the move already asked for whatever storage
+    // permission the file's location needs. The same as PCloudTransferService does it
+    private fun deleteLocalFile(path: String) {
+        val file = File(path)
+        var deleted = file.delete()
+        if (!deleted) {
+            deleted = tryFastDocumentDelete(path, false)
+        }
+
+        if (!deleted) {
+            deleted = getSomeDocumentFile(path)?.delete() == true
+        }
+
+        if (!deleted && file.exists()) {
+            throw IOException("Could not delete $path")
+        }
+
+        deleteFromMediaStore(path)
+        deleteDBPath(path)
+    }
+
     // Hands the file's bytes to [write], from a copy already on the device when there is one --
     // the fullscreen view and the video download both leave one behind -- and from the share
     // otherwise. A short read is refused rather than written out as a whole file: the share
@@ -404,9 +483,10 @@ class SmbTransferService : Service() {
 
     private fun progressText(job: Job, done: Int, total: Int): String {
         val id = when (job.kind) {
-            Kind.TO_DEVICE -> R.string.smb_copying_to_device
-            Kind.TO_PCLOUD -> R.string.smb_copying_to_pcloud
-            Kind.FROM_DEVICE -> R.string.smb_copying_to_share
+            Kind.TO_DEVICE -> if (job.isCopy) R.string.smb_copying_to_device else R.string.smb_moving_to_device
+            Kind.TO_PCLOUD -> if (job.isCopy) R.string.smb_copying_to_pcloud else R.string.smb_moving_to_pcloud
+            Kind.FROM_DEVICE -> if (job.isCopy) R.string.smb_copying_to_share else R.string.smb_moving_to_share
+            Kind.WITHIN_SHARE -> R.string.smb_moving_within_share
         }
 
         return getString(id, done + 1, total)
@@ -420,11 +500,12 @@ class SmbTransferService : Service() {
         }
     }
 
-    private fun showResult(copied: Int, failed: Int) {
-        val text = if (failed == 0) {
-            getString(R.string.smb_transfer_done, copied)
-        } else {
-            getString(R.string.smb_transfer_done_with_failures, copied, failed)
+    private fun showResult(copied: Int, failed: Int, movesOnly: Boolean) {
+        val text = when {
+            failed == 0 && movesOnly -> getString(R.string.smb_transfer_moved, copied)
+            failed == 0 -> getString(R.string.smb_transfer_done, copied)
+            movesOnly -> getString(R.string.smb_transfer_moved_with_failures, copied, failed)
+            else -> getString(R.string.smb_transfer_done_with_failures, copied, failed)
         }
 
         toast(text)

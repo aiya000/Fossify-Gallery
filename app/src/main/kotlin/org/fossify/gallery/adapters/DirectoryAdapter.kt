@@ -888,10 +888,7 @@ class DirectoryAdapter(
                     return@handleLockedFolderOpeningForFolders
                 }
 
-                // A folder of the share has nowhere to move its media to until transfers are
-                // in (#28), so only a group is offered for it -- which is the whole point of
-                // moving one, and the only thing a group costs is a setting
-                val groupsOnly = groupIds.isNotEmpty() || folderPaths.any { it.isSmbPath() }
+                val groupsOnly = groupIds.isNotEmpty()
                 getMediaFileDirItems(folderPaths) { fileDirItems ->
                     val source = folderPaths.firstOrNull() ?: ""
                     PickDirectoryDialog(
@@ -903,8 +900,6 @@ class DirectoryAdapter(
                         isPickingFolderForWidget = false,
                         excludedGroupIds = groupIds,
                         allowFolderDestination = !groupsOnly,
-                        // so that the picker knows to turn away a folder of the share: it can be
-                        // copied into now, but not moved into (#28)
                         isCopyOperation = false,
                         groupCallback = { destinationGroupId ->
                             moveToGroup(folderPaths, groupIds, destinationGroupId)

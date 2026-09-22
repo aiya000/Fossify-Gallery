@@ -347,9 +347,6 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
         val hasFile = !isInPCloudBin
-        // a medium on the share is copied away from it and deleted from it, never moved: a move
-        // between a share and anywhere else is not built yet (#28)
-        val isOnShare = currentMedium.path.isSmbPath()
 
         runOnUiThread {
             val rotationDegrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
@@ -365,7 +362,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_set_as).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = hasFile && currentMedium.isImage()
                 findItem(R.id.menu_copy_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
-                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && !isOnShare && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
+                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
@@ -1227,7 +1224,6 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val isLocal = currentMedium?.path?.isRemotePath() != true
         val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         val hasFile = !isInPCloudBin
-        val isOnShare = currentMedium?.path?.isSmbPath() == true
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
@@ -1321,7 +1317,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             checkMediaManagementAndCopy(true)
         }
 
-        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && !isOnShare && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
+        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
         binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()

@@ -355,10 +355,35 @@ object SmbClient {
         entry.use { it.rename(newSharePath) }
     }
 
-    // Moving between folders on the share is not here yet, and is deliberately not written ahead
-    // of the screens that would call it (#28). The same request does it -- a rename whose new
-    // path names another folder -- but what is missing is everything around it: which rows follow
-    // the media, and what a half-done batch leaves behind
+    // Moves the file or folder at the pseudo path to another pseudo path of the same share, which
+    // is how it is given another folder.
+    //
+    // It is the same request as rename(), and that is the point: what SMB calls a rename is
+    // setting a whole new path on an open handle, and whether that path names another folder is
+    // of no interest to it. So a move inside the share is one request and moves no bytes at all,
+    // however large the file is -- where a move to another storage has to copy every byte and
+    // then delete the original.
+    //
+    // A path the share already has is refused here too, the same as rename() and create(). The
+    // caller picks a free name before asking, the way a copy into a folder does: the user picked
+    // a folder rather than a name, so a name that is taken there is not their mistake to hear
+    // about.
+    //
+    // The destination folder has to be there already. Nothing here makes it, because everything
+    // that moves within the share moves into a folder the user picked out of the folder list
+    fun moveTo(context: Context, path: String, newPath: String) {
+        val share = connectedShare(context)
+        val entry = share.open(
+            toSharePath(context, path),
+            EnumSet.of(AccessMask.DELETE),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null
+        )
+
+        entry.use { it.rename(toSharePath(context, newPath)) }
+    }
 
     private fun FileIdBothDirectoryInformation.toEntry(): Entry {
         val isFolder = fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
