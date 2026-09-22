@@ -72,7 +72,7 @@ cat > "$prefs" <<XML
     <boolean name="smb_rescan_on_storage_switch" value="$FIXTURE_RESCAN_ON_STORAGE_SWITCH" />
     <boolean name="smb_rescan_on_launch" value="$FIXTURE_RESCAN_ON_LAUNCH" />
     <boolean name="smb_rescan_on_folder_open" value="false" />
-    <boolean name="smb_rescan_on_pull_to_refresh" value="false" />
+    <boolean name="smb_rescan_on_pull_to_refresh" value="$FIXTURE_RESCAN_ON_PULL_TO_REFRESH" />
     <int name="smb_rescan_interval_minutes" value="0" />
     <boolean name="smb_rescan_on_unmetered_only" value="false" />
     <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}]</string>
@@ -85,6 +85,7 @@ cat > "$prefs" <<XML
     <boolean name="pcloud_rescan_on_launch" value="false" />
     <boolean name="pcloud_rescan_on_storage_switch" value="false" />
     <boolean name="pcloud_rescan_on_folder_open" value="false" />
+    <boolean name="pcloud_rescan_on_pull_to_refresh" value="$FIXTURE_RESCAN_ON_PULL_TO_REFRESH" />
     <boolean name="pcloud_rescan_on_group_open" value="false" />
     <boolean name="pcloud_rescan_after_write" value="true" />
     <boolean name="pcloud_rescan_on_unmetered_only" value="false" />
