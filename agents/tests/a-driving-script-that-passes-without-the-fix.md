@@ -27,6 +27,22 @@
 
 しきい値は6割です（`test-device/drive/thumbs.py` の `DOMINANT`）。
 
+## 同じ落とし穴の2回目: 後ろの画面に当たっていた
+
+#60 の台本（`45-properties-on-the-share.sh`）で、ダイアログが出たことを
+`--text "Properties" --exact` で確かめようとしました。直す前のビルドで走らせたら、
+**ダイアログが1つも出ていないのに緑**になりました。
+
+ビュアーのツールバーに `Properties` のアイコンがあって、uiautomator はその content-desc に
+同じ言葉を載せます。つまり**ダイアログの後ろにある画面**に当たっていたのです。
+同じ理由で「メディアの名前が出ている」も、ビュアーのタイトルに当たって通っていました。
+
+`--resource-id "remote_property_value"` に変えました。その id はそのダイアログにしかありません。
+
+- **「出たこと」を確かめるときは、そのダイアログ／画面に**しか**無いものを見ること**
+    - 言葉は後ろの画面にもよく居ます。id はだいたい1か所です
+    - ボタン名やタイトルで見るなら、後ろに同じ文字列が無いかを dump で確かめてから
+
 ## 次に気をつけること
 
 - **端末を動かす台本は、必ず「直しを外した版」でも走らせてください**
@@ -41,3 +57,4 @@
 
 - `test-device/drive/thumbs.py`
 - `test-device/drive/40-share-thumbnails.sh`
+- `test-device/drive/45-properties-on-the-share.sh` -- 2回目のほう

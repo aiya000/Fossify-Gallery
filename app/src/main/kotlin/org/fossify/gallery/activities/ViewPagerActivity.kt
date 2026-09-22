@@ -102,9 +102,9 @@ import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
-import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.RemoteNameDialog
+import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
 import org.fossify.gallery.extensions.config
@@ -1180,9 +1180,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     private fun showProperties() {
         val medium = getCurrentMedium() ?: return
-        // a pCloud medium has no file on the device for commons' dialog to read
-        if (medium.path.isPCloudPath()) {
-            PCloudPropertiesDialog(this, listOf(medium))
+        // a medium of a remote storage has no file on the device for commons' dialog to read,
+        // and what that dialog says when it cannot read one is "the source file does not exist"
+        if (medium.path.isRemotePath()) {
+            RemotePropertiesDialog(this, listOf(medium))
         } else {
             PropertiesDialog(this, medium.path, false)
         }

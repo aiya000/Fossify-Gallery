@@ -39,7 +39,11 @@ uiautomator はアイコンに `content-desc` としてタイトルを載せる�
 
 ## 次に気をつけること
 
-- **メニュー項目を探す前に、それが `always` かどうかをメニュー XML で確かめること**
+- **`lib.sh` の `tap_action <ラベル>` を使ってください。** ツールバーを先に見て、無ければ
+  オーバーフローを開いて探します。どちらにいても当たるので、XML を確かめる必要がなくなります
+    - `ifRoom` の項目は、画面の広さや言語によって**どちらにも転ぶ**ので、決め打ちが効きません
+      （ビュアーの `Properties` で2回目を踏みました）
+- 自分で探すときは、メニュー項目が `always` かどうかをメニュー XML で確かめること
     - `always` → 選択直後の画面をそのまま dump する
     - それ以外 → `open_overflow_menu` してから dump する
 - `cab_media.xml` では `cab_confirm_selection` / `cab_delete` / `cab_share` が `always` です
