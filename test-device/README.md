@@ -85,14 +85,20 @@ at afterwards.
   thing either way. It walks the whole share first, so on its own it is about five minutes
 - **`50-copy-off-share.sh`** — #28: a medium of the share copied onto the device, and the file
   actually arriving, whole and with the share's modification time. It also checks what must *not*
-  be there: "Move to" is kept out of the selection's menu, because the share cannot be written to
-  and a move would have to delete from it. Copying the same file twice pins the numbering that
-  `AvailableNameTest` covers in the small, through the whole path
+  be there: "Move to" is kept out of the selection's menu, because a move would have to delete
+  from the share. Copying the same file twice pins the numbering that `AvailableNameTest` covers
+  in the small, through the whole path
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
   machine, and the requests the app made are read out of the stub's log — that it asked for
   `nopartial` and `renameifexists` is the app's half of "a copy never writes over anything"
+- **`70-copy-to-the-share.sh`** — #28 in the direction that had no code at all until now: a file
+  of the device copied *onto* the share. What arrived is read straight off `fixture/share`, which
+  is the share's own answer rather than the app's. It starts with the check that would cost a
+  file — the picker refusing a folder of the share as a *move* destination, with the share still
+  empty of it, so "the share gained nothing" cannot pass by accident — and ends on the same
+  numbering check as `50`, from the other side
 
 ## pCloud, without a pCloud account
 
@@ -122,6 +128,9 @@ instead of on the answer.
   scripts step around it by seeding the token the screen would have stored
 - **Rule 3 of #59** — a transfer cutting into a running scan. It is pCloud's rule, and now that
   there is a stub there is nothing else in the way of writing it
+- **The rest of writing to the share** (#28) — moving onto it or off it, deleting, renaming. None
+  of it is built, so what the scripts pin is the refusal: `50` that "Move to" is not offered for a
+  medium of the share, `70` that a folder of the share is turned away as a move destination
 - **Playback itself.** The scripts check that the videos arrive and in what order; watching them
   play through is still done by eye
 

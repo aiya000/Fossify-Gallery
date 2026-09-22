@@ -13,6 +13,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import org.fossify.commons.extensions.getFileInputStreamSync
 import org.fossify.commons.extensions.getFileOutputStreamSync
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getMimeType
@@ -27,6 +28,7 @@ import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudWriter
@@ -45,26 +47,29 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-// Copies media off the network share, as a foreground service with a progress notification:
-// a folder of videos is minutes over the network and should not die with the screen that asked
-// for it. Built the same way as PCloudTransferService, for the same reasons -- jobs handed over
-// through enqueue() rather than in the Intent, one job at a time in the order they came, the
-// service stopping once the queue is empty.
+// Copies media off the network share and onto it, as a foreground service with a progress
+// notification: a folder of videos is minutes over the network and should not die with the
+// screen that asked for it. Built the same way as PCloudTransferService, for the same reasons
+// -- jobs handed over through enqueue() rather than in the Intent, one job at a time in the
+// order they came, the service stopping once the queue is empty.
 //
-// Copying only, and only off the share (#28): nothing here writes to it. What goes the other
-// way, and moving, wait until the share can be written to; the menus offer neither.
+// Copying only (#28). Moving would have to delete the side it came from once the copy landed,
+// and neither direction does that yet; the menus offer no move where the share is involved.
+// A copy onto the share starts from a file on the device -- pCloud straight onto the share
+// would have to stage the file the way a copy to pCloud does, which is not built either.
 //
 // Every file is one unit of progress. What went wrong with one file does not stop the others:
 // a share drops a connection mid-folder often enough that giving up on the rest would be the
 // wrong answer. Once a job is through the destination is brought up to date -- a local folder
-// through the media scanner and the cache, a pCloud folder through a rescan -- and the screens
-// learn of it through the listeners, because the callback of copyMoveFilesToPickedDestination()
-// never fires for a transfer
+// through the media scanner and the cache, a pCloud or share folder through a rescan -- and the
+// screens learn of it through the listeners, because the callback of
+// copyMoveFilesToPickedDestination() never fires for a transfer
 class SmbTransferService : Service() {
-    enum class Kind { TO_DEVICE, TO_PCLOUD }
+    enum class Kind { TO_DEVICE, TO_PCLOUD, FROM_DEVICE }
 
-    // sourcePaths are pseudo paths on the share; the destination is a folder on the device or
-    // a pCloud folder, by kind
+    // For TO_DEVICE and TO_PCLOUD the sourcePaths are pseudo paths on the share and the
+    // destination is a folder on the device or on pCloud. FROM_DEVICE is the other way round:
+    // the sources are files on the device and the destination is a folder on the share
     class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String)
 
     companion object {
@@ -180,6 +185,7 @@ class SmbTransferService : Service() {
                 when (job.kind) {
                     Kind.TO_DEVICE -> newLocalPaths.add(copyToDevice(path, job.destination))
                     Kind.TO_PCLOUD -> copyToPCloud(path, job.destination)
+                    Kind.FROM_DEVICE -> copyFromDevice(path, job.destination)
                 }
                 done++
             } catch (e: PCloudException) {
@@ -204,7 +210,8 @@ class SmbTransferService : Service() {
         // "the copies are there and the lists would show them". Everything else this service says
         // is a failure, and a log with nothing but failures in it cannot tell a copy that never
         // ran from one that went through
-        Log.i(TAG, "Copied $done of $total off the share to ${job.destination}, $failed failed")
+        val direction = if (job.kind == Kind.FROM_DEVICE) "onto the share" else "off the share"
+        Log.i(TAG, "Copied $done of $total $direction to ${job.destination}, $failed failed")
         return Pair(done, failed)
     }
 
@@ -233,6 +240,21 @@ class SmbTransferService : Service() {
                 // a turn that never comes cannot hold up the report
                 val refreshed = CountDownLatch(1)
                 rescanPCloudFolders(listOf(job.destination), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
+                    refreshed.countDown()
+                }
+
+                if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
+                    Log.w(TAG, "the refresh of ${job.destination} did not finish in time; the next scan picks it up")
+                }
+            }
+
+            Kind.FROM_DEVICE -> {
+                // The share has no diff stream, so the only way the cache learns of what was
+                // just written is to walk the folder again. Same rank and same bounded wait as
+                // the pCloud side: what landed stays out of sight until it has run, and a turn
+                // that never comes must not hold up the report
+                val refreshed = CountDownLatch(1)
+                rescanSmbFolders(listOf(job.destination), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
                     refreshed.countDown()
                 }
 
@@ -324,6 +346,30 @@ class SmbTransferService : Service() {
         return staged
     }
 
+    // Writes a file of the device into a folder on the share. The folder is made first: it is a
+    // folder the user picked out of the cache, and the share need not still have it. A name that
+    // is taken there gets a number, the same way a copy to the device does it.
+    //
+    // The share stamps a file it has just been handed with its own clock, so the device file's
+    // modification time is put back on afterwards. The gallery sorts by that time, and a copy
+    // that kept the share's would sort to the top of the folder instead of where it belongs --
+    // the same reason keepShareModified() exists for the other direction
+    private fun copyFromDevice(localPath: String, destinationFolder: String) {
+        SmbClient.createFolder(this, destinationFolder)
+        val target = availableName(destinationFolder, localPath.getFilenameFromPath()) { SmbClient.fileExists(this, it) }
+        SmbClient.create(this, target) { output ->
+            val input = getFileInputStreamSync(localPath) ?: throw IOException("Could not open $localPath for reading")
+            input.use { it.copyTo(output) }
+        }
+
+        // 0 is what a file the device will not stat answers, an OTG or SAF path among them;
+        // the share's own stamp is then the best there is
+        val modified = File(localPath).lastModified()
+        if (modified > 0) {
+            SmbClient.setModified(this, target, modified)
+        }
+    }
+
     // Hands the file's bytes to [write], from a copy already on the device when there is one --
     // the fullscreen view and the video download both leave one behind -- and from the share
     // otherwise. A short read is refused rather than written out as a whole file: the share
@@ -360,6 +406,7 @@ class SmbTransferService : Service() {
         val id = when (job.kind) {
             Kind.TO_DEVICE -> R.string.smb_copying_to_device
             Kind.TO_PCLOUD -> R.string.smb_copying_to_pcloud
+            Kind.FROM_DEVICE -> R.string.smb_copying_to_share
         }
 
         return getString(id, done + 1, total)

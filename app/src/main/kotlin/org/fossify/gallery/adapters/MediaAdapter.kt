@@ -238,9 +238,10 @@ class MediaAdapter(
         // a remote medium has no file behind it, so nothing that reads one on the device is
         // offered while any is selected. Deleting, copying, moving, and renaming one at a
         // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing storages gets none of them. The share can only be read (#28), so a selection
-        // of its media is offered copying away from it, favorites and the video download --
-        // everything that would change something on the share is still off
+        // mixing storages gets none of them. Nothing changes a medium that is on the share yet
+        // (#28 -- the share can be written into, but nothing deletes or renames on it), so a
+        // selection of its media is offered copying away from it, favorites and the video
+        // download, and nothing else
         val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         val isSmbOnly = selectedPaths.all { it.isSmbPath() }

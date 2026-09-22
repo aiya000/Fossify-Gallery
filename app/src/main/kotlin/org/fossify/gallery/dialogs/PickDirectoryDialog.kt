@@ -49,6 +49,7 @@ import org.fossify.gallery.extensions.getAllGroupDirectories
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
@@ -73,6 +74,10 @@ private const val SNACKBAR_MAX_LINES = 5
  * [localDestinationOnly] leaves the remote storages out of the list and out of the "Other folder"
  * picker, for a caller that can only write to the device. [onCancelled] tells a caller that nothing was picked,
  * so that a screen standing on this dialog alone can close itself.
+ *
+ * [isCopyOperation] says which of the two a copy/move destination is being picked for. It is what
+ * tells a folder that can be copied into from one that can be moved into, which is not the same
+ * thing on the network share (#28); it means nothing when [isPickingCopyMoveDestination] is off.
  */
 class PickDirectoryDialog(
     val activity: BaseSimpleActivity,
@@ -85,6 +90,7 @@ class PickDirectoryDialog(
     val allowFolderDestination: Boolean = true,
     navigateGroups: Boolean = false,
     val localDestinationOnly: Boolean = false,
+    val isCopyOperation: Boolean = true,
     val groupCallback: ((groupId: Long?) -> Unit)? = null,
     val onCancelled: (() -> Unit)? = null,
     val callback: (path: String) -> Unit
@@ -612,10 +618,15 @@ class PickDirectoryDialog(
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
                     return@DirectoryAdapter
-                } else if (isPickingCopyMoveDestination && path.isSmbPath()) {
-                    // the share is read-only so far, see #28. A folder on it can be walked into
-                    // and put in a group, but nothing can be written into it
-                    activity.toast(R.string.smb_no_write_destination, Toast.LENGTH_LONG)
+                } else if (isPickingCopyMoveDestination && path.isSmbPath() && !isCopyOperation) {
+                    // a move would have to delete the original once the copy landed, and the
+                    // share does not do that in either direction yet, see #28
+                    activity.toast(R.string.smb_no_move_yet, Toast.LENGTH_LONG)
+                    return@DirectoryAdapter
+                } else if (isPickingCopyMoveDestination && path.isSmbPath() && sourcePath.isRemotePath()) {
+                    // what goes onto the share is read off a file of the device; anything
+                    // already remote would have to be staged on the way, see #28
+                    activity.toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
                     activity.toast(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)
