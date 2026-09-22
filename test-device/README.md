@@ -107,6 +107,16 @@ at afterwards.
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
   machine, and the requests the app made are read out of the stub's log — that it asked for
   `nopartial` and `renameifexists` is the app's half of "a copy never writes over anything"
+- **`65-rename-on-the-share.sh`** — #28: a medium of the share, and then a folder of it, given
+  another name. Read off `fixture/share` for the same reason the delete is. The check it is really
+  written for is the one in the middle: a rename to a name the share already has must be **refused**
+  rather than written over, and the file that name belonged to is compared byte for byte
+  afterwards — there is no recycle bin on a share to take an overwritten file back out of. The
+  folder half checks that the medium under it travelled with it, since a rename that made an empty
+  folder under the new name would pass everything else. Like `55`, it brings its own file and its
+  own folder. None of the names it types holds a space, `adb shell input text` not being able to
+  type one; the prefix matching that a name like "Trips 2026" makes interesting is asked about in
+  `RenamedPathsTest` instead
 - **`70-copy-to-the-share.sh`** — #28 in the direction that had no code at all until now: a file
   of the device copied *onto* the share. What arrived is read straight off `fixture/share`, which
   is the share's own answer rather than the app's. It starts with the check that would cost a
