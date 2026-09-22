@@ -113,6 +113,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
+import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.ThumbnailPolicy
 import org.fossify.gallery.helpers.TYPE_GIFS
@@ -880,6 +881,57 @@ fun Context.rescanSmbFolders(paths: List<String>, reportCounts: Boolean, priorit
             onDone = onDone
         )
     )
+}
+
+// Rebuilds one remote folder's row from the media rows left in it, the way a scan builds it, or
+// drops the row when nothing is left. What takes a folder out of the folder list once the last
+// medium in it has been deleted, without walking the storage again for an answer the database
+// already holds. Reads and writes it, so call it off the main thread
+fun Context.rebuildDirectoryRow(path: String) {
+    val media = ArrayList<Medium>(mediaDB.getMediaFromPath(path))
+    if (media.isEmpty()) {
+        directoryDB.deleteDirPath(path)
+        return
+    }
+
+    MediaFetcher(this).sortMedia(media, config.getFolderSorting(path), path)
+    val directory = createDirectoryFromMedia(
+        path = path,
+        curMedia = media,
+        albumCovers = config.parseAlbumCovers(),
+        hiddenString = getString(R.string.hidden),
+        includedFolders = config.includedFolders,
+        getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0,
+        noMediaFolders = getNoMediaFoldersSync()
+    )
+    directoryDB.insert(directory)
+}
+
+// Runs one write to the share off the main thread and reports failure the way the scans do.
+//
+// Nothing is rescanned afterwards, unlike the pCloud side: a share has no diff and a walk of one
+// takes minutes, and everything SmbWriter does carries its own rows along with it -- so a scan
+// would only confirm what the cache already says. onDone gets whether the write went through, on
+// the thread it was decided on
+fun Context.writeToShare(write: SmbWriter.() -> Unit, onDone: (success: Boolean) -> Unit = {}) {
+    if (!config.isSmbConfigured) {
+        toast(R.string.smb_not_configured)
+        onDone(false)
+        return
+    }
+
+    ensureBackgroundThread {
+        val success = try {
+            SmbWriter(this).write()
+            true
+        } catch (e: Exception) {
+            // SmbWriter has already logged which path it was; this is what the user is told
+            showErrorToast(e)
+            false
+        }
+
+        onDone(success)
+    }
 }
 
 // Runs one write to pCloud off the main thread and reports failure the way the scans do; a

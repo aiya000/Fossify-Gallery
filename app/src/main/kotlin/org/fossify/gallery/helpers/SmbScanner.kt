@@ -323,6 +323,21 @@ class SmbScanner(private val context: Context) {
         }
     }
 
+    // drops a folder the share no longer has, with everything under it. SmbWriter uses it for a
+    // folder it has just deleted
+    fun forget(path: String) {
+        GalleryDatabase.getInstance(context).runInTransaction {
+            val prefix = "$path/"
+            context.mediaDB.getPathsWithPrefix(prefix).forEach { mediumPath ->
+                context.mediaDB.deleteMediumPath(mediumPath)
+                context.favoritesDB.deleteFavoritePath(mediumPath)
+            }
+
+            context.directoryDB.getPathsWithPrefix(prefix).forEach { context.directoryDB.deleteDirPath(it) }
+            context.directoryDB.deleteDirPath(path)
+        }
+    }
+
     // drops every SMB row there is, for a share that was unconfigured or pointed somewhere else
     fun forgetAll() {
         GalleryDatabase.getInstance(context).runInTransaction {

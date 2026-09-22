@@ -98,6 +98,7 @@ import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
+import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -238,10 +239,10 @@ class MediaAdapter(
         // a remote medium has no file behind it, so nothing that reads one on the device is
         // offered while any is selected. Deleting, copying, moving, and renaming one at a
         // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing storages gets none of them. Nothing changes a medium that is on the share yet
-        // (#28 -- the share can be written into, but nothing deletes or renames on it), so a
-        // selection of its media is offered copying away from it, favorites and the video
-        // download, and nothing else
+        // mixing storages gets none of them. The share is written into, copied off and deleted
+        // from; renaming and moving are what it still cannot do (#28), so a selection of its
+        // media is offered copying away from it, deleting, favorites and the video download,
+        // and nothing else
         val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         val isSmbOnly = selectedPaths.all { it.isSmbPath() }
@@ -273,7 +274,9 @@ class MediaAdapter(
             findItem(R.id.cab_restore_recycle_bin_files).isVisible =
                 selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
             findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
-            findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly
+            // a medium of the share is deleted from it for good; there is no recycle bin on a
+            // share, and the confirmation says so
+            findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly || isSmbOnly
             // a pCloud medium is shared as a file too, fetched first; one in the bin is not
             findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
             // rotating a pCloud image writes it back over itself, one at a time
@@ -794,8 +797,14 @@ class MediaAdapter(
     }
 
     private fun checkDeleteConfirmation() {
-        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+        val firstPath = getFirstSelectedItemPath()
+        if (firstPath?.isPCloudPath() == true) {
             checkPCloudDeleteConfirmation()
+            return
+        }
+
+        if (firstPath?.isSmbPath() == true) {
+            checkSmbDeleteConfirmation()
             return
         }
 
@@ -915,6 +924,57 @@ class MediaAdapter(
         }
 
         activity.writeToPCloud(foldersToRescan, write) {
+            activity.runOnUiThread {
+                listener?.refreshItems()
+            }
+        }
+    }
+
+    // A medium of the share is deleted from the share, and from nowhere else: there is no
+    // recycle bin on it to pass through and none is made, so nothing here can be restored
+    // afterwards and the confirmation says as much. The delete password and the "do not ask
+    // again" setting apply like they do for local media; the "skip the recycle bin" option is
+    // not shown, there being no bin to skip
+    private fun checkSmbDeleteConfirmation() {
+        when {
+            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deleteSmbFiles() }
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteSmbFiles()
+            else -> {
+                val itemsCnt = selectedKeys.size
+                val items = if (itemsCnt == 1) {
+                    "\"${getFirstSelectedItemPath()?.getFilenameFromPath()}\""
+                } else {
+                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
+                }
+
+                val question = activity.getString(R.string.smb_delete_confirmation, items)
+                DeleteWithRememberDialog(activity, question, false) { remember, _ ->
+                    config.tempSkipDeleteConfirmation = remember
+                    deleteSmbFiles()
+                }
+            }
+        }
+    }
+
+    // The media leave the grid right away and the delete follows; the list is read again once
+    // it is through, which brings back anything the share would not part with. The folder is
+    // not closed when it ends up empty, the way a local one is: the write may still be on its
+    // way, the same as for pCloud
+    private fun deleteSmbFiles() {
+        val selectedItems = getSelectedItems()
+        if (selectedItems.isEmpty()) {
+            return
+        }
+
+        val paths = selectedItems.map { it.path }
+        val positions = getSelectedItemPositions()
+        media.removeAll(selectedItems)
+        listener?.updateMediaGridDecoration(media)
+        removeSelectedItems(positions)
+        currentMediaHash = media.hashCode()
+
+        activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
+        activity.writeToShare({ this.deleteFiles(paths) }) {
             activity.runOnUiThread {
                 listener?.refreshItems()
             }
