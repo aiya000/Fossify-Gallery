@@ -25,8 +25,6 @@ import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.FolderLockingNoticeDialog
 import org.fossify.commons.dialogs.PropertiesDialog
-import org.fossify.commons.dialogs.RenameItemDialog
-import org.fossify.commons.dialogs.RenameItemsDialog
 import org.fossify.commons.dialogs.SecurityDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
@@ -52,7 +50,6 @@ import org.fossify.commons.extensions.isSvg
 import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.isVisible
 import org.fossify.commons.extensions.rescanPaths
-import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.SHOW_ALL_TABS
@@ -75,7 +72,6 @@ import org.fossify.gallery.databinding.DirectoryItemListBinding
 import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.ExcludeFolderDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
-import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
@@ -87,7 +83,6 @@ import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbFolderHidden
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
-import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
 import org.fossify.gallery.extensions.favoritesDB
@@ -407,6 +402,10 @@ class DirectoryAdapter(
         }
     }
 
+    // the storage asks for the name and carries its rows along, see MediaStorage. A folder it
+    // took the name of is shown under it at once, before the list is read again -- reading it
+    // again is a walk of the device's folders, which takes a moment. Several at once is on the
+    // menu for the device only, see canRenameSeveralFolders
     private fun renameDir() {
         if (selectedKeys.size == 1) {
             val firstDir = getFirstSelectedItem() ?: return
@@ -416,87 +415,23 @@ class DirectoryAdapter(
                 return
             }
 
-            if (sourcePath.isPCloudPath()) {
-                renamePCloudDir(firstDir)
-                return
-            }
-
-            if (sourcePath.isSmbPath()) {
-                renameSmbDir(firstDir)
-                return
-            }
-
-            val dir = File(sourcePath)
-            if (activity.isAStorageRootFolder(dir.absolutePath)) {
-                activity.toast(org.fossify.commons.R.string.rename_folder_root)
-                return
-            }
-
-            activity.handleLockedFolderOpening(sourcePath) { success ->
-                if (success) {
-                    RenameItemDialog(activity, dir.absolutePath) {
-                        activity.runOnUiThread {
-                            firstDir.apply {
-                                path = it
-                                name = it.getFilenameFromPath()
-                                tmb = File(it, tmb.getFilenameFromPath()).absolutePath
-                            }
-                            // keep the folder in its virtual group
-                            config.updateFolderGroupMemberPath(sourcePath, it)
-                            updateDirs(dirs)
-                            ensureBackgroundThread {
-                                try {
-                                    activity.directoryDB.updateDirectoryAfterRename(firstDir.tmb, firstDir.name, firstDir.path, sourcePath)
-                                    listener?.refreshItems()
-                                } catch (e: Exception) {
-                                    activity.showErrorToast(e)
-                                }
-                            }
-                        }
+            MediaStorage.of(activity, sourcePath).renameFolder(activity, sourcePath) { newPath ->
+                if (newPath != null) {
+                    firstDir.apply {
+                        path = newPath
+                        name = newPath.getFilenameFromPath()
+                        tmb = "$newPath/${tmb.getFilenameFromPath()}"
                     }
+                    updateDirs(dirs)
                 }
+
+                finishActMode()
+                listener?.refreshItems()
             }
         } else {
             val paths = getSelectedRealPaths().filter { !activity.isAStorageRootFolder(it) && !config.isFolderProtected(it) } as ArrayList<String>
-            RenameItemsDialog(activity, paths) {
+            MediaStorage.ofAll(activity, paths)?.renameSeveralFolders(activity, paths) {
                 listener?.refreshItems()
-            }
-        }
-    }
-
-    // the writer moves every cached row under the folder along with it, so the list only has
-    // to be read again
-    private fun renamePCloudDir(dir: Directory) {
-        val sourcePath = dir.path
-        activity.handleLockedFolderOpening(sourcePath) { success ->
-            if (success) {
-                RemoteNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
-                    val newPath = "${sourcePath.getParentPath()}/$newName"
-                    activity.writeToPCloud(listOf(newPath), { renameFolder(sourcePath, newName) }) {
-                        activity.runOnUiThread {
-                            finishActMode()
-                            listener?.refreshItems()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // the same as renamePCloudDir(), for the share: the writer moves every cached row under the
-    // folder along with it, so the list only has to be read again
-    private fun renameSmbDir(dir: Directory) {
-        val sourcePath = dir.path
-        activity.handleLockedFolderOpening(sourcePath) { success ->
-            if (success) {
-                RemoteNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
-                    activity.writeToShare({ renameFolder(sourcePath, newName) }) {
-                        activity.runOnUiThread {
-                            finishActMode()
-                            listener?.refreshItems()
-                        }
-                    }
-                }
             }
         }
     }

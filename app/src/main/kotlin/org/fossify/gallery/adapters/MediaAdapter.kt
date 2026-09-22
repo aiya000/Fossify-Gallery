@@ -22,8 +22,6 @@ import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.PropertiesDialog
-import org.fossify.commons.dialogs.RenameDialog
-import org.fossify.commons.dialogs.RenameItemDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
@@ -37,8 +35,6 @@ import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleDeletePasswordProtection
 import org.fossify.commons.extensions.hasOTGConnected
-import org.fossify.commons.extensions.internalStoragePath
-import org.fossify.commons.extensions.isAStorageRootFolder
 import org.fossify.commons.extensions.isAccessibleWithSAFSdk30
 import org.fossify.commons.extensions.isExternalStorageManager
 import org.fossify.commons.extensions.isImageFast
@@ -69,7 +65,6 @@ import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
-import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
@@ -93,7 +88,6 @@ import org.fossify.gallery.extensions.shareMediumPath
 import org.fossify.gallery.extensions.showRestoreConfirmationDialog
 import org.fossify.gallery.extensions.toggleFileVisibility
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
-import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
@@ -476,75 +470,19 @@ class MediaAdapter(
         }
     }
 
+    // the storage asks for the name and carries its rows along, see MediaStorage; the list is
+    // read again afterwards, whether it took the name or refused it. Several at once is on the
+    // menu for the device only, see canRenameSeveral
     private fun checkMediaManagementAndRename() {
-        val firstPath = getFirstSelectedItemPath()
-        if (firstPath?.isPCloudPath() == true) {
-            renamePCloudMedium()
-            return
-        }
-
-        if (firstPath?.isSmbPath() == true) {
-            renameSmbMedium()
-            return
-        }
-
-        // the prompt asks for the right to change files on this device, which is nothing a
-        // remote storage needs
-        activity.handleMediaManagementPrompt {
-            renameFile()
-        }
-    }
-
-    // one item only, the action mode offers it for no more than that
-    private fun renamePCloudMedium() {
-        val oldPath = getFirstSelectedItemPath() ?: return
-        RemoteNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
-            activity.writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) {
-                activity.runOnUiThread {
-                    listener?.refreshItems()
-                    finishActMode()
-                }
-            }
-        }
-    }
-
-    // the same, for the share. The writer carries the row and the cached copies over itself, so
-    // the list only has to be read again
-    private fun renameSmbMedium() {
-        val oldPath = getFirstSelectedItemPath() ?: return
-        RemoteNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
-            activity.writeToShare({ renameFile(oldPath, newName) }) {
-                activity.runOnUiThread {
-                    listener?.refreshItems()
-                    finishActMode()
-                }
-            }
-        }
-    }
-
-    private fun renameFile() {
-        val firstPath = getFirstSelectedItemPath() ?: return
-
-        val isSDOrOtgRootFolder = activity.isAStorageRootFolder(firstPath.getParentPath()) && !firstPath.startsWith(activity.internalStoragePath)
-        if (isRPlus() && isSDOrOtgRootFolder && !isExternalStorageManager()) {
-            activity.toast(org.fossify.commons.R.string.rename_in_sd_card_system_restriction, Toast.LENGTH_LONG)
-            finishActMode()
-            return
-        }
-
-        if (selectedKeys.size == 1) {
-            RenameItemDialog(activity, firstPath) {
-                ensureBackgroundThread {
-                    activity.updateDBMediaPath(firstPath, it)
-
-                    activity.runOnUiThread {
-                        listener?.refreshItems()
-                        finishActMode()
-                    }
-                }
+        val paths = getSelectedPaths()
+        val storage = MediaStorage.ofAll(activity, paths) ?: return
+        if (paths.size == 1) {
+            storage.renameMedium(activity, paths.first()) {
+                listener?.refreshItems()
+                finishActMode()
             }
         } else {
-            RenameDialog(activity, getSelectedPaths(), true) {
+            storage.renameSeveralMedia(activity, paths) {
                 listener?.refreshItems()
                 finishActMode()
             }
