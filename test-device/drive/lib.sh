@@ -362,3 +362,34 @@ open_overflow_menu() {
 
     "${ADB[@]}" shell input keyevent KEYCODE_MENU
 }
+
+# Presses a menu item wherever it happens to be: on the toolbar, or in its overflow.
+#
+# `showAsAction="ifRoom"` means exactly that -- an icon on the toolbar when there is room for
+# one, an entry in the overflow when there is not -- and which of the two it gets depends on the
+# screen, the locale and whatever else is on that toolbar. uiautomator hangs the title on the
+# icon as a content description, so both forms are reachable; a script that assumes one of them
+# simply cannot see the other, and the failure then reads as "the app does not offer this" when
+# the app offers it perfectly well. That has cost a lap twice now, see
+# agents/tests/the-delete-icon-is-not-in-the-overflow.md
+tap_action() {
+    local text="$1" name="${2:-action}"
+    local dump point
+    dump="$(ui_dump "$name-toolbar")"
+    if point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "$text" --exact)"; then
+        # shellcheck disable=SC2086
+        "${ADB[@]}" shell input tap $point
+        return 0
+    fi
+
+    open_overflow_menu
+    sleep 1
+    dump="$(ui_dump "$name-overflow")"
+    if ! point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "$text" --exact)"; then
+        fail "nothing offers '$text', on the toolbar or in its overflow (view tree in $dump)"
+        return 1
+    fi
+
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input tap $point
+}

@@ -83,6 +83,13 @@ at afterwards.
   file is. The check is on the pixels rather than on the view tree, because the failure it was
   written for drew nothing at all — not even the warning icon — and a view tree says the same
   thing either way. It walks the whole share first, so on its own it is about five minutes
+- **`45-properties-on-the-share.sh`** — #60: the (i) of a medium on the share opens a dialog, and
+  that dialog says which storage the medium is on. It used to answer with a toast saying the
+  source file does not exist and no dialog at all. Both ways in are driven, the viewer and the
+  grid's selection, because they are two separate `showProperties()` and the bug was in both.
+  What the dialog is recognised by is the **id of its rows**, not the word "Properties": the
+  viewer's toolbar carries an icon with that same content description, and matching on the word
+  passed on the build that still had the bug
 - **`50-copy-off-share.sh`** — #28: a medium of the share copied onto the device, and the file
   actually arriving, whole and with the share's modification time. It also checks what must *not*
   be there: "Move to" is kept out of the selection's menu, moving between a share and anywhere
