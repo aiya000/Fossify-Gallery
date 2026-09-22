@@ -71,8 +71,31 @@ require_emulator() {
 
 app_stop() { "${ADB[@]}" shell am force-stop "$FIXTURE_PACKAGE"; }
 
+storage_label_of() {
+    case "$1" in
+        2) echo "pCloud" ;;
+        3) echo "All storages" ;;
+        4) echo "Network share" ;;
+        *) echo "This device" ;;
+    esac
+}
+
+# Starts the app and leaves it on the storage the fixture asks for.
+#
+# The folder list always opens on this device, whatever storage it was left on, so seeding
+# storage_filter no longer decides where a script begins: the storage it wants is somewhere it
+# has to go, the way the user goes there. The switch is driven through the chip rather than
+# written into the preferences, so what a script starts from is a state the app can actually
+# reach -- and the arrival is the app's own, with whatever scan the settings attach to it
 app_start() {
     "${ADB[@]}" shell monkey -p "$FIXTURE_PACKAGE" -c android.intent.category.LAUNCHER 1 > /dev/null
+    if [ "${FIXTURE_STORAGE_FILTER:-1}" = "1" ]; then
+        return 0
+    fi
+
+    # the chip is drawn with the toolbar, which is not there the instant monkey returns
+    sleep 4
+    switch_storage_to "$(storage_label_of "$FIXTURE_STORAGE_FILTER")" "start-storage"
 }
 
 # The app's own log, from this moment on.
@@ -289,8 +312,11 @@ wait_for_service() {
 #
 # The chip is the same code path from switchStorage() down -- leftBehind() and the rescan policy
 # both live there -- so what the ranks do is still what is being checked.
-switch_storage_to() {
-    local label="$1" name="${2:-storage}"
+
+# Opens the storage menu and leaves it open, which is how a script reads what is on it rather
+# than only picking from it
+open_storage_menu() {
+    local name="${1:-storage}"
     local dump point
     dump="$(ui_dump "$name-chip")"
     if ! point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --resource-id "storage_filter")"; then
@@ -301,7 +327,25 @@ switch_storage_to() {
     # shellcheck disable=SC2086
     "${ADB[@]}" shell input tap $point
     sleep 1
+}
+
+switch_storage_to() {
+    local label="$1" name="${2:-storage}"
+    open_storage_menu "$name" || return 1
     ui_tap_text "$label" "$name-menu"
+    sleep 1
+}
+
+# Which storage the menu marks as the one on screen, with the menu opened and closed again so a
+# script can ask between steps without moving the list. The mark is what says where the list is:
+# until something has been scanned, both storages draw the same empty grid
+storage_marked_in_menu() {
+    local name="${1:-storage-marked}"
+    local dump
+    open_storage_menu "$name" || return 1
+    dump="$(ui_dump "$name-menu")"
+    python3 "$DRIVE_DIR/ui.py" "$dump" --checked || echo "nothing"
+    "${ADB[@]}" shell input keyevent KEYCODE_BACK > /dev/null
     sleep 1
 }
 

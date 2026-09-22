@@ -53,6 +53,14 @@ def main():
         action="store_true",
         help="print every text on screen instead, which is what to reach for when a tap cannot land",
     )
+    parser.add_argument(
+        "--checked",
+        action="store_true",
+        help=(
+            "print the label of the checked node instead of a point, which is how a script reads "
+            "which row of a radio dialog is the selected one rather than only which rows exist"
+        ),
+    )
     args = parser.parse_args()
 
     tree = ElementTree.parse(args.dump)
@@ -64,8 +72,19 @@ def main():
                 print(f"{label}\t{node.get('resource-id', '')}\t{node.get('bounds', '')}")
         return 0
 
+    # Which row of a radio dialog carries the mark. A script that only listed the rows would pass
+    # whatever the dialog had selected, so the mark is read rather than the presence of the row
+    if args.checked:
+        for node in tree.iter("node"):
+            if node.get("checked") == "true":
+                label = node.get("text") or node.get("content-desc")
+                if label:
+                    print(label)
+                    return 0
+        return 1
+
     if args.text is None and args.resource_id is None:
-        parser.error("one of --text, --resource-id or --list is needed")
+        parser.error("one of --text, --resource-id, --list or --checked is needed")
 
     found = None
     for node in tree.iter("node"):

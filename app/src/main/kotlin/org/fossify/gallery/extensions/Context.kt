@@ -733,9 +733,10 @@ fun Context.effectiveStorageFilter(): Int {
     }
 }
 
-// The storages there are to choose between, in the order a swipe walks them. The device is
-// always one; a remote storage is only there once it is set up, and "all" only makes sense
-// once there is more than one to be all of
+// The storages there are to choose between, in the order a swipe walks them. "All" leads, to the
+// left of the device, so the widest view sits at one end and the storages narrow from there. The
+// device is always one; a remote storage is only there once it is set up, and "all" only makes
+// sense once there is more than one to be all of
 fun Context.availableStorages(): List<Int> {
     val storages = arrayListOf(STORAGE_FILTER_LOCAL)
     if (config.isPCloudLoggedIn) {
@@ -747,7 +748,7 @@ fun Context.availableStorages(): List<Int> {
     }
 
     if (storages.size > 1) {
-        storages.add(STORAGE_FILTER_ALL)
+        storages.add(0, STORAGE_FILTER_ALL)
     }
 
     return storages

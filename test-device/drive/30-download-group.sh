@@ -14,7 +14,7 @@ source "$here/lib.sh"
 require_emulator
 
 step "seeding, and scanning the share so the videos have rows to be fetched from"
-env FIXTURE_STORAGE_FILTER=4 "$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
+"$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
 logcat_reset
 app_start
 sleep 4

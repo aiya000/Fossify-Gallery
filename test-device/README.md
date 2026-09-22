@@ -99,6 +99,12 @@ at afterwards.
   file — the picker refusing a folder of the share as a *move* destination, with the share still
   empty of it, so "the share gained nothing" cannot pass by accident — and ends on the same
   numbering check as `50`, from the other side
+- **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
+  in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
+  undone: the list has to open on this device whatever storage it was left on, and the storage
+  menu has to lead with "All storages", above the device. Where the list is gets read off the mark
+  in the storage menu, not off the folders on screen — with nothing scanned, both storages draw
+  the same empty grid, and a check that cannot tell them apart passes whatever the app does
 
 ## pCloud, without a pCloud account
 
@@ -163,13 +169,19 @@ is which.
 **No XML comments in the seeded preferences.** Android reads `shared_prefs/Prefs.xml` with a
 reader that is not a general XML parser, and a comment in it loses everything after the comment.
 It showed up here as a share that scanned perfectly and a folder list that then drew nothing, with
-`storage_filter` back at its default. `seed-app.sh` explains the blocks in shell comments instead.
+the seeded preferences back at their defaults. `seed-app.sh` explains the blocks in shell comments instead.
 
 **`input swipe` does not change storage.** The gesture a user makes is a sideways drag of the
 folder list, and that is the one #59 ranked below a manual scan — but `input swipe` synthesises
 too few move events for the list's drag detection, so the swipe does nothing and a script built on
 one passes without testing anything. The scripts use the toolbar's Storage chip, which runs the
 same `switchStorage()` and so the same ranks.
+
+**The storage a script starts on is driven to, not seeded.** The folder list opens on this device
+whatever storage it was left on, so writing `storage_filter` into the preferences decides nothing:
+the app overwrites it the moment it starts. `app_start` reads `FIXTURE_STORAGE_FILTER` and taps
+its way to that storage through the chip, which is also how the user gets there — so a script
+begins in a state the app can actually reach, with whatever scan the arrival carries.
 
 **A long press has to be held with `motionevent`.** `input swipe x y x y 800` is not a press at
 all as far as the app is concerned. `select_row` holds DOWN, waits, releases, and then checks that

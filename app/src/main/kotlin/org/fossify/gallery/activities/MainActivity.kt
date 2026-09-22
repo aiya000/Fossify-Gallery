@@ -275,6 +275,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             config.temporarilyShowExcluded = false
             config.tempSkipDeleteConfirmation = false
             config.tempSkipRecycleBin = false
+
+            // The folder list opens on this device, whatever storage it was left on. The device
+            // is the one storage that is always there and never waits on the network, so it is
+            // the one that can be on screen the instant the app starts. A remote storage is a
+            // place to go to, not a place to come back into
+            config.storageFilter = STORAGE_FILTER_LOCAL
+
             removeTempFolder()
             checkRecycleBinItems()
             startNewPhotoFetcher()
@@ -1149,7 +1156,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         rescanPCloud(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, full = true) { runOnUiThread { getDirectories() } }
     }
 
-    // the cached folders are on screen before this runs, so the scan never keeps the user waiting
+    // The cached folders are on screen before this runs, so the scan never keeps the user waiting.
+    // What it scans is every storage that is set up, not only the one being looked at: the list
+    // always opens on the device now, so a scan gated on what is shown would never run at all.
+    // The walk carries its own notification, and fills a cache the list reads once it is switched to
     private fun rescanPCloudOnLaunchIfDue() {
         if (!mShouldRescanPCloudOnLaunch) {
             return
@@ -1157,12 +1167,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         mShouldRescanPCloudOnLaunch = false
         val policy = PCloudSyncPolicy(this)
-        if (policy.rescanOnLaunch && isPCloudShown() && policy.isFullScanDue()) {
+        if (policy.rescanOnLaunch && config.isPCloudLoggedIn && policy.isFullScanDue()) {
             rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getDirectories() } }
         }
 
         val smbPolicy = SmbSyncPolicy(this)
-        if (smbPolicy.rescanOnLaunch && isSmbShown() && smbPolicy.isFullScanDue()) {
+        if (smbPolicy.rescanOnLaunch && config.isSmbConfigured && smbPolicy.isFullScanDue()) {
             rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO)
         }
 
