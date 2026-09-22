@@ -19,6 +19,7 @@
 | 共有へ書き込んだら `STATUS_ACCESS_DENIED`。読み取りはずっと動いていた | アプリではなくフィクスチャ側。samba のイメージが `force user` で uid を固定していた | [agents/tests/the-fixture-share-was-never-writable.md](./agents/tests/the-fixture-share-was-never-writable.md) |
 | 端末を動かすテストが「選択メニューに Delete が無い」で落ちた。アプリはちゃんと出している | `Delete` は `showAsAction="always"`。三点リーダではなく選択ツールバーのアイコンだった | [agents/tests/the-delete-icon-is-not-in-the-overflow.md](./agents/tests/the-delete-icon-is-not-in-the-overflow.md) |
 | 共有でリネームしたら、共有のファイル名は変わったのにグリッドは古いまま。例外も出ない | DAO の宣言順と呼び出しの位置引数がずれていた。名前付き引数にした。再スキャンがずっと隠していた | [agents/database/a-rename-that-updated-nothing.md](./agents/database/a-rename-that-updated-nothing.md) |
+| わざと直しを外したのに、台本の「もう出ていないはず」のチェックだけ緑のままだった | dump に入るのは手前の window ひとつ。ダイアログの後ろの Snackbar は見えない。出るほうを見るチェックに書き換えた | [agents/tests/a-dump-taken-while-a-dialog-is-up.md](./agents/tests/a-dump-taken-while-a-dialog-is-up.md) |
 
 ### この索引に足すこと
 
