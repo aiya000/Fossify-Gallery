@@ -80,6 +80,7 @@
     <string name="use_for_this_storage_only">Apply to this storage only</string>
     <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
     <string name="pcloud_rescan_on_folder_open">Rescan a pCloud folder when opening it</string>
+    <string name="pcloud_rescan_on_pull_to_refresh">Rescan pCloud when pulling to refresh</string>
     <string name="pcloud_rescan_on_group_open">Rescan the pCloud folders of a group when opening it</string>
     <string name="pcloud_rescan_folder">Rescan this folder</string>
     <string name="pcloud_fetch_failed">Could not fetch the file from pCloud</string>

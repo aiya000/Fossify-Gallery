@@ -874,15 +874,59 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // refreshes the list a second time once it is through. It is queued at the switch's own
         // rank: this list is waiting on it, which the settings' scans are not
         reloadDirectories()
+
+        // and the spinner goes up only if a fetch was actually started (#87)
+        binding.directoriesRefreshLayout.isRefreshing = startRemoteScans(RemoteRefresh.STORAGE_SWITCH)
+    }
+
+    // What refreshes a remote storage from the network, other than the menu item: the folder list
+    // arriving at the storage, and a pull on the list. They are the same question asked twice, so
+    // they are asked in one place -- kept apart, they had drifted, and #87 found the pull asking
+    // SmbSyncPolicy while never asking PCloudSyncPolicy at all
+    private enum class RemoteRefresh(val priority: Int) {
+        // the list on screen is waiting on this one, so it outranks the scans the settings start
+        // by themselves, and does not outrank a walk asked for by hand (#59)
+        STORAGE_SWITCH(RemoteScanScheduler.PRIORITY_SWITCH),
+
+        // a gesture is asking, which is as deliberate as the menu item -- so it ranks with it, and
+        // the rescan interval, which is there to hold back the automatic scans, does not apply
+        PULL(RemoteScanScheduler.PRIORITY_MANUAL)
+    }
+
+    // Starts the scans this event asks for, and says whether the spinner belongs to it.
+    //
+    // The spinner is a claim that the list is being fetched again, and reading the cache is not
+    // that: it is quick, and a spinner over it says the list cannot be believed yet when it can.
+    // That is all #87 was -- raised on every switch, before the settings had been asked whether
+    // anything would be fetched at all.
+    //
+    // Only pCloud's scan answers for it. A diff sync is seconds and ends by building the list
+    // again, so it is a fetch this screen waits on; the share's walk is not, and never was. That
+    // runs in a foreground service which outlives this screen and carries its own notification,
+    // which is the same reason rescanSmbManually() has never raised the spinner either
+    private fun startRemoteScans(event: RemoteRefresh): Boolean {
         val pCloudPolicy = PCloudSyncPolicy(this)
-        if (pCloudPolicy.rescanOnStorageSwitch && isPCloudShown() && pCloudPolicy.isFullScanDue()) {
-            rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_SWITCH) { runOnUiThread { getDirectories() } }
+        val pCloudAsked = when (event) {
+            RemoteRefresh.STORAGE_SWITCH -> pCloudPolicy.rescanOnStorageSwitch && pCloudPolicy.isFullScanDue()
+            RemoteRefresh.PULL -> pCloudPolicy.rescanOnPullToRefresh
         }
 
         val smbPolicy = SmbSyncPolicy(this)
-        if (smbPolicy.rescanOnStorageSwitch && isSmbShown() && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_SWITCH)
+        val smbAsked = when (event) {
+            RemoteRefresh.STORAGE_SWITCH -> smbPolicy.rescanOnStorageSwitch && smbPolicy.isFullScanDue()
+            RemoteRefresh.PULL -> smbPolicy.rescanOnPullToRefresh
         }
+
+        if (isSmbShown() && smbAsked) {
+            rescanSmb(reportCounts = false, priority = event.priority)
+        }
+
+        if (!isPCloudShown() || !pCloudAsked) {
+            return false
+        }
+
+        rescanPCloud(reportCounts = false, priority = event.priority) { runOnUiThread { getDirectories() } }
+        return true
     }
 
     private fun storageIconRes(storageFilter: Int) = when (storageFilter) {
@@ -1072,9 +1116,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // Reads the folder list again, out of the cache. The spinner is deliberately not raised here:
+    // this is the cache, not the network, and what it costs is the time the grid is empty. The
+    // caller raises it if it went on to start a fetch (#87)
     private fun reloadDirectories() {
         mShouldStopFetching = true
-        binding.directoriesRefreshLayout.isRefreshing = true
         binding.directoriesGrid.adapter = null
         getDirectories()
     }
@@ -1087,22 +1133,17 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         it == STORAGE_FILTER_SMB || it == STORAGE_FILTER_ALL
     }
 
-    // A pull refreshes the remote storages on screen too; the local folders are rechecked by
-    // getDirectories() either way, and that is also what stops the spinner. The share is walked
-    // by a foreground service and can take minutes, far longer than a pull should hold the
-    // spinner, so it is started alongside rather than waited on: its listener builds the list
-    // again when it is through
+    // A pull refreshes the remote storages on screen too, each one only if its settings say so --
+    // the share's says no by default, because the gesture is an easy one to make while scrolling
+    // and a share of any size is minutes of work to start by accident.
+    //
+    // The spinner here is the gesture's own, already up before this runs. How long it stays is the
+    // question: a pCloud sync ends by building the list again, so until then the spinner is
+    // telling the truth and getDirectories() is left to that callback. Otherwise nothing is being
+    // fetched -- the share's walk goes to its notification -- and the cache read stops the spinner
+    // as soon as it is done
     private fun refreshDirectories() {
-        // a pull walks the share only when the settings ask for it, and they do not by default:
-        // the gesture is an easy one to make while scrolling, and a share of any size is minutes
-        // of work to start by accident
-        if (isSmbShown() && SmbSyncPolicy(this).rescanOnPullToRefresh) {
-            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL)
-        }
-
-        if (isPCloudShown()) {
-            rescanPCloud(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getDirectories() } }
-        } else {
+        if (!startRemoteScans(RemoteRefresh.PULL)) {
             getDirectories()
         }
     }

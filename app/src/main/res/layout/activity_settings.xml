@@ -1131,6 +1131,21 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_pcloud_rescan_on_pull_to_refresh_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_pcloud_rescan_on_pull_to_refresh"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pcloud_rescan_on_pull_to_refresh" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_pcloud_rescan_on_group_open_holder"
                 style="@style/SettingsHolderSwitchStyle"
                 android:layout_width="match_parent"

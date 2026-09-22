@@ -105,6 +105,13 @@ at afterwards.
   menu has to lead with "All storages", above the device. Where the list is gets read off the mark
   in the storage menu, not off the folders on screen — with nothing scanned, both storages draw
   the same empty grid, and a check that cannot tell them apart passes whatever the app does
+- **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
+  for both events that can ask and for both storages alike. Each case runs twice, once with its
+  setting off and once on, because the "off" half would pass on an app that fetches nothing ever.
+  The pCloud half is the one that fails without the fix: a pull used to list the account whenever
+  pCloud was on screen, with no policy asked and so no setting to turn it off with. Whether the app
+  fetched is read off the requests the stub was sent, which is pCloud's own answer rather than the
+  app's
 
 ## pCloud, without a pCloud account
 
@@ -139,6 +146,11 @@ instead of on the answer.
   medium of the share, `70` that a folder of the share is turned away as a move destination
 - **Playback itself.** The scripts check that the videos arrive and in what order; watching them
   play through is still done by eye
+- **The refresh spinner itself** (#87). What the spinner is raised *from* is driven by `90`; the
+  spinner is not. It is up only for as long as the cache takes to be read, and uiautomator gives it
+  no name to look for, so a check on it would be a race dressed as a test. If it ever needs
+  pinning, the way in is a pixel check on the top strip of a screenshot, like `40` does for
+  thumbnails -- and a way to hold the cache read still long enough to photograph
 
 ## Why the fixture is 2000 folders
 

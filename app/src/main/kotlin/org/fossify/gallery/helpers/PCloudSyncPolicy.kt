@@ -20,6 +20,8 @@ class PCloudSyncPolicy(private val context: Context) {
 
     val rescanOnFolderOpen: Boolean get() = config.pCloudRescanOnFolderOpen && isNetworkAllowed
 
+    val rescanOnPullToRefresh: Boolean get() = config.pCloudRescanOnPullToRefresh && isNetworkAllowed
+
     val rescanOnGroupOpen: Boolean get() = config.pCloudRescanOnGroupOpen && isNetworkAllowed
 
     val rescanAfterWrite: Boolean get() = config.pCloudRescanAfterWrite && isNetworkAllowed

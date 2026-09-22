@@ -291,6 +291,13 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(PCLOUD_RESCAN_ON_FOLDER_OPEN, true)
         set(pCloudRescanOnFolderOpen) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_FOLDER_OPEN, pCloudRescanOnFolderOpen).apply()
 
+    // On by default, where the share's is off. A pull on pCloud asks the diff API for the changes
+    // since the last sync, which is seconds; the share has no diff to ask for and has to be walked
+    // whole, which is minutes. The gesture is the same, what it costs is not
+    var pCloudRescanOnPullToRefresh: Boolean
+        get() = prefs.getBoolean(PCLOUD_RESCAN_ON_PULL_TO_REFRESH, true)
+        set(pCloudRescanOnPullToRefresh) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_PULL_TO_REFRESH, pCloudRescanOnPullToRefresh).apply()
+
     var pCloudRescanOnGroupOpen: Boolean
         get() = prefs.getBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, false)
         set(pCloudRescanOnGroupOpen) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, pCloudRescanOnGroupOpen).apply()

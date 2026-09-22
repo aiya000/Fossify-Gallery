@@ -79,6 +79,7 @@
     <string name="use_for_this_storage_only">このストレージのみに適用する</string>
     <string name="pcloud_rescan_on_storage_switch">ストレージ切替時に pCloud を再スキャン</string>
     <string name="pcloud_rescan_on_folder_open">pCloud のフォルダを開いたときに再スキャン</string>
+    <string name="pcloud_rescan_on_pull_to_refresh">引っぱって更新したときに pCloud を再スキャン</string>
     <string name="pcloud_rescan_on_group_open">グループを開いたときに中の pCloud フォルダを再スキャン</string>
     <string name="pcloud_rescan_folder">このフォルダを再スキャン</string>
     <string name="pcloud_fetch_failed">pCloud からファイルを取得できませんでした</string>
