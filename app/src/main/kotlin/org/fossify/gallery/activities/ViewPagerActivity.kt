@@ -522,13 +522,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            val wasPCloudEdit = handlePCloudEditResult(resultCode) {
+            val wasRemoteEdit = handleRemoteEditResult(resultCode) {
                 mPos = -1
                 mPrevHashcode = 0
                 refreshViewPager()
             }
 
-            if (!wasPCloudEdit && resultCode == Activity.RESULT_OK && resultData != null) {
+            if (!wasRemoteEdit && resultCode == Activity.RESULT_OK && resultData != null) {
                 mPos = -1
                 mPrevHashcode = 0
                 refreshViewPager()
