@@ -225,9 +225,25 @@ ui_long_press_text() {
     sleep 1
 }
 
-# The same, but the text has to be the whole label. A folder row named Camera is otherwise found
-# in the toolbar's "Open camera" button, and a check that matches the toolbar passes whatever the
-# list is showing
+# The same, but the text has to be the whole label.
+#
+# A folder row named Camera is otherwise found in the toolbar's "Open camera" button, which is
+# earlier in the tree -- so ui_tap_text "Camera" opens the camera app and leaves the gallery
+# behind, and everything after it reads as the gallery having lost its mind. Tap a folder row by
+# its whole name
+ui_tap_exact_text() {
+    local text="$1" name="${2:-tap}"
+    local dump point
+    dump="$(ui_dump "$name")"
+    if ! point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "$text" --exact)"; then
+        fail "nothing on screen is exactly '$text' (view tree in $dump)"
+        return 1
+    fi
+
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input tap $point
+}
+
 # Whether the folder list is in its selection mode. The toolbar counts what is picked there --
 # "1 / 2003" -- and that count is the only thing on screen that says so
 in_selection_mode() {
