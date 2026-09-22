@@ -70,10 +70,10 @@ def tiles_of(dump):
     return found
 
 
-def is_drawn(screenshot, tile):
+def is_drawn(screenshot, tile, name_strip=NAME_STRIP, inset_fraction=INSET):
     left, top, right, bottom = tile
-    bottom -= int((bottom - top) * NAME_STRIP)
-    inset = int(min(right - left, bottom - top) * INSET)
+    bottom -= int((bottom - top) * name_strip)
+    inset = int(min(right - left, bottom - top) * inset_fraction)
     left, top, right, bottom = left + inset, top + inset, right - inset, bottom - inset
     if right - left < 8 or bottom - top < 8:
         return False
@@ -89,16 +89,45 @@ def is_drawn(screenshot, tile):
     return max(count for count, _ in counts) < pixels * DOMINANT
 
 
+# What is left of one view once its margins are taken off, for --region. A tile is nearly all
+# thumbnail, but a view showing one whole image letterboxes it: the picture sits in the middle and
+# the rest is the screen's own background, which is one flat colour and would drag the measure
+# below the mark on a view that is drawing the picture perfectly well. So only the middle of it is
+# read, and the strip a filename would be on does not apply here at all
+REGION_INSET = 0.25
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("screenshot")
-    parser.add_argument("dump")
+    parser.add_argument("dump", nargs="?")
     parser.add_argument(
         "--expect",
         type=int,
         help="how many tiles must be on screen; without it, whatever is there is checked",
     )
+    parser.add_argument(
+        "--region",
+        nargs=4,
+        type=int,
+        metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+        help=(
+            "ask the same question of one rectangle rather than of the grid's tiles, which is how "
+            "a view that is not a tile is checked to hold a picture -- the editor's canvas above "
+            "all, which opens on nothing when it is handed a path of the share. The four numbers "
+            "are what ui.py --bounds prints for that view"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.region is not None:
+        screenshot = Image.open(args.screenshot)
+        drawn = is_drawn(screenshot, tuple(args.region), name_strip=0, inset_fraction=REGION_INSET)
+        print(f"region\t{'drawn' if drawn else 'blank'}")
+        return 0 if drawn else 1
+
+    if args.dump is None:
+        parser.error("the grid's tiles are read off a dump; pass one, or pass --region instead")
 
     tiles = tiles_of(args.dump)
     if not tiles:
