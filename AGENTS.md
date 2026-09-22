@@ -17,6 +17,7 @@
 | 端末を動かすテストで、2回目の完了を待ったのに、待たずに素通りした | 1回目のログがバッファに残っていた。2回目の操作の直前に `logcat_reset` を入れた | [agents/tests/waiting-for-a-log-line-that-is-already-there.md](./agents/tests/waiting-for-a-log-line-that-is-already-there.md) |
 | 端末を動かすテストが「ストレージのチップが画面に無い」で落ちた。チップは何も変えていない | フォルダの中にいたまま探していた。チップはフォルダ一覧のもの。戻ってから探すようにした | [agents/tests/the-toolbar-chips-belong-to-the-folder-list.md](./agents/tests/the-toolbar-chips-belong-to-the-folder-list.md) |
 | 共有へ書き込んだら `STATUS_ACCESS_DENIED`。読み取りはずっと動いていた | アプリではなくフィクスチャ側。samba のイメージが `force user` で uid を固定していた | [agents/tests/the-fixture-share-was-never-writable.md](./agents/tests/the-fixture-share-was-never-writable.md) |
+| 端末を動かすテストが「選択メニューに Delete が無い」で落ちた。アプリはちゃんと出している | `Delete` は `showAsAction="always"`。三点リーダではなく選択ツールバーのアイコンだった | [agents/tests/the-delete-icon-is-not-in-the-overflow.md](./agents/tests/the-delete-icon-is-not-in-the-overflow.md) |
 
 ### この索引に足すこと
 

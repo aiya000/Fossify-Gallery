@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msdtyp.FileTime
+import com.hierynomus.mserref.NtStatus
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.msfscc.fileinformation.FileBasicInformation
 import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
+import com.hierynomus.mssmb2.SMBApiException
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
@@ -283,10 +285,48 @@ object SmbClient {
         share.setFileInformation(toSharePath(context, path), information)
     }
 
-    // Deleting, renaming and moving on the share are not here yet, and are deliberately not
-    // written ahead of the screens that would call them (#28). smbj has `rm`, `rmdir` and
-    // `DiskEntry.rename` waiting; what is missing is everything around them -- which rows follow
-    // the file, what a half-done batch leaves behind, and what the menus should offer
+    // Removes the file at the pseudo path.
+    //
+    // A file the share no longer has counts as removed. What the caller wants is for the path to
+    // be gone, and it is; failing here would turn a second ask -- a retry after a connection
+    // dropped between the request and its answer, two screens deleting the same medium -- into
+    // an error about something that has already happened
+    fun delete(context: Context, path: String) {
+        val share = connectedShare(context)
+        try {
+            share.rm(toSharePath(context, path))
+        } catch (e: SMBApiException) {
+            if (!e.isAlreadyGone()) {
+                throw e
+            }
+        }
+    }
+
+    // The folder and everything under it. smbj walks it and deletes depth first, so this is many
+    // requests rather than one, and a folder that is large is slow rather than atomic: what a
+    // failure halfway leaves behind is a folder with the rest of its contents still in it. The
+    // caller's rows are rebuilt from a walk of the share afterwards, not from the assumption
+    // that this went all the way through
+    fun deleteFolder(context: Context, path: String) {
+        val share = connectedShare(context)
+        try {
+            share.rmdir(toSharePath(context, path), true)
+        } catch (e: SMBApiException) {
+            if (!e.isAlreadyGone()) {
+                throw e
+            }
+        }
+    }
+
+    // what the server answers for a name that is not there, and for one whose folder is not
+    // there either -- the second is what deleting a file under a folder already removed gets
+    private fun SMBApiException.isAlreadyGone() =
+        status == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND || status == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND
+
+    // Renaming and moving on the share are not here yet, and are deliberately not written ahead
+    // of the screens that would call them (#28). smbj has `DiskEntry.rename` waiting; what is
+    // missing is everything around it -- which rows follow the file, and what a half-done batch
+    // leaves behind
 
     private fun FileIdBothDirectoryInformation.toEntry(): Entry {
         val isFolder = fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L

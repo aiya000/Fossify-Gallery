@@ -100,6 +100,7 @@ import org.fossify.gallery.extensions.removeNoMedia
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.writeToPCloud
+import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
@@ -210,12 +211,13 @@ class DirectoryAdapter(
         val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
         val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
 
-        // A folder on the share has no directory behind it either, and nothing on the share can
-        // be deleted or renamed yet (#28), so everything that would change one of its folders is
-        // off -- it was treated as a folder on the device until now, which offered actions that
-        // could only fail. What is left is what only reads the share ("copy to", which copies its
-        // media away) or is only a setting here: pinning, locking, the cover image, and "move
-        // to", which for a folder of the share can only mean putting it in a group
+        // A folder on the share has no directory behind it either, so everything that reaches
+        // for one is off -- it was treated as a folder on the device until now, which offered
+        // actions that could only fail. What is left is what goes through SmbClient ("copy to",
+        // which copies its media away, and "delete", which takes the folder off the share),
+        // what is only a setting here -- pinning, locking, the cover image -- and "move to",
+        // which for a folder of the share can only mean putting it in a group. Renaming is
+        // still off: nothing on the share can be renamed yet (#28)
         val isAnySmbSelected = realPaths.any { it.isSmbPath() }
         val isSmbOnly = realPaths.isNotEmpty() && realPaths.all { it.isSmbPath() }
         menu.apply {
@@ -246,7 +248,10 @@ class DirectoryAdapter(
                 !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected && (!isAnySmbSelected || isSmbOnly)
             findItem(R.id.cab_move_to).isVisible = (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
             findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
-            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isAnySmbSelected
+            // a folder of the share is deleted from the share, with everything under it and
+            // with no bin to take it back out of; mixing storages is not offered, as above
+            findItem(R.id.cab_delete).isVisible =
+                !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && (!isAnySmbSelected || isSmbOnly)
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
             // putting things in a group costs nothing but a setting, so it is offered for every
             // storage. What is left out is favorites and the recycle bins, which are not folders
@@ -1029,8 +1034,14 @@ class DirectoryAdapter(
     }
 
     private fun askConfirmDelete() {
-        if (getSelectedRealPaths().firstOrNull()?.isPCloudPath() == true) {
+        val firstRealPath = getSelectedRealPaths().firstOrNull()
+        if (firstRealPath?.isPCloudPath() == true) {
             askConfirmPCloudDelete()
+            return
+        }
+
+        if (firstRealPath?.isSmbPath() == true) {
+            askConfirmSmbDelete()
             return
         }
 
@@ -1123,6 +1134,51 @@ class DirectoryAdapter(
             activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
             val parents = folders.map { it.getParentPath() }.distinct()
             activity.writeToPCloud(parents, { deleteFolders(folders.toList(), toRecycleBin) }) {
+                activity.runOnUiThread {
+                    finishActMode()
+                    listener?.refreshItems()
+                }
+            }
+        }
+    }
+
+    // A folder of the share goes from the share, with everything under it, and there is no
+    // recycle bin to take it back out of (#28) -- so unlike a local folder or a pCloud one,
+    // this has no bin to move into first and the question says as much. The red warning line
+    // underneath is the same one the other two get
+    private fun askConfirmSmbDelete() {
+        when {
+            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deleteSmbFolders() }
+            config.skipDeleteConfirmation -> deleteSmbFolders()
+            else -> {
+                val itemsCnt = selectedKeys.size
+                val items = if (itemsCnt == 1) {
+                    "\"${getSelectedPaths().first().getFilenameFromPath()}\""
+                } else {
+                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
+                }
+
+                val question = activity.getString(R.string.smb_delete_folder_confirmation, items)
+                val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
+                ConfirmDeleteFolderDialog(activity, question, warning) {
+                    deleteSmbFolders()
+                }
+            }
+        }
+    }
+
+    // a locked folder is skipped, the way deleteFolders() skips it. Nothing is rescanned
+    // afterwards: what the share still has of a folder that only half went is put right by the
+    // next walk of it, and a walk of a whole share is minutes
+    private fun deleteSmbFolders() {
+        val paths = getSelectedRealPaths().filter { it.isSmbPath() }
+        handleLockedFolderOpeningForFolders(paths) { folders ->
+            if (folders.isEmpty()) {
+                return@handleLockedFolderOpeningForFolders
+            }
+
+            activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
+            activity.writeToShare({ this.deleteFolders(folders.toList()) }) {
                 activity.runOnUiThread {
                     finishActMode()
                     listener?.refreshItems()

@@ -11,22 +11,17 @@ import org.fossify.commons.extensions.getFileInputStreamSync
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getMimeType
 import org.fossify.commons.extensions.getParentPath
-import org.fossify.commons.helpers.SORT_BY_SIZE
-import org.fossify.gallery.R
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.createDirectoryFromMedia
-import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.fromPCloudRecycleBinPath
-import org.fossify.gallery.extensions.getNoMediaFoldersSync
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.rebuildDirectoryRow
 import org.fossify.gallery.extensions.toPCloudRecycleBinPath
 import org.fossify.gallery.extensions.toPCloudRemotePath
 import org.fossify.gallery.extensions.updateDBMediaPath
-import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.PCloudItem
 import java.io.File
 import java.io.FileNotFoundException
@@ -394,23 +389,5 @@ class PCloudWriter(private val context: Context) {
 
     // rebuilds a folder's row from the media rows left in it, the way the scanner builds it,
     // or drops the row when nothing is left. The folder's own pcloud_items row stays
-    private fun refreshDirectory(path: String) {
-        val media = ArrayList<Medium>(context.mediaDB.getMediaFromPath(path))
-        if (media.isEmpty()) {
-            context.directoryDB.deleteDirPath(path)
-            return
-        }
-
-        MediaFetcher(context).sortMedia(media, config.getFolderSorting(path), path)
-        val directory = context.createDirectoryFromMedia(
-            path = path,
-            curMedia = media,
-            albumCovers = config.parseAlbumCovers(),
-            hiddenString = context.getString(R.string.hidden),
-            includedFolders = config.includedFolders,
-            getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0,
-            noMediaFolders = context.getNoMediaFoldersSync()
-        )
-        context.directoryDB.insert(directory)
-    }
+    private fun refreshDirectory(path: String) = context.rebuildDirectoryRow(path)
 }

@@ -140,6 +140,7 @@ import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withEditableMediaFile
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
+import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
@@ -341,8 +342,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
         val hasFile = !isInPCloudBin
-        // a medium on the share is copied away from it, never moved: a move would have to delete
-        // the original off the share, and nothing deletes on it yet (#28)
+        // a medium on the share is copied away from it and deleted from it, never moved: a move
+        // between a share and anywhere else is not built yet (#28)
         val isOnShare = currentMedium.path.isSmbPath()
 
         runOnUiThread {
@@ -1401,6 +1402,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             return
         }
 
+        if (currentMedium.path.isSmbPath()) {
+            checkSmbDeleteConfirmation(currentMedium)
+            return
+        }
+
         handleMediaManagementPrompt {
             if (config.isDeletePasswordProtectionOn) {
                 handleDeletePasswordProtection {
@@ -1546,6 +1552,53 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         writeToPCloud(foldersToRescan, write) { success ->
+            mIgnoredPaths.remove(path)
+            runOnUiThread {
+                if (!success) {
+                    refreshViewPager(refetchPosition = true)
+                } else if (media.isEmpty()) {
+                    finish()
+                }
+            }
+        }
+    }
+
+    // A medium of the share is deleted from the share and from nowhere else: there is no
+    // recycle bin on it and none is made (#28), so there is no "skip the bin" option to show
+    // and the message says the delete cannot be taken back. The delete password and the
+    // "do not ask again" setting apply like they do for a local medium
+    private fun checkSmbDeleteConfirmation(medium: Medium) {
+        when {
+            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection { deleteSmbMedium(medium) }
+            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteSmbMedium(medium)
+            else -> {
+                val message = getString(R.string.smb_delete_confirmation, "\"${medium.name}\"")
+                DeleteWithRememberDialog(this, message, false) { remember, _ ->
+                    config.tempSkipDeleteConfirmation = remember
+                    deleteSmbMedium(medium)
+                }
+            }
+        }
+    }
+
+    // the same as deletePCloudMedium(): the page goes right away, the write follows, and the
+    // viewer closes when it was the last one. A refused delete brings the page back
+    private fun deleteSmbMedium(medium: Medium) {
+        val path = medium.path
+        mIgnoredPaths.add(path)
+        dropFromSelection(path)
+        val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
+        if (media.isNotEmpty()) {
+            runOnUiThread {
+                refreshUI(media, false)
+            }
+        }
+
+        if (media.size == 1) {
+            onPageSelected(0)
+        }
+
+        writeToShare({ deleteFiles(listOf(path)) }) { success ->
             mIgnoredPaths.remove(path)
             runOnUiThread {
                 if (!success) {
