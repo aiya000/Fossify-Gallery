@@ -68,9 +68,9 @@ import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
-import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.RemoteNameDialog
+import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
@@ -281,9 +281,9 @@ class MediaAdapter(
             findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
             // rotating a pCloud image writes it back over itself, one at a time
             findItem(R.id.cab_rotate).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && !isInRecycleBin
-            // a pCloud medium gets a properties dialog of its own, built from what the gallery
-            // knows rather than from a file on the device
-            findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly
+            // a medium of a remote storage gets a properties dialog of its own, built from what
+            // the gallery knows rather than from a file on the device (#60)
+            findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly || isSmbOnly
             // a medium in the pCloud bin is restored or deleted for good, nothing else: copying
             // it would go by a remote path the bin does not keep. Media of the share are copied
             // off it by SmbTransferService; "move to" stays off, it would delete from the share
@@ -466,9 +466,9 @@ class MediaAdapter(
 
     private fun showProperties() {
         val selectedItems = getSelectedItems()
-        // a pCloud medium has no file on the device for commons' dialog to read
-        if (selectedItems.any { it.path.isPCloudPath() }) {
-            PCloudPropertiesDialog(activity, selectedItems)
+        // a medium of a remote storage has no file on the device for commons' dialog to read
+        if (selectedItems.any { it.path.isRemotePath() }) {
+            RemotePropertiesDialog(activity, selectedItems)
             return
         }
 

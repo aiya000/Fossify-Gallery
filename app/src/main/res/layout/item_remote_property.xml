@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/pcloud_property_holder"
+    android:id="@+id/remote_property_holder"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="@dimen/medium_margin"
     android:orientation="vertical">
 
     <org.fossify.commons.views.MyTextView
-        android:id="@+id/pcloud_property_label"
+        android:id="@+id/remote_property_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:alpha="0.6"
         android:textSize="@dimen/smaller_text_size" />
 
     <org.fossify.commons.views.MyTextView
-        android:id="@+id/pcloud_property_value"
+        android:id="@+id/remote_property_value"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="@dimen/normal_text_size" />
