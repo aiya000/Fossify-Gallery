@@ -99,6 +99,7 @@ import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.writeToShare
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -236,60 +237,51 @@ class MediaAdapter(
         val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
 
-        // a remote medium has no file behind it, so nothing that reads one on the device is
-        // offered while any is selected. Deleting, copying, moving, and renaming one at a
-        // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing storages gets none of them. The share is written into, copied off, moved,
-        // deleted from and renamed one at a time, so a selection of its media is offered
-        // copying and moving away from it, deleting, renaming, editing one at a time,
-        // favorites and the video download -- and nothing that wants a file of the device
-        // behind it
-        val isLocal = selectedPaths.none { it.isRemotePath() }
-        val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
-        val isSmbOnly = selectedPaths.all { it.isSmbPath() }
+        // what a selection is offered is what its storage says it can do, see MediaStorage. A
+        // selection mixing storages is no storage, and is offered nothing that goes through one:
+        // favorites, the confirmation of a pick and the video download are all that is left
+        val storage = MediaStorage.ofAll(activity, selectedPaths)
+        // a medium in the pCloud bin is restored or deleted for good, nothing else: copying or
+        // sharing it would go by a remote path the bin does not keep
+        val isInPCloudBin = isInRecycleBin && storage is MediaStorage.PCloud
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
-            findItem(R.id.cab_rename).isVisible = (isLocal || ((isPCloudOnly || isSmbOnly) && isOneItemSelected)) && !isInRecycleBin
+            findItem(R.id.cab_rename).isVisible = storage != null && (storage.canRenameSeveral || isOneItemSelected) && !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
-            findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
-            findItem(R.id.cab_move_to).isVisible = (isLocal || isPCloudOnly || isSmbOnly) && !isInRecycleBin
-            // a pCloud medium is fetched into a file before it is handed to another app,
-            // the same as the fullscreen view does it
-            findItem(R.id.cab_open_with).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
-            // a medium on pCloud or on the share is edited through a copy of its own and
-            // written back over the original, the same as the fullscreen view does it
+            findItem(R.id.cab_fix_date_taken).isVisible = storage?.canFixDateTaken == true && !isInRecycleBin
+            findItem(R.id.cab_move_to).isVisible = storage != null && !isInRecycleBin
+            findItem(R.id.cab_open_with).isVisible = storage?.canOpenWith == true && isOneItemSelected && !isInRecycleBin
+            // a remote medium is edited through a copy of its own and written back over the
+            // original, which only a screen of the gallery can do; the same as the fullscreen
+            // view does it
             findItem(R.id.cab_edit).isVisible =
-                (isLocal || ((isPCloudOnly || isSmbOnly) && canWriteBackToRemote)) && isOneItemSelected && !isInRecycleBin
-            findItem(R.id.cab_set_as).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
-            // only a video on the share is read as it plays, so only those can be had in hand
-            // first. Offered whenever the selection holds one, whatever else is in it: the run
-            // takes the share's videos out of the selection and says how many that was
-            findItem(R.id.cab_smb_download_videos).isVisible = selectedItems.any { it.path.isSmbPath() && it.isVideo() }
-            // a pCloud image is fetched, resized and sent back to a folder the user picks.
-            // Resizing a selection of them writes each one back over itself, which is not
-            // built yet, so pCloud gets the one-at-a-time resize only
-            findItem(R.id.cab_resize).isVisible = (isLocal || (isPCloudOnly && isOneItemSelected)) && canResize(selectedItems)
+                storage != null && (!storage.isRemote || canWriteBackToRemote) && isOneItemSelected && !isInRecycleBin
+            findItem(R.id.cab_set_as).isVisible = storage?.canSetAs == true && isOneItemSelected && !isInRecycleBin
+            // offered whenever the selection holds a video that can be had in hand first,
+            // whatever else is in it: the run takes those out of the selection and says how many
+            // that was
+            findItem(R.id.cab_smb_download_videos).isVisible = selectedItems.any { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
+            findItem(R.id.cab_resize).isVisible =
+                storage != null && storage.canResize && (storage.canResizeSeveral || isOneItemSelected) && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible =
                 selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
-            findItem(R.id.cab_create_shortcut).isVisible = isLocal && isOneItemSelected
+            findItem(R.id.cab_create_shortcut).isVisible = storage?.canCreateShortcut == true && isOneItemSelected
             // a medium of the share is deleted from it for good; there is no recycle bin on a
             // share, and the confirmation says so
-            findItem(R.id.cab_delete).isVisible = isLocal || isPCloudOnly || isSmbOnly
-            // a pCloud medium is shared as a file too, fetched first; one in the bin is not
-            findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
-            // rotating a pCloud image writes it back over itself, one at a time
-            findItem(R.id.cab_rotate).isVisible = (isLocal || (isPCloudOnly && canWriteBackToRemote)) && !isInRecycleBin
+            findItem(R.id.cab_delete).isVisible = storage != null
+            findItem(R.id.cab_share).isVisible = storage?.canShare == true && !isInPCloudBin
+            // rotating a remote image writes it back over itself, the same as editing does
+            findItem(R.id.cab_rotate).isVisible =
+                storage != null && storage.canRotate && (!storage.isRemote || canWriteBackToRemote) && !isInRecycleBin
             // a medium of a remote storage gets a properties dialog of its own, built from what
             // the gallery knows rather than from a file on the device (#60)
-            findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly || isSmbOnly
-            // a medium in the pCloud bin is restored or deleted for good, nothing else: copying
-            // it would go by a remote path the bin does not keep. Media of the share are copied
-            // off it by SmbTransferService; "move to" stays off, it would delete from the share
-            findItem(R.id.cab_copy_to).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin) || isSmbOnly
+            findItem(R.id.cab_properties).isVisible = storage != null
+            // media of the share are copied off it by SmbTransferService
+            findItem(R.id.cab_copy_to).isVisible = storage != null && !isInPCloudBin
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -447,14 +439,15 @@ class MediaAdapter(
 
     fun isASectionTitle(position: Int) = media.getOrNull(position) is ThumbnailSection
 
-    // a medium is hidden by renaming its file with a leading dot, which is a write. Neither
-    // remote storage can be written to that way, so this is offered for local media alone --
-    // a folder of either one is hidden by a setting instead, see DirectoryAdapter
+    // a medium is hidden by renaming its file with a leading dot, which is a write into the
+    // device's file system, so it is for the storage to say (MediaStorage.canHide) and for the
+    // storage permission to allow
     private fun checkHideBtnVisibility(menu: Menu, selectedItems: ArrayList<Medium>) {
         val isInRecycleBin = selectedItems.firstOrNull()?.getIsInRecycleBin() == true
-        val isLocal = selectedItems.none { it.path.isRemotePath() }
-        menu.findItem(R.id.cab_hide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { !it.isHidden() }
-        menu.findItem(R.id.cab_unhide).isVisible = isLocal && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin && selectedItems.any { it.isHidden() }
+        val storage = MediaStorage.ofAll(activity, selectedItems.map { it.path })
+        val canHide = storage?.canHide == true && (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin
+        menu.findItem(R.id.cab_hide).isVisible = canHide && selectedItems.any { !it.isHidden() }
+        menu.findItem(R.id.cab_unhide).isVisible = canHide && selectedItems.any { it.isHidden() }
     }
 
     private fun checkFavoriteBtnVisibility(menu: Menu, selectedItems: ArrayList<Medium>) {
