@@ -349,6 +349,27 @@ storage_marked_in_menu() {
     sleep 1
 }
 
+# Puts a name into the field of a dialog that opened with one already in it.
+#
+# The rename dialog is handed the old name and selects part of it, so typing alone would land
+# beside what is there rather than replace it -- and what part is selected is the dialog's
+# business, not something a script should be reading. So the field is emptied key by key first,
+# from its end, and only then typed into.
+#
+# `input text` cannot type a space; every name these scripts rename to is one word for that reason
+replace_text_field() {
+    local text="$1" old_length="${2:-64}"
+    local keys="" i
+    "${ADB[@]}" shell input keyevent KEYCODE_MOVE_END
+    for ((i = 0; i < old_length; i++)); do
+        keys="$keys KEYCODE_DEL"
+    done
+
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input keyevent $keys
+    "${ADB[@]}" shell input text "$text"
+}
+
 open_overflow_menu() {
     local dump point
     dump="$(ui_dump "overflow")"

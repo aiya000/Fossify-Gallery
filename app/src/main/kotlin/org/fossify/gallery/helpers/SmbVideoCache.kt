@@ -52,6 +52,23 @@ class SmbVideoCache(private val context: Context) {
         return dir
     }
 
+    // Carries a downloaded video over to its owner's new name, the same as SmbFileCache does for
+    // its copies and for the same reason. It matters more here: a copy in this directory is the
+    // one the user waited on, and several gigabytes of it, so letting a rename cost a second
+    // download would be the most expensive thing a rename could do.
+    //
+    // The copy keeps the time it was last watched, so the day it has left is not renewed by this
+    fun renameCopy(oldPath: String, newPath: String, size: Long, modified: Long) {
+        val from = File(dir, SmbFileCache.nameOf(oldPath, size, modified))
+        if (from.isFile) {
+            val lastWatched = from.lastModified()
+            val to = File(dir, SmbFileCache.nameOf(newPath, size, modified))
+            if (from.renameTo(to)) {
+                to.setLastModified(lastWatched)
+            }
+        }
+    }
+
     // the sweep goes by the last modification time, so watching a video again keeps it for
     // another day. Called when playback starts off a copy
     fun touch(path: String, size: Long, modified: Long) {

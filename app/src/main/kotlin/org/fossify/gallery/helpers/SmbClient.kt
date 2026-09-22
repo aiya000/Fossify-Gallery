@@ -323,10 +323,42 @@ object SmbClient {
     private fun SMBApiException.isAlreadyGone() =
         status == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND || status == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND
 
-    // Renaming and moving on the share are not here yet, and are deliberately not written ahead
-    // of the screens that would call them (#28). smbj has `DiskEntry.rename` waiting; what is
-    // missing is everything around it -- which rows follow the file, and what a half-done batch
-    // leaves behind
+    // Gives the file or folder at the pseudo path another name, in the folder it is already in.
+    //
+    // SMB has no rename request of its own: a handle is opened and an information class is set on
+    // it, and that handle has to carry DELETE access -- taking the name away from where it is is
+    // what the protocol counts as deleting. open() above asks for GENERIC_READ alone, so this
+    // opens one of its own, and it opens it as neither a file nor a folder in particular: the
+    // same request serves both, and which of the two it is the server already knows.
+    //
+    // The new name is sent as a whole path from the share's root, which is what the protocol
+    // wants when no directory handle comes with it; it is built from the old path rather than
+    // from the pseudo path, so the share's root folder setting is applied in one place still.
+    //
+    // A name that is taken is refused rather than written over -- the server answers
+    // STATUS_OBJECT_NAME_COLLISION -- for the same reason create() refuses one: the caller picked
+    // a name it believed to be free, and one taken since is a collision, not a request to replace
+    // what is there
+    fun rename(context: Context, path: String, newName: String) {
+        val share = connectedShare(context)
+        val sharePath = toSharePath(context, path)
+        val newSharePath = renamedSiblingPath(sharePath, newName, SEPARATOR)
+        val entry = share.open(
+            sharePath,
+            EnumSet.of(AccessMask.DELETE),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null
+        )
+
+        entry.use { it.rename(newSharePath) }
+    }
+
+    // Moving between folders on the share is not here yet, and is deliberately not written ahead
+    // of the screens that would call it (#28). The same request does it -- a rename whose new
+    // path names another folder -- but what is missing is everything around it: which rows follow
+    // the media, and what a half-done batch leaves behind
 
     private fun FileIdBothDirectoryInformation.toEntry(): Entry {
         val isFolder = fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L

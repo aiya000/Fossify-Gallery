@@ -216,8 +216,8 @@ class DirectoryAdapter(
         // actions that could only fail. What is left is what goes through SmbClient ("copy to",
         // which copies its media away, and "delete", which takes the folder off the share),
         // what is only a setting here -- pinning, locking, the cover image -- and "move to",
-        // which for a folder of the share can only mean putting it in a group. Renaming is
-        // still off: nothing on the share can be renamed yet (#28)
+        // which for a folder of the share can only mean putting it in a group. Renaming goes
+        // through SmbClient too, one folder at a time, the same as a pCloud folder does
         val isAnySmbSelected = realPaths.any { it.isSmbPath() }
         val isSmbOnly = realPaths.isNotEmpty() && realPaths.all { it.isSmbPath() }
         menu.apply {
@@ -226,7 +226,8 @@ class DirectoryAdapter(
 
             // virtual groups can be renamed one at a time only
             findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !selectedPaths.contains(PCLOUD_RECYCLE_BIN) &&
-                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected)) && !isAnySmbSelected
+                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected)) &&
+                (!isAnySmbSelected || (isSmbOnly && isOneItemSelected))
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
@@ -430,6 +431,11 @@ class DirectoryAdapter(
                 return
             }
 
+            if (sourcePath.isSmbPath()) {
+                renameSmbDir(firstDir)
+                return
+            }
+
             val dir = File(sourcePath)
             if (activity.isAStorageRootFolder(dir.absolutePath)) {
                 activity.toast(org.fossify.commons.R.string.rename_folder_root)
@@ -477,6 +483,24 @@ class DirectoryAdapter(
                 RemoteNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
                     val newPath = "${sourcePath.getParentPath()}/$newName"
                     activity.writeToPCloud(listOf(newPath), { renameFolder(sourcePath, newName) }) {
+                        activity.runOnUiThread {
+                            finishActMode()
+                            listener?.refreshItems()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // the same as renamePCloudDir(), for the share: the writer moves every cached row under the
+    // folder along with it, so the list only has to be read again
+    private fun renameSmbDir(dir: Directory) {
+        val sourcePath = dir.path
+        activity.handleLockedFolderOpening(sourcePath) { success ->
+            if (success) {
+                RemoteNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
+                    activity.writeToShare({ renameFolder(sourcePath, newName) }) {
                         activity.runOnUiThread {
                             finishActMode()
                             listener?.refreshItems()

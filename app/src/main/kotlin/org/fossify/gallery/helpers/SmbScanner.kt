@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.content.Context
 import android.util.Log
+import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.isGif
 import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isRawFast
@@ -336,6 +337,24 @@ class SmbScanner(private val context: Context) {
             context.directoryDB.getPathsWithPrefix(prefix).forEach { context.directoryDB.deleteDirPath(it) }
             context.directoryDB.deleteDirPath(path)
         }
+    }
+
+    // Moves every row under a folder to its new path, at any depth, and the folder's place in a
+    // virtual group with them -- PCloudScanner.moveFolderRows() for the share, minus the
+    // pcloud_items table the share has no counterpart for. Per-folder settings keyed by path
+    // (sorting, the cover image, pinning) stay with the old path, as they do for a local folder.
+    //
+    // SmbWriter does this after a rename it asked for. Nothing else calls it: a share tells of no
+    // change made elsewhere, so a folder renamed on the NAS is found by the next walk instead
+    fun moveFolderRows(oldPath: String, newPath: String) {
+        GalleryDatabase.getInstance(context).runInTransaction {
+            context.mediaDB.updatePathsUnderFolder(oldPath, newPath)
+            context.favoritesDB.updatePathsUnderFolder(oldPath, newPath)
+            context.directoryDB.updatePathsUnderFolder(oldPath, newPath, newPath.getFilenameFromPath())
+        }
+
+        context.config.updateFolderGroupMemberPath(oldPath, newPath)
+        context.config.updateSmbHiddenFolderPaths(oldPath, newPath)
     }
 
     // drops every SMB row there is, for a share that was unconfigured or pointed somewhere else

@@ -43,6 +43,12 @@ interface MediumDao {
     @Query("SELECT full_path FROM media WHERE full_path LIKE :prefix || '%'")
     fun getPathsWithPrefix(prefix: String): List<String>
 
+    // the rows themselves, for a folder rename on the share that has to carry the cached copies
+    // of the media under it along with them -- the copy is named after the path, the size and the
+    // modification time, and only a row knows the last two
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE full_path LIKE :prefix || '%'")
+    fun getMediaWithPrefix(prefix: String): List<Medium>
+
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestmap AND deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getOldRecycleBinItems(timestmap: Long): List<Medium>
 

@@ -672,15 +672,10 @@ class Config(context: Context) : BaseConfig(context) {
     // after a pCloud folder was renamed: the entries for it and for the folders under it follow
     fun updatePCloudHiddenFolderPaths(oldPath: String, newPath: String) {
         val folders = pCloudHiddenFolders
-        val moved = folders.filter { it == oldPath || it.startsWith("$oldPath/") }
-        if (moved.isEmpty()) {
-            return
+        val updated = folders.withFolderRenamed(oldPath, newPath)
+        if (updated != folders) {
+            pCloudHiddenFolders = HashSet(updated)
         }
-
-        val updated = HashSet<String>(folders)
-        updated.removeAll(moved.toSet())
-        moved.mapTo(updated) { newPath + it.substring(oldPath.length) }
-        pCloudHiddenFolders = updated
     }
 
     var wasPCloudHideFolderTooltipShown: Boolean
@@ -704,6 +699,16 @@ class Config(context: Context) : BaseConfig(context) {
         val folders = HashSet<String>(smbHiddenFolders)
         folders.removeAll(paths.toSet())
         smbHiddenFolders = folders
+    }
+
+    // after a folder of the share was renamed: the entries for it and for the folders under it
+    // follow, the same as they do for a pCloud folder
+    fun updateSmbHiddenFolderPaths(oldPath: String, newPath: String) {
+        val folders = smbHiddenFolders
+        val updated = folders.withFolderRenamed(oldPath, newPath)
+        if (updated != folders) {
+            smbHiddenFolders = HashSet(updated)
+        }
     }
 
     var wasSmbHideFolderTooltipShown: Boolean

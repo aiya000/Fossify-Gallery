@@ -18,6 +18,7 @@
 | 端末を動かすテストが「ストレージのチップが画面に無い」で落ちた。チップは何も変えていない | フォルダの中にいたまま探していた。チップはフォルダ一覧のもの。戻ってから探すようにした | [agents/tests/the-toolbar-chips-belong-to-the-folder-list.md](./agents/tests/the-toolbar-chips-belong-to-the-folder-list.md) |
 | 共有へ書き込んだら `STATUS_ACCESS_DENIED`。読み取りはずっと動いていた | アプリではなくフィクスチャ側。samba のイメージが `force user` で uid を固定していた | [agents/tests/the-fixture-share-was-never-writable.md](./agents/tests/the-fixture-share-was-never-writable.md) |
 | 端末を動かすテストが「選択メニューに Delete が無い」で落ちた。アプリはちゃんと出している | `Delete` は `showAsAction="always"`。三点リーダではなく選択ツールバーのアイコンだった | [agents/tests/the-delete-icon-is-not-in-the-overflow.md](./agents/tests/the-delete-icon-is-not-in-the-overflow.md) |
+| 共有でリネームしたら、共有のファイル名は変わったのにグリッドは古いまま。例外も出ない | DAO の宣言順と呼び出しの位置引数がずれていた。名前付き引数にした。再スキャンがずっと隠していた | [agents/database/a-rename-that-updated-nothing.md](./agents/database/a-rename-that-updated-nothing.md) |
 
 ### この索引に足すこと
 

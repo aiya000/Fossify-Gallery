@@ -7,6 +7,8 @@ import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.rebuildDirectoryRow
+import org.fossify.gallery.extensions.updateDBMediaPath
+import org.fossify.gallery.models.Medium
 
 // Changes the share on the user's behalf and keeps the cache in step with what was changed, the
 // same shape as PCloudWriter. The share is asked first and the rows follow only once it has
@@ -87,5 +89,50 @@ class SmbWriter(private val context: Context) {
 
         Log.i(TAG, "Deleted $done of ${paths.size} folders from the share")
         failure?.let { throw it }
+    }
+
+    // Gives a medium of the share another name, in the folder it is already in. Answers the new
+    // path.
+    //
+    // One at a time, which is what the screens offer: the share refuses a name that is taken
+    // rather than numbering it, so a batch would have to decide what to do about each refusal,
+    // and nobody has asked for that yet
+    fun renameFile(path: String, newName: String): String {
+        val newPath = "${path.getParentPath()}/$newName"
+        // read before the rows move, so the cached copies can be found under their old name
+        val medium = context.mediaDB.getMediumByPath(path)
+        SmbClient.rename(context, path, newName)
+        GalleryDatabase.getInstance(context).runInTransaction {
+            context.updateDBMediaPath(path, newPath)
+        }
+
+        medium?.let { renameCachedCopies(path, newPath, it) }
+        // the folder's thumbnail may have been this medium, and it is kept as a path
+        context.rebuildDirectoryRow(path.getParentPath())
+        Log.i(TAG, "Renamed a medium on the share to \"$newName\"")
+        return newPath
+    }
+
+    // Gives a folder of the share another name, where it already is. Answers the new path.
+    //
+    // Every row under it follows, at any depth, and so does the folder's place in a virtual
+    // group; see SmbScanner.moveFolderRows(). The share moves the whole subtree itself in the one
+    // request, so there is no half-renamed folder to think about here -- unlike the recursive
+    // delete, which is many requests and can stop in the middle
+    fun renameFolder(path: String, newName: String): String {
+        val newPath = "${path.getParentPath()}/$newName"
+        val media = context.mediaDB.getMediaWithPrefix("$path/")
+        SmbClient.rename(context, path, newName)
+        SmbScanner(context).moveFolderRows(path, newPath)
+        media.forEach { renameCachedCopies(it.path, newPath + it.path.substring(path.length), it) }
+        Log.i(TAG, "Renamed a folder on the share to \"$newName\", with ${media.size} media under it")
+        return newPath
+    }
+
+    // What the share renamed is the same bytes, so whatever was fetched or downloaded for it is
+    // carried over to the new name rather than left to be swept and fetched again
+    private fun renameCachedCopies(oldPath: String, newPath: String, medium: Medium) {
+        SmbFileCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
+        SmbVideoCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
     }
 }
