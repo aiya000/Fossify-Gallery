@@ -111,6 +111,7 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SMB
 import org.fossify.gallery.helpers.LOCATION_SD
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -203,31 +204,22 @@ class DirectoryAdapter(
         val isAnyGroupSelected = realPaths.size != selectedPaths.size
         val areOnlyGroupsSelected = realPaths.isEmpty()
 
-        // a pCloud folder has no directory behind it, so the filesystem operations are off for
-        // it as they are for groups; pinning, locking and the cover image are settings and stay.
-        // Deleting, copying, moving, and renaming one at a time, go through the pCloud API
-        // when every real folder selected is a pCloud one; a selection mixing both storages
-        // gets none of them
-        val isAnyPCloudSelected = realPaths.any { it.isPCloudPath() }
-        val isPCloudOnly = realPaths.isNotEmpty() && realPaths.all { it.isPCloudPath() }
-
-        // A folder on the share has no directory behind it either, so everything that reaches
-        // for one is off -- it was treated as a folder on the device until now, which offered
-        // actions that could only fail. What is left is what goes through SmbClient ("copy to",
-        // which copies its media away, and "delete", which takes the folder off the share),
-        // what is only a setting here -- pinning, locking, the cover image -- and "move to",
-        // which for a folder of the share can only mean putting it in a group. Renaming goes
-        // through SmbClient too, one folder at a time, the same as a pCloud folder does
-        val isAnySmbSelected = realPaths.any { it.isSmbPath() }
-        val isSmbOnly = realPaths.isNotEmpty() && realPaths.all { it.isSmbPath() }
+        // a folder of pCloud or of the share has no directory behind it, so what reaches for one
+        // is off, and what is left is what its storage says it can do (see MediaStorage):
+        // deleting, copying its media away, renaming one at a time, and "move to", which for a
+        // folder of the share can only mean putting it in a group. Pinning, locking and the
+        // cover image are settings and stay. A selection of real folders mixing storages is no
+        // storage, and is offered none of it; groups are counted separately, below
+        val storage = MediaStorage.ofAll(activity, realPaths)
+        val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
-            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !selectedPaths.contains(PCLOUD_RECYCLE_BIN) &&
-                (!isAnyGroupSelected || isOneItemSelected) && (!isAnyPCloudSelected || (isPCloudOnly && isOneItemSelected)) &&
-                (!isAnySmbSelected || (isSmbOnly && isOneItemSelected))
+            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !isPCloudBinSelected &&
+                (!isAnyGroupSelected || isOneItemSelected) &&
+                (areOnlyGroupsSelected || (storage != null && (storage.canRenameSeveralFolders || isOneItemSelected)))
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
 
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
@@ -237,22 +229,20 @@ class DirectoryAdapter(
             findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && (selectedPaths.first() == RECYCLE_BIN || selectedPaths.first() == PCLOUD_RECYCLE_BIN)
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
-            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && !isAnyPCloudSelected && !isAnySmbSelected
+            findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && storage?.canCreateShortcut == true
 
             // filesystem operations make no sense for virtual groups
-            findItem(R.id.cab_properties).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
-            val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
-            // the media of a folder of the share are copied off it by SmbTransferService, so
-            // "copy to" is offered for a selection that is all share; mixing storages is not,
-            // the same as it is not for pCloud
-            findItem(R.id.cab_copy_to).isVisible =
-                !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected && (!isAnySmbSelected || isSmbOnly)
-            findItem(R.id.cab_move_to).isVisible = (!isAnyPCloudSelected || isPCloudOnly) && !isPCloudBinSelected
-            findItem(R.id.cab_exclude).isVisible = !areOnlyGroupsSelected && !isAnyPCloudSelected && !isAnySmbSelected
+            findItem(R.id.cab_properties).isVisible = storage?.canShowFolderProperties == true
+            // the media of a folder of the share are copied off it by SmbTransferService
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && storage != null && !isPCloudBinSelected
+            // a selection mixing this device and the share is still offered "move to", as it
+            // always was, while one with pCloud in it is not. Whether it should be is #107's
+            findItem(R.id.cab_move_to).isVisible =
+                (realPaths.none { MediaStorage.of(activity, it) is MediaStorage.PCloud } || storage is MediaStorage.PCloud) && !isPCloudBinSelected
+            findItem(R.id.cab_exclude).isVisible = storage?.canExcludeFolders == true
             // a folder of the share is deleted from the share, with everything under it and
-            // with no bin to take it back out of; mixing storages is not offered, as above
-            findItem(R.id.cab_delete).isVisible =
-                !isAnyGroupSelected && (!isAnyPCloudSelected || isPCloudOnly) && (!isAnySmbSelected || isSmbOnly)
+            // with no bin to take it back out of
+            findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && storage != null
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
             // putting things in a group costs nothing but a setting, so it is offered for every
             // storage. What is left out is favorites and the recycle bins, which are not folders

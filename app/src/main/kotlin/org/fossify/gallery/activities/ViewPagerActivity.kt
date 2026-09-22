@@ -171,6 +171,7 @@ import org.fossify.gallery.helpers.GO_TO_PREV_ITEM
 import org.fossify.gallery.helpers.HIDE_SYSTEM_UI_DELAY
 import org.fossify.gallery.helpers.IS_VIEW_INTENT
 import org.fossify.gallery.helpers.MAX_PRINT_SIDE_SIZE
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.QUEUE_PATHS
 import org.fossify.gallery.helpers.PORTRAIT_PATH
@@ -340,9 +341,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
         // a remote medium has no file on the device, but it is fetched into one before
         // anything that needs a file, so those actions are offered for it like they are for a
-        // local medium. What stays hidden is what the device's own file system is part of:
-        // hiding by renaming the file with a leading dot, and pinning a shortcut to a path
-        val isLocal = !currentMedium.path.isRemotePath()
+        // local medium. What stays hidden is what its storage says it cannot do, see
+        // MediaStorage: hiding by renaming the file with a leading dot, and pinning a shortcut
+        val storage = MediaStorage.of(this, currentMedium.path)
         // a medium in the pCloud bin is restored or deleted for good, nothing else; copying it
         // would go by a remote path the bin does not keep
         val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
@@ -367,14 +368,14 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
                 findItem(R.id.menu_open_with).isVisible = hasFile
-                // only a video on the share is read as it plays, so only that one can be had in
-                // hand first. It stays offered for one already downloaded, which then says so
-                findItem(R.id.menu_smb_download_video).isVisible = currentMedium.path.isSmbPath() && currentMedium.isVideo()
+                // a video that is read as it plays can be had in hand first. It stays offered
+                // for one already downloaded, which then says so
+                findItem(R.id.menu_smb_download_video).isVisible = storage.streamsVideos && currentMedium.isVideo()
                 findItem(R.id.menu_hide).isVisible =
-                    isLocal && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
+                    storage.canHide && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
 
                 findItem(R.id.menu_unhide).isVisible =
-                    isLocal && (!isRPlus() || isExternalStorageManager()) && currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
+                    storage.canHide && (!isRPlus() || isExternalStorageManager()) && currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
 
                 findItem(R.id.menu_add_to_favorites).isVisible =
                     !currentMedium.isFavorite && visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE == 0 && !currentMedium.getIsInRecycleBin()
@@ -383,7 +384,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     currentMedium.isFavorite && visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE == 0 && !currentMedium.getIsInRecycleBin()
 
                 findItem(R.id.menu_restore_file).isVisible = currentMedium.path.startsWith(recycleBinPath) || isInPCloudBin
-                findItem(R.id.menu_create_shortcut).isVisible = isLocal
+                findItem(R.id.menu_create_shortcut).isVisible = storage.canCreateShortcut
                 findItem(R.id.menu_change_orientation).isVisible = rotationDegrees == 0 && visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION == 0
                 findItem(R.id.menu_rotate).setShowAsAction(
                     if (rotationDegrees != 0) {
@@ -1221,7 +1222,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val currentMedium = getCurrentMedium()
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
         // the same gating as refreshMenuItems(): no file, no file operations
-        val isLocal = currentMedium?.path?.isRemotePath() != true
+        val storage = currentMedium?.let { MediaStorage.of(this, it.path) }
         val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
         val hasFile = !isInPCloudBin
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
@@ -1286,7 +1287,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             showCurrentOnMap()
         }
 
-        binding.bottomActions.bottomToggleFileVisibility.beVisibleIf(isLocal && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY != 0)
+        binding.bottomActions.bottomToggleFileVisibility.beVisibleIf(storage?.canHide != false && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY != 0)
         binding.bottomActions.bottomToggleFileVisibility.setOnLongClickListener {
             toast(if (currentMedium?.isHidden() == true) org.fossify.commons.R.string.unhide else org.fossify.commons.R.string.hide); true
         }
