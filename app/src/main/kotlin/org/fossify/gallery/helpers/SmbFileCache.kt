@@ -85,6 +85,16 @@ class SmbFileCache(private val context: Context) {
         }
     }
 
+    // Drops the copy of a medium whose bytes on the share have just been replaced.
+    //
+    // Nothing would serve it again in any case -- the name carries the size and the modification
+    // time, and the row has moved on to the new pair -- so this is about the bytes rather than
+    // about what is shown: an overwritten photo is one nobody asked to keep, and leaving it to
+    // the 512MB trim would let it push out a copy somebody is using
+    fun deleteCopy(path: String, size: Long, modified: Long) {
+        File(dir, nameOf(path, size, modified)).delete()
+    }
+
     // null for a path no scan has seen: without the size and the modification time there is no
     // name to look for
     private fun targetOf(path: String): File? {

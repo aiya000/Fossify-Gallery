@@ -69,6 +69,13 @@ class SmbVideoCache(private val context: Context) {
         }
     }
 
+    // The same as SmbFileCache.deleteCopy(), and it matters more here for the same reason the
+    // rename does: a copy in this directory is gigabytes the user waited on, and one whose
+    // original has been written over is gigabytes of something that is no longer on the share
+    fun deleteCopy(path: String, size: Long, modified: Long) {
+        File(dir, SmbFileCache.nameOf(path, size, modified)).delete()
+    }
+
     // the sweep goes by the last modification time, so watching a video again keeps it for
     // another day. Called when playback starts off a copy
     fun touch(path: String, size: Long, modified: Long) {

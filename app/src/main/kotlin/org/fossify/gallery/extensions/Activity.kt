@@ -1501,9 +1501,9 @@ fun BaseSimpleActivity.ensureWritablePath(
 //
 // There is no SAF and no File to ask here, so whether the name is taken is asked of the storage
 // itself -- which for the share is a request over the network, hence the background thread.
-// pCloud can be written over, one API call renaming the original aside first; the share cannot
-// yet, and a "Save as" that quietly wrote a second copy under a numbered name would be a
-// surprise the user could only see by looking at the share, so it is refused out loud (#28)
+// Either can be written over, each by renaming the original aside first, so both are asked the
+// same question the local side asks -- and it is asked for real: neither storage has a recycle
+// bin an overwritten medium could be taken back out of (#28)
 private fun BaseSimpleActivity.ensureWritableRemotePath(
     targetPath: String,
     confirmOverwrite: Boolean,
@@ -1526,22 +1526,16 @@ private fun BaseSimpleActivity.ensureWritableRemotePath(
         }
 
         runOnUiThread {
-            when {
-                !taken || !confirmOverwrite -> callback(targetPath)
-
-                targetPath.isSmbPath() -> {
-                    showInAppMessage(getString(R.string.smb_no_overwrite_yet, targetPath.getFilenameFromPath()))
-                    onCancel?.invoke()
-                }
-
-                else -> {
-                    val title = String.format(
-                        getString(org.fossify.commons.R.string.file_already_exists_overwrite),
-                        targetPath.getFilenameFromPath()
-                    )
-                    ConfirmationDialog(this, title) { callback(targetPath) }
-                }
+            if (!taken || !confirmOverwrite) {
+                callback(targetPath)
+                return@runOnUiThread
             }
+
+            val title = String.format(
+                getString(org.fossify.commons.R.string.file_already_exists_overwrite),
+                targetPath.getFilenameFromPath()
+            )
+            ConfirmationDialog(this, title) { callback(targetPath) }
         }
     }
 }
