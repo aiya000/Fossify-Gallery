@@ -77,7 +77,6 @@ cat > "$prefs" <<XML
     <boolean name="smb_rescan_on_unmetered_only" value="false" />
     <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}]</string>
     <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID}</string>
-    <int name="storage_filter" value="$FIXTURE_STORAGE_FILTER" />
     <int name="directory_sort_order" value="$FIXTURE_DIRECTORY_SORT" />
     <string name="pcloud_access_token">$FIXTURE_PCLOUD_ACCESS_TOKEN</string>
     <string name="pcloud_api_host">$FIXTURE_PCLOUD_API_HOST</string>

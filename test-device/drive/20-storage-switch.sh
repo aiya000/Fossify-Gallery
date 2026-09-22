@@ -11,6 +11,10 @@
 # - a scan the settings started on launch ranks AUTO and is called off by a swipe
 # - a scan the arrival at this storage started ranks SWITCH and is NOT called off by a later swipe
 # - a scan asked for from the menu ranks MANUAL and is never called off by a swipe
+#
+# The list opens on this device, so the scan the settings start on launch is not a scan of what is
+# on screen: it is started for a storage that is set up, and this script is where that is seen --
+# rule 1-a only has something to call off because the launch scan runs while the device is showing.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +31,7 @@ seed() {
 # ---------------------------------------------------------------- rule 1-a
 
 step "rule 1-a: a swipe calls off a scan the settings started"
-seed FIXTURE_RESCAN_ON_LAUNCH=true FIXTURE_STORAGE_FILTER=4
+seed FIXTURE_RESCAN_ON_LAUNCH=true
 logcat_reset
 app_start
 
@@ -51,7 +55,7 @@ fi
 # ---------------------------------------------------------------- rule 1-b
 
 step "rule 1-b: a swipe leaves a scan the user asked for alone"
-seed FIXTURE_STORAGE_FILTER=4
+seed
 logcat_reset
 app_start
 sleep 4
@@ -87,7 +91,10 @@ fi
 
 step "a scan the arrival started ranks with the switch, so a later swipe does not call it off"
 note "this is the behaviour as written, not a wish: leftBehind() drops only what ranks below SWITCH"
-seed FIXTURE_RESCAN_ON_STORAGE_SWITCH=true FIXTURE_STORAGE_FILTER=1
+seed FIXTURE_RESCAN_ON_STORAGE_SWITCH=true
+
+# this case makes the arrival itself, so app_start has to leave the list where it opens
+FIXTURE_STORAGE_FILTER=1
 logcat_reset
 app_start
 sleep 4

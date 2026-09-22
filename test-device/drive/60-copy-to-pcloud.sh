@@ -79,8 +79,7 @@ step "seeding, and signing the app in to the stub"
 # The token and the host are the whole of what the OAuth screen leaves behind, so this is signing
 # in as far as everything below the screen is concerned. The screen itself needs a client id that
 # cannot be published, and driving a browser is not what this script is about
-env FIXTURE_STORAGE_FILTER=4 \
-    FIXTURE_PCLOUD_ACCESS_TOKEN="$FIXTURE_PCLOUD_TOKEN" \
+env FIXTURE_PCLOUD_ACCESS_TOKEN="$FIXTURE_PCLOUD_TOKEN" \
     FIXTURE_PCLOUD_API_HOST="$FIXTURE_PCLOUD_STUB_API_HOST" \
     "$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
 

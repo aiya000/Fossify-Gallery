@@ -55,7 +55,7 @@ done
 note "the copies will land in $FIXTURE_LOCAL_DESTINATION_DIR"
 
 step "seeding, and scanning the share so its folders have rows"
-env FIXTURE_STORAGE_FILTER=4 "$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
+"$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
 logcat_reset
 app_start
 sleep 4
