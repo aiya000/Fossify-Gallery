@@ -20,6 +20,8 @@ import android.provider.Settings
 import android.system.Os
 import android.util.DisplayMetrics
 import android.util.Log
+import android.view.View
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
@@ -27,6 +29,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
+import com.google.android.material.snackbar.Snackbar
 import com.squareup.picasso.Picasso
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -53,6 +56,9 @@ import org.fossify.gallery.helpers.PCLOUD_RESIZE_DIR
 import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.SMB_EDIT_DIR
+import org.fossify.gallery.helpers.SmbClient
+import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
 import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.jobs.SmbTransferService
@@ -61,6 +67,31 @@ import java.io.*
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.core.net.toUri
+
+// how many lines the app's own message may take. The material default is two, which is the
+// very limit this exists to escape: a sentence of guidance is cut off inside it
+private const val IN_APP_MESSAGE_MAX_LINES = 5
+
+// The app's own message line, in place of a toast (#76).
+//
+// A toast is the OS speaking -- black on white, a couple of lines at most, and gone before a
+// long sentence has been read. This lands in the activity's own content view, in this app's
+// theme, with room for what it has to say. PickDirectoryDialog.showPickerMessage() is where it
+// came from; the sweep of the other call sites is #76's own.
+//
+// Nothing is shown when the activity has no content view yet or is on its way out, which is
+// exactly when a toast is still the right thing
+fun Activity.showInAppMessage(text: String) {
+    if (isFinishing || isDestroyed) {
+        return
+    }
+
+    val root = findViewById<View>(android.R.id.content) ?: return
+    Snackbar.make(root, text, Snackbar.LENGTH_LONG).apply {
+        view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.maxLines = IN_APP_MESSAGE_MAX_LINES
+        show()
+    }
+}
 
 fun Activity.sharePath(path: String) {
     sharePathIntent(path, BuildConfig.APPLICATION_ID)
@@ -135,18 +166,21 @@ fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: Arr
 // edited image for the original even when the write back to pCloud never lands. Only one
 // edit is in flight at a time, so the previous copy goes first
 fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -> Unit) {
-    if (!path.isPCloudPath()) {
+    if (!path.isRemotePath()) {
         callback(path)
         return
     }
 
-    toast(R.string.pcloud_fetching)
+    val onShare = path.isSmbPath()
+    toast(if (onShare) R.string.smb_fetching else R.string.pcloud_fetching)
     ensureBackgroundThread {
         val copy = try {
-            fetchPCloudMediumForEditing(path)
+            if (onShare) fetchSmbMediumForEditing(path) else fetchPCloudMediumForEditing(path)
         } catch (e: Exception) {
-            Log.w("PCloudFetch", "Could not fetch $path for editing", e)
-            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+            val tag = if (onShare) "SmbFetch" else "PCloudFetch"
+            Log.w(tag, "Could not fetch $path for editing", e)
+            val failed = if (onShare) R.string.smb_fetch_failed else R.string.pcloud_fetch_failed
+            toast("${getString(failed)}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
@@ -154,6 +188,17 @@ fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -
             callback(copy)
         }
     }
+}
+
+// The same for the share. `SmbFileCache` already holds a copy of everything the photo view has
+// drawn, so this is usually a file copy rather than a download; the copy is taken all the same,
+// for the reason above -- what is written must not reach the cache under the original's name
+fun Activity.fetchSmbMediumForEditing(path: String): String {
+    val cached = SmbFileCache(this).fetch(path)
+    val editDir = File(cacheDir, SMB_EDIT_DIR)
+    editDir.deleteRecursively()
+    editDir.mkdirs()
+    return File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }.absolutePath
 }
 
 // The copy itself, for a caller that is already off the main thread and wants to wait for it.
@@ -1411,6 +1456,11 @@ fun BaseSimpleActivity.ensureWritablePath(
     onCancel: (() -> Unit)? = null,
     callback: (String) -> Unit,
 ) {
+    if (targetPath.isRemotePath()) {
+        ensureWritableRemotePath(targetPath, confirmOverwrite, onCancel, callback)
+        return
+    }
+
     fun proceedAfterGrants() {
         handleSAFDialogSdk30(targetPath) { granted ->
             if (!granted) {
@@ -1443,6 +1493,56 @@ fun BaseSimpleActivity.ensureWritablePath(
         }
     } else {
         requestGrantsThenProceed()
+    }
+}
+
+// The same question for a destination on pCloud or on the share: is something already there,
+// and may it be written over.
+//
+// There is no SAF and no File to ask here, so whether the name is taken is asked of the storage
+// itself -- which for the share is a request over the network, hence the background thread.
+// pCloud can be written over, one API call renaming the original aside first; the share cannot
+// yet, and a "Save as" that quietly wrote a second copy under a numbered name would be a
+// surprise the user could only see by looking at the share, so it is refused out loud (#28)
+private fun BaseSimpleActivity.ensureWritableRemotePath(
+    targetPath: String,
+    confirmOverwrite: Boolean,
+    onCancel: (() -> Unit)?,
+    callback: (String) -> Unit,
+) {
+    ensureBackgroundThread {
+        val taken = try {
+            if (targetPath.isSmbPath()) {
+                SmbClient.fileExists(this, targetPath)
+            } else {
+                pCloudItemsDB.getItem(targetPath) != null
+            }
+        } catch (e: Exception) {
+            runOnUiThread {
+                showErrorToast(e)
+                onCancel?.invoke()
+            }
+            return@ensureBackgroundThread
+        }
+
+        runOnUiThread {
+            when {
+                !taken || !confirmOverwrite -> callback(targetPath)
+
+                targetPath.isSmbPath() -> {
+                    showInAppMessage(getString(R.string.smb_no_overwrite_yet, targetPath.getFilenameFromPath()))
+                    onCancel?.invoke()
+                }
+
+                else -> {
+                    val title = String.format(
+                        getString(org.fossify.commons.R.string.file_already_exists_overwrite),
+                        targetPath.getFilenameFromPath()
+                    )
+                    ConfirmationDialog(this, title) { callback(targetPath) }
+                }
+            }
+        }
     }
 }
 

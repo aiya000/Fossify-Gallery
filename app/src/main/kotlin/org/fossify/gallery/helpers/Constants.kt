@@ -208,6 +208,15 @@ const val SMB_PATH_PREFIX = "$SMB_PATH_SCHEME/"
 // a real file. See SmbFileCache
 const val SMB_CACHE_DIR = "smb"
 
+// under the cache directory: the copy an action that writes is working on, the rotation above
+// all. A copy rather than the cached original, so that a half-written result cannot reach the
+// cache and be served from there; see PCLOUD_EDIT_DIR, which is the same idea for pCloud
+const val SMB_EDIT_DIR = "smb-edit"
+
+// under the cache directory: an image on its way to a folder of a remote storage, under the
+// name it is to have there. One save is in flight at a time, so the folder is emptied first
+const val REMOTE_SAVE_DIR = "remote-save"
+
 // under the cache directory as well, but kept apart from SMB_CACHE_DIR: the videos the user
 // asked to have in hand before watching them. Those are far bigger than anything else cached
 // here, so they are swept by age rather than held to a size. See SmbVideoCache

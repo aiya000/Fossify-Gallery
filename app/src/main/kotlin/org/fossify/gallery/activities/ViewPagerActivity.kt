@@ -104,7 +104,7 @@ import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
-import org.fossify.gallery.dialogs.PCloudNameDialog
+import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
 import org.fossify.gallery.extensions.config
@@ -125,6 +125,8 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openPath
+import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.restoreRecycleBinPath
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
@@ -179,6 +181,8 @@ import org.fossify.gallery.helpers.ROTATE_BY_ASPECT_RATIO
 import org.fossify.gallery.helpers.ROTATE_BY_DEVICE_ROTATION
 import org.fossify.gallery.helpers.ROTATE_BY_SYSTEM_SETTING
 import org.fossify.gallery.helpers.SELECTED_PATHS
+import org.fossify.gallery.helpers.REMOTE_SAVE_DIR
+import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_NEXT_ITEM
@@ -192,6 +196,7 @@ import org.fossify.gallery.helpers.SLIDESHOW_DEFAULT_INTERVAL
 import org.fossify.gallery.helpers.SLIDESHOW_FADE_DURATION
 import org.fossify.gallery.helpers.SLIDESHOW_SLIDE_DURATION
 import org.fossify.gallery.helpers.SLIDESHOW_START_ON_ENTER
+import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_PORTRAITS
@@ -1005,57 +1010,112 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     private fun editCurrentMedium() = editMedium(getCurrentPath())
 
+    // Saving a rotated image, wherever it came from and wherever it is going.
+    //
+    // "Save as" asks the same question on all three storages now: where, and under what name.
+    // A pCloud medium used to skip the question and write back over itself, which meant the
+    // one thing it could do was the one thing it never asked about.
+    //
+    // The source may have no file on this device and the destination may take no file at all,
+    // so the rotation always happens on a local file, and only then is the result handed to
+    // whichever storage was picked
     private fun saveImageAs() {
         val currPath = getCurrentPath()
-        if (currPath.isPCloudPath()) {
-            saveRotatedPCloudImage(currPath)
-            return
+        val degrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
+        SaveAsDialog(this, currPath, false, localStorageOnly = false) { newPath ->
+            if (newPath.isRemotePath()) {
+                saveRotatedImageToRemote(currPath, newPath, degrees)
+            } else {
+                saveRotatedImageToDevice(currPath, newPath, degrees)
+            }
         }
+    }
 
-        SaveAsDialog(this, currPath, false) {
-            val newPath = it
-            handleSAFDialog(it) {
-                if (!it) {
-                    return@handleSAFDialog
-                }
+    // A folder of this device, which SAF may have something to say about. The source can still
+    // be remote, so it is fetched before anything reads it
+    private fun saveRotatedImageToDevice(sourcePath: String, newPath: String, degrees: Int) {
+        handleSAFDialog(newPath) { granted ->
+            if (!granted) {
+                return@handleSAFDialog
+            }
 
+            withEditableMediaFile(sourcePath) { localSource ->
                 toast(org.fossify.commons.R.string.saving)
                 ensureBackgroundThread {
-                    val photoFragment = getCurrentPhotoFragment() ?: return@ensureBackgroundThread
-                    saveRotatedImageToFile(currPath, newPath, photoFragment.mCurrentRotationDegrees, true) {
-                        toast(org.fossify.commons.R.string.file_saved)
-                        getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
-                        refreshMenuItems()
+                    saveRotatedImageToFile(localSource, newPath, degrees, true) {
+                        rotationSaved()
                     }
                 }
             }
         }
     }
 
-    // A rotated pCloud image is written back over itself: there is no folder on the device to
-    // save it beside, and "save a copy somewhere else" is what copying to this device is for
-    private fun saveRotatedPCloudImage(path: String) {
-        val degrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: return
-        withEditableMediaFile(path) { localPath ->
+    // A folder on pCloud or on the share. The rotated image is written into a file of this
+    // device first, under the name it is to have there, because that is what both storages
+    // take -- and because a write that breaks off then leaves nothing behind on them
+    private fun saveRotatedImageToRemote(sourcePath: String, newPath: String, degrees: Int) {
+        withEditableMediaFile(sourcePath) { localSource ->
             toast(org.fossify.commons.R.string.saving)
             ensureBackgroundThread {
-                saveRotatedImageToFile(localPath, localPath, degrees, true) {
-                    writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { success ->
-                        runOnUiThread {
-                            if (success) {
-                                toast(org.fossify.commons.R.string.file_saved)
-                                getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
-                                mPos = -1
-                                mPrevHashcode = 0
-                                refreshViewPager()
-                            } else {
-                                toast(getString(R.string.pcloud_edit_kept_at, localPath), Toast.LENGTH_LONG)
-                            }
-                        }
+                val stagingDir = File(cacheDir, REMOTE_SAVE_DIR).apply {
+                    deleteRecursively()
+                    mkdirs()
+                }
+
+                val staged = File(stagingDir, newPath.getFilenameFromPath())
+                saveRotatedImageToFile(localSource, staged.absolutePath, degrees, true) {
+                    if (newPath.isSmbPath()) {
+                        sendRotatedImageToShare(staged, newPath)
+                    } else {
+                        sendRotatedImageToPCloud(staged, newPath)
                     }
                 }
             }
         }
+    }
+
+    // The share takes a new file only; an existing name never reaches here, ensureWritablePath()
+    // turns it away while the rename that a replace needs is still missing (#28). The folder is
+    // walked again afterwards, which is the only way the cache learns of what was written
+    private fun sendRotatedImageToShare(staged: File, newPath: String) {
+        try {
+            SmbClient.create(this, newPath) { output -> staged.inputStream().use { it.copyTo(output) } }
+            SmbClient.setModified(this, newPath, staged.lastModified())
+        } catch (e: Exception) {
+            Log.w("SmbWrite", "Could not save $newPath onto the share", e)
+            runOnUiThread { showErrorToast(e) }
+            return
+        }
+
+        rescanSmbFolders(listOf(newPath.getParentPath()), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
+            rotationSaved()
+        }
+    }
+
+    // pCloud takes both: a name that is free is an upload, and one the user has agreed to write
+    // over goes through the replace that keeps the medium whole the whole way
+    private fun sendRotatedImageToPCloud(staged: File, newPath: String) {
+        val folder = newPath.getParentPath()
+        val isTaken = pCloudItemsDB.getItem(newPath) != null
+        writeToPCloud(listOf(folder), {
+            if (isTaken) {
+                overwriteFile(newPath, staged.absolutePath)
+            } else {
+                uploadFile(staged.absolutePath, folder)
+            }
+        }) { success ->
+            if (success) {
+                rotationSaved()
+            }
+        }
+    }
+
+    // refreshMenuItems() posts to the main thread itself, so this is safe to call from the
+    // thread a write finished on
+    private fun rotationSaved() {
+        toast(org.fossify.commons.R.string.file_saved)
+        getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
+        refreshMenuItems()
     }
 
     private fun createShortcut() {
@@ -1665,7 +1725,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private fun renamePCloudMedium() {
         val medium = getCurrentMedium() ?: return
         val oldPath = medium.path
-        PCloudNameDialog(this, medium.name, org.fossify.commons.R.string.rename) { newName ->
+        RemoteNameDialog(this, medium.name, org.fossify.commons.R.string.rename) { newName ->
             writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) { success ->
                 if (success) {
                     runOnUiThread {

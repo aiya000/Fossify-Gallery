@@ -764,6 +764,18 @@ fun Context.storageLabel(storageFilter: Int) = getString(
     }
 )
 
+// A path as the user should read it, whichever storage it is on.
+//
+// commons' humanizePath() knows this device's storages and nothing else. Handed a pseudo path
+// it does not recognise, it prefixes the internal storage's label and leaves the rest alone,
+// which reads as "Internalsmb:/00-Pictures/…" -- a path that looks like a folder on this device
+// and is not one. A remote path is shown as its storage's name followed by the folders under it
+fun Context.humanizeAnyPath(path: String): String = when {
+    path.isPCloudPath() -> getString(R.string.pcloud) + path.removePrefix(PCLOUD_PATH_SCHEME)
+    path.isSmbPath() -> getString(R.string.smb) + path.removePrefix(SMB_PATH_SCHEME)
+    else -> humanizePath(path)
+}
+
 // Which folders the storage filter lets through. Favorites and virtual groups belong to no
 // storage and always pass; the device's recycle bin has a device path, so it goes with the
 // device's folders, and the pCloud bin has a pCloud path and goes with pCloud's

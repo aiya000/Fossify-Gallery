@@ -2,13 +2,11 @@ package org.fossify.gallery.dialogs
 
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.activities.BaseSimpleActivity
-import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getPicturesDirectoryPath
 import org.fossify.commons.extensions.hideKeyboard
-import org.fossify.commons.extensions.humanizePath
 import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.isInDownloadDir
 import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
@@ -18,26 +16,39 @@ import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.databinding.DialogSaveAsBinding
 import org.fossify.gallery.extensions.ensureWritablePath
+import org.fossify.gallery.extensions.humanizeAnyPath
+import org.fossify.gallery.extensions.isRemotePath
 
+// Asks where to save and under what name.
+//
+// [localStorageOnly] says whether the caller can write anywhere but this device. It defaults to
+// true because most callers cannot: the editor writes its result with the file APIs, and a
+// folder on pCloud or on the share offered to one of those would be a destination it could only
+// fail on. A caller that routes by destination passes false, and then the picker offers every
+// storage that is set up
 class SaveAsDialog(
     val activity: BaseSimpleActivity,
     val path: String,
     val appendFilename: Boolean,
+    val localStorageOnly: Boolean = true,
     val cancelCallback: (() -> Unit)? = null,
     val callback: (savePath: String) -> Unit
 ) {
     private val binding = DialogSaveAsBinding.inflate(activity.layoutInflater)
+
+    // a remote folder is none of SAF's business, and the restricted-folder rules are about
+    // directories of this device; asking them of a pseudo path answers nonsense
     private var realPath = path.getParentPath().run {
-        if (activity.isRestrictedWithSAFSdk30(this) && !activity.isInDownloadDir(this)) {
-            activity.getPicturesDirectoryPath(this)
-        } else {
-            this
+        when {
+            isRemotePath() -> this
+            activity.isRestrictedWithSAFSdk30(this) && !activity.isInDownloadDir(this) -> activity.getPicturesDirectoryPath(this)
+            else -> this
         }
     }
 
     init {
         binding.apply {
-            folderValue.setText("${activity.humanizePath(realPath).trimEnd('/')}/")
+            folderValue.setText("${activity.humanizeAnyPath(realPath).trimEnd('/')}/")
 
             val fullName = path.getFilenameFromPath()
             val dotAt = fullName.lastIndexOf(".")
@@ -56,15 +67,15 @@ class SaveAsDialog(
             filenameValue.setText(name)
             folderValue.setOnClickListener {
                 activity.hideKeyboard(folderValue)
-                FilePickerDialog(
+                FolderPickerDialog(
                     activity = activity,
                     currPath = realPath,
-                    pickFile = false,
                     showHidden = false,
                     showFAB = true,
-                    canAddShowHiddenButton = true
+                    canAddShowHiddenButton = true,
+                    localStorageOnly = localStorageOnly
                 ) {
-                    folderValue.setText(activity.humanizePath(it))
+                    folderValue.setText(activity.humanizeAnyPath(it))
                     realPath = it
                 }
             }
