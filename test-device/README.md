@@ -85,9 +85,16 @@ at afterwards.
   thing either way. It walks the whole share first, so on its own it is about five minutes
 - **`50-copy-off-share.sh`** — #28: a medium of the share copied onto the device, and the file
   actually arriving, whole and with the share's modification time. It also checks what must *not*
-  be there: "Move to" is kept out of the selection's menu, because a move would have to delete
-  from the share. Copying the same file twice pins the numbering that `AvailableNameTest` covers
-  in the small, through the whole path
+  be there: "Move to" is kept out of the selection's menu, moving between a share and anywhere
+  else not being built. Copying the same file twice pins the numbering that `AvailableNameTest`
+  covers in the small, through the whole path
+- **`55-delete-on-the-share.sh`** — #28, the first thing the app takes *away* from the share: a
+  medium of it deleted, and then a whole folder of it. Both are read off `fixture/share`, because
+  the app's own cache cannot be a witness to a delete. What it checks besides the two files going
+  is the file next to them staying — a delete that reached too far would pass every check that
+  only looks at what was asked for — and the confirmation saying that there is no undo, with no
+  "skip the recycle bin" option on it, there being no bin on a share to skip. It brings its own
+  file and its own folder, because nothing the counts in `manifest.env` are about may be deleted
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
@@ -141,9 +148,10 @@ instead of on the answer.
   scripts step around it by seeding the token the screen would have stored
 - **Rule 3 of #59** — a transfer cutting into a running scan. It is pCloud's rule, and now that
   there is a stub there is nothing else in the way of writing it
-- **The rest of writing to the share** (#28) — moving onto it or off it, deleting, renaming. None
-  of it is built, so what the scripts pin is the refusal: `50` that "Move to" is not offered for a
-  medium of the share, `70` that a folder of the share is turned away as a move destination
+- **The rest of writing to the share** (#28) — moving onto it or off it, and renaming. Neither is
+  built, so what the scripts pin is the refusal: `50` that "Move to" is not offered for a medium
+  of the share, `70` that a folder of the share is turned away as a move destination. Deleting is
+  built and is `55`'s
 - **Playback itself.** The scripts check that the videos arrive and in what order; watching them
   play through is still done by eye
 - **The refresh spinner itself** (#87). What the spinner is raised *from* is driven by `90`; the

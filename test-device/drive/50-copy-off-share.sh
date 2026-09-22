@@ -7,10 +7,10 @@
 # outlives the screen that asked for it. A unit test can say what `availableName()` answers; only
 # the device can say whether a file arrives.
 #
-# The other half of the rule is what must NOT be offered. Copying off the share reads it; moving
-# would have to delete from it, and nothing deletes on the share yet. So the absence of "Move to" is
-# checked in the same breath as the presence of "Copy to" -- a menu that quietly grows the wrong
-# item back is exactly the kind of regression nobody notices until a file is gone.
+# The other half of the rule is what must NOT be offered. Copying off the share is built and
+# moving off it is not, so the absence of "Move to" is checked in the same breath as the presence
+# of "Copy to" -- a menu that quietly grows the wrong item back is exactly the kind of regression
+# nobody notices until a file is gone. Deleting is built now and belongs to 55-delete-on-the-share.sh.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -116,11 +116,12 @@ else
     finish
 fi
 
-# a move would have to delete the original off the share, and nothing deletes on it yet
+# moving between the share and anywhere else is not built; a move offered here would copy and
+# then have nothing to finish with
 if python3 "$DRIVE_DIR/ui.py" "$menu" --text "Move to" --exact > /dev/null; then
-    fail "'Move to' is offered, and it would have to delete from the share"
+    fail "'Move to' is offered, and moving off the share is not built"
 else
-    pass "'Move to' is kept away, nothing deletes on the share yet"
+    pass "'Move to' is kept away, moving off the share is not built yet"
 fi
 
 step "copying it to the device"
