@@ -35,6 +35,8 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import com.bumptech.glide.signature.ObjectKey
+import com.hierynomus.mserref.NtStatus
+import com.hierynomus.mssmb2.SMBApiException
 import com.squareup.picasso.Picasso
 import org.fossify.commons.extensions.doesThisOrParentHaveNoMedia
 import org.fossify.commons.extensions.getDocumentFile
@@ -936,7 +938,21 @@ fun Context.writeToShare(write: SmbWriter.() -> Unit, onDone: (success: Boolean)
         val success = try {
             SmbWriter(this).write()
             true
+        } catch (e: SMBApiException) {
+            // a toast is gone the moment it is read, and a write that failed is exactly what
+            // someone comes back to look into later, the same as on the pCloud side
+            Log.w("SmbWrite", "A write to the share failed", e)
+            // A name the share already has is the one refusal worth a sentence of its own: it is
+            // what a rename runs into, the user chose that name a second ago, and the protocol's
+            // own words for it are "STATUS_OBJECT_NAME_COLLISION", which says nothing to anybody
+            if (e.status == NtStatus.STATUS_OBJECT_NAME_COLLISION) {
+                toast(R.string.smb_already_exists)
+            } else {
+                showErrorToast(e)
+            }
+            false
         } catch (e: Exception) {
+            Log.w("SmbWrite", "A write to the share failed", e)
             // SmbWriter has already logged which path it was; this is what the user is told
             showErrorToast(e)
             false
@@ -1388,12 +1404,20 @@ fun Context.removeInvalidDBDirectories(dirs: ArrayList<Directory>? = null) {
     }
 }
 
+// Named rather than positional, and that is the whole of a bug that had been in here since the
+// package rename in 2023: the two DAO methods take the same four values in a different order, and
+// the call passed both of them the favorites one. The media row was therefore looked up by its
+// new filename, matched nothing, and stayed where it was.
+//
+// Nothing noticed, because everything that renamed something also had its rows rebuilt afterwards
+// -- a MediaStore scan for a file of the device, the rescan a pCloud write asks for. The share is
+// the first storage that rebuilds nothing on purpose: what this writes is what the grid shows
 fun Context.updateDBMediaPath(oldPath: String, newPath: String) {
     val newFilename = newPath.getFilenameFromPath()
     val newParentPath = newPath.getParentPath()
     try {
-        mediaDB.updateMedium(newFilename, newPath, newParentPath, oldPath)
-        favoritesDB.updateFavorite(newFilename, newPath, newParentPath, oldPath)
+        mediaDB.updateMedium(oldPath = oldPath, newParentPath = newParentPath, newFilename = newFilename, newFullPath = newPath)
+        favoritesDB.updateFavorite(newFilename = newFilename, newFullPath = newPath, newParentPath = newParentPath, oldPath = oldPath)
     } catch (ignored: Exception) {
     }
 }

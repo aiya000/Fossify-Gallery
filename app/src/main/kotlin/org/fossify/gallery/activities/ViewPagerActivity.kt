@@ -1716,6 +1716,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             return
         }
 
+        if (getCurrentPath().isSmbPath()) {
+            renameSmbMedium()
+            return
+        }
+
+        // the prompt asks for the right to change files on this device, which is nothing a
+        // remote storage needs
         handleMediaManagementPrompt {
             renameFile()
         }
@@ -1728,6 +1735,27 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val oldPath = medium.path
         RemoteNameDialog(this, medium.name, org.fossify.commons.R.string.rename) { newName ->
             writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) { success ->
+                if (success) {
+                    runOnUiThread {
+                        getCurrentMedia().firstOrNull { it.path == oldPath }?.apply {
+                            path = "${oldPath.getParentPath()}/$newName"
+                            name = newName
+                        }
+                        updateActionbarTitle()
+                    }
+                }
+            }
+        }
+    }
+
+    // the same for the share. What is on screen is fetched into a cached copy, which the writer
+    // carries over to the new name, so the picture the viewer is holding does not have to be
+    // fetched again
+    private fun renameSmbMedium() {
+        val medium = getCurrentMedium() ?: return
+        val oldPath = medium.path
+        RemoteNameDialog(this, medium.name, org.fossify.commons.R.string.rename) { newName ->
+            writeToShare({ renameFile(oldPath, newName) }) { success ->
                 if (success) {
                     runOnUiThread {
                         getCurrentMedia().firstOrNull { it.path == oldPath }?.apply {

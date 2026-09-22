@@ -239,10 +239,10 @@ class MediaAdapter(
         // a remote medium has no file behind it, so nothing that reads one on the device is
         // offered while any is selected. Deleting, copying, moving, and renaming one at a
         // time, go through the pCloud API when the whole selection is pCloud; a selection
-        // mixing storages gets none of them. The share is written into, copied off and deleted
-        // from; renaming and moving are what it still cannot do (#28), so a selection of its
-        // media is offered copying away from it, deleting, favorites and the video download,
-        // and nothing else
+        // mixing storages gets none of them. The share is written into, copied off, deleted
+        // from and renamed one at a time; moving is what it still cannot do (#28), so a
+        // selection of its media is offered copying away from it, deleting, renaming,
+        // favorites and the video download, and nothing else
         val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         val isSmbOnly = selectedPaths.all { it.isSmbPath() }
@@ -251,7 +251,7 @@ class MediaAdapter(
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
-            findItem(R.id.cab_rename).isVisible = (isLocal || (isPCloudOnly && isOneItemSelected)) && !isInRecycleBin
+            findItem(R.id.cab_rename).isVisible = (isLocal || ((isPCloudOnly || isSmbOnly) && isOneItemSelected)) && !isInRecycleBin
             findItem(R.id.cab_add_to_favorites).isVisible = !isInRecycleBin
             findItem(R.id.cab_fix_date_taken).isVisible = isLocal && !isInRecycleBin
             findItem(R.id.cab_move_to).isVisible = (isLocal || isPCloudOnly) && !isInRecycleBin
@@ -482,11 +482,19 @@ class MediaAdapter(
     }
 
     private fun checkMediaManagementAndRename() {
-        if (getFirstSelectedItemPath()?.isPCloudPath() == true) {
+        val firstPath = getFirstSelectedItemPath()
+        if (firstPath?.isPCloudPath() == true) {
             renamePCloudMedium()
             return
         }
 
+        if (firstPath?.isSmbPath() == true) {
+            renameSmbMedium()
+            return
+        }
+
+        // the prompt asks for the right to change files on this device, which is nothing a
+        // remote storage needs
         activity.handleMediaManagementPrompt {
             renameFile()
         }
@@ -497,6 +505,20 @@ class MediaAdapter(
         val oldPath = getFirstSelectedItemPath() ?: return
         RemoteNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
             activity.writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) {
+                activity.runOnUiThread {
+                    listener?.refreshItems()
+                    finishActMode()
+                }
+            }
+        }
+    }
+
+    // the same, for the share. The writer carries the row and the cached copies over itself, so
+    // the list only has to be read again
+    private fun renameSmbMedium() {
+        val oldPath = getFirstSelectedItemPath() ?: return
+        RemoteNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
+            activity.writeToShare({ renameFile(oldPath, newName) }) {
                 activity.runOnUiThread {
                     listener?.refreshItems()
                     finishActMode()

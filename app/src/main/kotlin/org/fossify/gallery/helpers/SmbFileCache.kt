@@ -71,6 +71,20 @@ class SmbFileCache(private val context: Context) {
     // the copy that is already there, or null without touching the network
     fun peek(path: String): File? = targetOf(path)?.takeIf { it.isFile && it.length() > 0 }
 
+    // Carries the copy of a renamed medium over to its new name.
+    //
+    // The copy is named after the path, so a rename on the share would otherwise leave it behind
+    // under a name nothing asks for any more, and the same bytes would be fetched again. The size
+    // and the modification time are the caller's because the rows have usually moved by the time
+    // this runs. Nothing is lost when there is no copy, or when the rename of it fails: the next
+    // fetch downloads it
+    fun renameCopy(oldPath: String, newPath: String, size: Long, modified: Long) {
+        val from = File(dir, nameOf(oldPath, size, modified))
+        if (from.isFile) {
+            from.renameTo(File(dir, nameOf(newPath, size, modified)))
+        }
+    }
+
     // null for a path no scan has seen: without the size and the modification time there is no
     // name to look for
     private fun targetOf(path: String): File? {
