@@ -210,6 +210,7 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcloudRescanOnLaunchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnStorageSwitchHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnFolderOpenHolder.beVisibleIf(isLoggedIn)
+        binding.settingsPcloudRescanOnPullToRefreshHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanOnGroupOpenHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanAfterWriteHolder.beVisibleIf(isLoggedIn)
         binding.settingsPcloudRescanIntervalHolder.beVisibleIf(isLoggedIn)
@@ -236,6 +237,12 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcloudRescanOnFolderOpenHolder.setOnClickListener {
             binding.settingsPcloudRescanOnFolderOpen.toggle()
             config.pCloudRescanOnFolderOpen = binding.settingsPcloudRescanOnFolderOpen.isChecked
+        }
+
+        binding.settingsPcloudRescanOnPullToRefresh.isChecked = config.pCloudRescanOnPullToRefresh
+        binding.settingsPcloudRescanOnPullToRefreshHolder.setOnClickListener {
+            binding.settingsPcloudRescanOnPullToRefresh.toggle()
+            config.pCloudRescanOnPullToRefresh = binding.settingsPcloudRescanOnPullToRefresh.isChecked
         }
 
         binding.settingsPcloudRescanOnGroupOpen.isChecked = config.pCloudRescanOnGroupOpen
