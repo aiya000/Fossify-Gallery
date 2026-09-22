@@ -85,7 +85,7 @@
     <string name="pcloud_fetch_failed">pCloud からファイルを取得できませんでした</string>
     <string name="pcloud_fetching">pCloud から取得しています…</string>
     <string name="pcloud_writing_back">pCloud に書き戻しています…</string>
-    <string name="pcloud_edit_kept_at">編集した画像はこの端末の %s に残してあります</string>
+    <string name="remote_edit_kept_at">編集した画像はこの端末の %s に残してあります</string>
     <string name="pcloud_edit_not_written">エディタが別の場所に保存したため、pCloud には書き戻していません</string>
     <string name="pcloud_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="pcloud_rescan_interval_always">毎回（間隔を空けない）</string>
@@ -155,6 +155,8 @@
     <string name="smb_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="smb_fetch_failed">ネットワーク共有からファイルを取得できませんでした</string>
     <string name="smb_fetching">ネットワーク共有から取得しています…</string>
+    <string name="smb_writing_back">ネットワーク共有に書き戻しています…</string>
+    <string name="smb_edit_not_written">エディタが別の場所に保存したため、ネットワーク共有には書き戻していません</string>
     <string name="smb_read_durations">このフォルダ内の動画の長さを取得する</string>
     <string name="smb_read_durations_group">このグループ内の動画の長さを取得する</string>
     <string name="smb_read_durations_confirmation">このフォルダには、長さが分かっていない動画が %1$d 本あります。\n長さを取得するには、1 本ずつ共有から読む必要があります。続けますか？</string>

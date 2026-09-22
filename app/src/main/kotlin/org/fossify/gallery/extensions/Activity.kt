@@ -42,6 +42,7 @@ import org.fossify.commons.models.FAQItem
 import org.fossify.commons.models.FileDirItem
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
+import org.fossify.gallery.activities.EditActivity
 import org.fossify.gallery.activities.MediaActivity
 import org.fossify.gallery.activities.SettingsActivity
 import org.fossify.gallery.activities.SimpleActivity
@@ -285,6 +286,28 @@ fun Activity.launchGesturePlayer(path: String, extras: HashMap<String, Boolean> 
 fun Activity.openEditor(path: String, forceChooser: Boolean = false) {
     val newPath = path.removePrefix("file://")
     openEditorIntent(newPath, forceChooser, BuildConfig.APPLICATION_ID)
+}
+
+// The editor for a copy of a medium that lives on pCloud or on the share: this app's own, named
+// outright rather than asked for with an ACTION_EDIT intent.
+//
+// The ordinary road cannot carry this one. openEditorIntent() adds FLAG_ACTIVITY_NEW_TASK, and
+// the moment the system's "Edit with" list stands between the two activities -- which it does as
+// soon as the device has a second editor on it, and most do -- the request is answered with
+// RESULT_CANCELED straight away, before anything has been edited. The screen waiting to put the
+// edit back onto the storage it came from then reads that as "the editor was closed without
+// saving" and lets the copy go, and the edit the user makes a moment later reaches nothing.
+//
+// Offering the job to another app's editor would be wrong here anyway: what it would be handed is
+// a path inside this app's cache, which is not a file anything outside this app can write to
+fun Activity.openRemoteEditor(localPath: String) {
+    val intent = Intent(this, EditActivity::class.java).apply {
+        action = Intent.ACTION_EDIT
+        setDataAndType(Uri.fromFile(File(localPath)), localPath.getMimeType())
+        putExtra(REAL_FILE_PATH, localPath)
+    }
+
+    startActivityForResult(intent, REQUEST_EDIT_IMAGE)
 }
 
 fun Activity.launchCamera() {

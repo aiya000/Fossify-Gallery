@@ -20,11 +20,15 @@ import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fetchPCloudMediumForEditing
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.openEditor
+import org.fossify.gallery.extensions.openRemoteEditor
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.extensions.withEditableMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
+import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.helpers.UPSTREAM_APP_ID
 import org.fossify.gallery.helpers.getPermissionsToRequest
 import java.io.File
@@ -112,69 +116,84 @@ open class SimpleActivity : BaseSimpleActivity() {
         }
     }
 
-    // An edit of a pCloud medium in flight. The editor is handed a copy of its own, and what
-    // comes back has to be written over the original on pCloud. It lives here rather than in
-    // one screen because the editor's result lands on whichever activity opened it -- the
-    // fullscreen view and the grid both do
-    protected data class PCloudEdit(val pCloudPath: String, val localPath: String, val size: Long, val lastModified: Long)
+    // An edit of a medium that lives elsewhere -- on pCloud or on the network share -- in
+    // flight. The editor is handed a copy of its own, and what comes back has to be written
+    // over the original where it lives. It lives here rather than in one screen because the
+    // editor's result lands on whichever activity opened it -- the fullscreen view and the
+    // grid both do
+    protected data class RemoteEdit(val remotePath: String, val localPath: String, val size: Long, val lastModified: Long)
 
-    protected var pCloudEdit: PCloudEdit? = null
+    protected var remoteEdit: RemoteEdit? = null
 
     // Opens the editor on a medium wherever it lives: a local one is edited in place as it
-    // always was, a pCloud one through a copy of its own
+    // always was, one on pCloud or on the share through a copy of its own.
+    //
+    // The copy matters more than it looks: the editor is handed a path and writes to it with
+    // File(), so a remote medium's pseudo path -- "smb:/00-Pictures/a.png" -- would open the
+    // editor on nothing at all and then throw when it saved
     fun editMedium(path: String) {
-        if (!path.isPCloudPath()) {
+        if (!path.isRemotePath()) {
             openEditor(path)
             return
         }
 
         withEditableMediaFile(path) { localPath ->
             val copy = File(localPath)
-            pCloudEdit = PCloudEdit(path, localPath, copy.length(), copy.lastModified())
-            openEditor(localPath)
+            remoteEdit = RemoteEdit(path, localPath, copy.length(), copy.lastModified())
+            openRemoteEditor(localPath)
         }
     }
 
-    // Belongs at the top of onActivityResult() for REQUEST_EDIT_IMAGE. Answers whether an
-    // edit of a pCloud medium was the one that came back, so that a caller can leave its own
-    // handling of a local edit alone. [onWritten] runs once pCloud has taken the edit
-    protected fun handlePCloudEditResult(resultCode: Int, onWritten: () -> Unit): Boolean {
-        val edit = pCloudEdit ?: return false
-        pCloudEdit = null
+    // Belongs at the top of onActivityResult() for REQUEST_EDIT_IMAGE. Answers whether an edit
+    // of a remote medium was the one that came back, so that a caller can leave its own
+    // handling of a local edit alone. [onWritten] runs once the storage has taken the edit
+    protected fun handleRemoteEditResult(resultCode: Int, onWritten: () -> Unit): Boolean {
+        val edit = remoteEdit ?: return false
+        remoteEdit = null
         // what counts is whether the copy the editor was handed came back changed; the result
         // code only says whether it thinks it saved anything at all
-        writeEditBackToPCloud(edit, resultCode == RESULT_OK, onWritten)
+        writeEditBackToRemote(edit, resultCode == RESULT_OK, onWritten)
         return true
     }
 
     // The copy is left where it is whatever happens: it is the only place the edit exists
-    // until pCloud has taken it, and when pCloud will not take it the user is told where it
-    // is rather than losing the work
-    private fun writeEditBackToPCloud(edit: PCloudEdit, editorSaidItSaved: Boolean, onWritten: () -> Unit) {
+    // until the storage has taken it, and when the storage will not take it the user is told
+    // where it is rather than losing the work.
+    //
+    // The share is written over through the stash and replace of SmbWriter.overwriteFile(),
+    // so what is on the share afterwards is either the old medium or the edited one
+    private fun writeEditBackToRemote(edit: RemoteEdit, editorSaidItSaved: Boolean, onWritten: () -> Unit) {
+        val onShare = edit.remotePath.isSmbPath()
         val copy = File(edit.localPath)
         if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
             // the editor was left without saving. When it says it saved and the copy is
             // untouched all the same, it wrote somewhere else, and going quiet here is what
             // makes that look like the write back did nothing at all
             if (editorSaidItSaved) {
-                Log.w("PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
-                toast(R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
+                Log.w(if (onShare) "SmbWrite" else "PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
+                toast(if (onShare) R.string.smb_edit_not_written else R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
             }
 
             return
         }
 
-        toast(R.string.pcloud_writing_back)
-        writeToPCloud(listOf(edit.pCloudPath.getParentPath()), { overwriteFile(edit.pCloudPath, edit.localPath) }) { success ->
+        toast(if (onShare) R.string.smb_writing_back else R.string.pcloud_writing_back)
+        val onWriteDone: (success: Boolean) -> Unit = { success ->
             runOnUiThread {
                 if (success) {
                     toast(org.fossify.commons.R.string.file_saved)
                     onWritten()
                 } else {
-                    // writeToPCloud already said what went wrong; this says what is left
-                    toast(getString(R.string.pcloud_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
+                    // the storage already said what went wrong; this says what is left
+                    toast(getString(R.string.remote_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
                 }
             }
+        }
+
+        if (onShare) {
+            writeToShare({ overwriteFile(edit.remotePath, edit.localPath) }, onWriteDone)
+        } else {
+            writeToPCloud(listOf(edit.remotePath.getParentPath()), { overwriteFile(edit.remotePath, edit.localPath) }, onWriteDone)
         }
     }
 
@@ -215,7 +234,7 @@ open class SimpleActivity : BaseSimpleActivity() {
         saveRotatedImageToFile(localPath, localPath, degrees, true) {
             writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { success ->
                 if (!success) {
-                    toast(getString(R.string.pcloud_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                    toast(getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
                 }
 
                 latch.countDown()

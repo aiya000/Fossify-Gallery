@@ -10,7 +10,7 @@ import sys
 import xml.etree.ElementTree as ElementTree
 
 
-def centre_of(node):
+def box_of(node):
     bounds = node.get("bounds", "")
     # "[left,top][right,bottom]"
     try:
@@ -20,6 +20,15 @@ def centre_of(node):
     except ValueError:
         return None
 
+    return left, top, right, bottom
+
+
+def centre_of(node):
+    box = box_of(node)
+    if box is None:
+        return None
+
+    left, top, right, bottom = box
     return (left + right) // 2, (top + bottom) // 2
 
 
@@ -46,6 +55,14 @@ def main():
             "take the last match rather than the first. The selection mode's toolbar is drawn over "
             "the ordinary one and both are in the tree, so the three dots that belong to the "
             "selection are the second of the two"
+        ),
+    )
+    parser.add_argument(
+        "--bounds",
+        action="store_true",
+        help=(
+            "print '<left> <top> <right> <bottom>' instead of a point, which is what a check on "
+            "the pixels of one view wants -- thumbs.py --region takes exactly these four numbers"
         ),
     )
     parser.add_argument(
@@ -86,19 +103,20 @@ def main():
     if args.text is None and args.resource_id is None:
         parser.error("one of --text, --resource-id, --list or --checked is needed")
 
+    read = box_of if args.bounds else centre_of
     found = None
     for node in tree.iter("node"):
         if matches(node, args.text, args.resource_id, args.exact):
-            point = centre_of(node)
-            if point is not None:
-                found = point
+            value = read(node)
+            if value is not None:
+                found = value
                 if not args.last:
                     break
 
     if found is None:
         return 1
 
-    print(f"{found[0]} {found[1]}")
+    print(" ".join(str(number) for number in found))
     return 0
 
 

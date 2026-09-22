@@ -259,11 +259,11 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
         startAsyncTask(true)
     }
 
-    // an edit of a pCloud medium comes back as a copy that still has to be written back, and
-    // the results are refreshed once pCloud has taken it
+    // an edit of a medium on pCloud or on the share comes back as a copy that still has to be
+    // written back, and the results are refreshed once the storage has taken it
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            handlePCloudEditResult(resultCode) { refreshItems() }
+            handleRemoteEditResult(resultCode) { refreshItems() }
         }
 
         super.onActivityResult(requestCode, resultCode, resultData)

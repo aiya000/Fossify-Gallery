@@ -72,6 +72,7 @@ import org.fossify.gallery.extensions.showContentDescriptionOnLongClick
 import org.fossify.gallery.extensions.writeBitmapToCache
 import org.fossify.gallery.extensions.writeExif
 import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
+import org.fossify.gallery.helpers.SMB_EDIT_DIR
 import org.fossify.gallery.helpers.ASPECT_RATIO_FOUR_THREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_FREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_ONE_ONE
@@ -231,11 +232,13 @@ class EditActivity : BaseCropActivity() {
             binding.editorToolbar.menu.findItem(R.id.overwrite_original).isVisible = false
         }
 
-        // A pCloud medium is edited through a copy in this app's cache, and saving that copy
-        // under another name would leave the edit in the cache, where nothing can reach it.
-        // The save that means something for one is the one that goes back to pCloud, which
-        // the viewer does with the copy once this activity has written it
-        if (uri?.path?.contains("/$PCLOUD_EDIT_DIR/") == true) {
+        // A medium of pCloud or of the network share is edited through a copy in this app's
+        // cache, and saving that copy under another name would leave the edit in the cache,
+        // where nothing can reach it. The save that means something for one is the one that
+        // goes back to the storage it came from, which the viewer does with the copy once this
+        // activity has written it
+        val editPath = uri?.path
+        if (editPath?.contains("/$PCLOUD_EDIT_DIR/") == true || editPath?.contains("/$SMB_EDIT_DIR/") == true) {
             binding.editorToolbar.menu.findItem(R.id.save_as).isVisible = false
         }
 

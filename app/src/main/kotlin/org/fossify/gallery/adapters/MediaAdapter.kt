@@ -145,11 +145,11 @@ class MediaAdapter(
     private val isListViewType = viewType == VIEW_TYPE_LIST
     private var rotatedImagePaths = ArrayList<String>()
 
-    // The editor and the rotation write a pCloud medium back through the hosting activity,
+    // The editor and the rotation write a remote medium back through the hosting activity,
     // which holds the edit while the editor has it. A picker dialog's grid is hosted by
     // something else, and there the two stay local as they were
     private val galleryActivity = activity as? SimpleActivity
-    private val canWriteBackToPCloud = galleryActivity != null
+    private val canWriteBackToRemote = galleryActivity != null
     private var currentMediaHash = media.hashCode()
     private val hasOTGConnected = activity.hasOTGConnected()
 
@@ -241,8 +241,9 @@ class MediaAdapter(
         // time, go through the pCloud API when the whole selection is pCloud; a selection
         // mixing storages gets none of them. The share is written into, copied off, moved,
         // deleted from and renamed one at a time, so a selection of its media is offered
-        // copying and moving away from it, deleting, renaming, favorites and the video
-        // download -- and nothing that wants a file of the device behind it
+        // copying and moving away from it, deleting, renaming, editing one at a time,
+        // favorites and the video download -- and nothing that wants a file of the device
+        // behind it
         val isLocal = selectedPaths.none { it.isRemotePath() }
         val isPCloudOnly = selectedPaths.all { it.isPCloudPath() }
         val isSmbOnly = selectedPaths.all { it.isSmbPath() }
@@ -258,9 +259,10 @@ class MediaAdapter(
             // a pCloud medium is fetched into a file before it is handed to another app,
             // the same as the fullscreen view does it
             findItem(R.id.cab_open_with).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
-            // a pCloud medium is edited through a copy of its own and written back over the
-            // original, the same as the fullscreen view does it
-            findItem(R.id.cab_edit).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && isOneItemSelected && !isInRecycleBin
+            // a medium on pCloud or on the share is edited through a copy of its own and
+            // written back over the original, the same as the fullscreen view does it
+            findItem(R.id.cab_edit).isVisible =
+                (isLocal || ((isPCloudOnly || isSmbOnly) && canWriteBackToRemote)) && isOneItemSelected && !isInRecycleBin
             findItem(R.id.cab_set_as).isVisible = (isLocal || isPCloudOnly) && isOneItemSelected && !isInRecycleBin
             // only a video on the share is read as it plays, so only those can be had in hand
             // first. Offered whenever the selection holds one, whatever else is in it: the run
@@ -280,7 +282,7 @@ class MediaAdapter(
             // a pCloud medium is shared as a file too, fetched first; one in the bin is not
             findItem(R.id.cab_share).isVisible = isLocal || (isPCloudOnly && !isInRecycleBin)
             // rotating a pCloud image writes it back over itself, one at a time
-            findItem(R.id.cab_rotate).isVisible = (isLocal || (isPCloudOnly && canWriteBackToPCloud)) && !isInRecycleBin
+            findItem(R.id.cab_rotate).isVisible = (isLocal || (isPCloudOnly && canWriteBackToRemote)) && !isInRecycleBin
             // a medium of a remote storage gets a properties dialog of its own, built from what
             // the gallery knows rather than from a file on the device (#60)
             findItem(R.id.cab_properties).isVisible = isLocal || isPCloudOnly || isSmbOnly

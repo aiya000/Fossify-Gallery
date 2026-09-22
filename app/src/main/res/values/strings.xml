@@ -86,7 +86,7 @@
     <string name="pcloud_fetch_failed">Could not fetch the file from pCloud</string>
     <string name="pcloud_fetching">Fetching from pCloud…</string>
     <string name="pcloud_writing_back">Writing back to pCloud…</string>
-    <string name="pcloud_edit_kept_at">The edited image is kept on this device at %s</string>
+    <string name="remote_edit_kept_at">The edited image is kept on this device at %s</string>
     <string name="pcloud_edit_not_written">The editor saved elsewhere, so nothing was written back to pCloud</string>
     <string name="pcloud_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="pcloud_rescan_interval_always">Every time (no minimum interval)</string>
@@ -153,6 +153,8 @@
     <string name="smb_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="smb_fetch_failed">Could not fetch the file from the network share</string>
     <string name="smb_fetching">Fetching from the network share…</string>
+    <string name="smb_writing_back">Writing back to the network share…</string>
+    <string name="smb_edit_not_written">The editor saved elsewhere, so nothing was written back to the network share</string>
     <string name="smb_read_durations">Read the length of the videos in this folder</string>
     <string name="smb_read_durations_group">Read the length of the videos in this group</string>
     <string name="smb_read_durations_confirmation">%1$d videos in this folder have no length yet.\nReading it means opening each one on the share. Continue?</string>
