@@ -96,7 +96,7 @@ import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
-import org.fossify.gallery.dialogs.PCloudNameDialog
+import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.createDirectoryFromMedia
@@ -1463,7 +1463,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // folder; a pCloud folder can be created from inside any pCloud folder
     private fun createNewFolder() {
         if (config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD) {
-            PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
+            RemoteNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
                 // the new folder is empty and has no Directory row, so it is shown the way a
                 // new local folder is: as the temporary tile at the top, until something is
                 // moved into it or the app is left

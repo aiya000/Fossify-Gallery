@@ -70,7 +70,7 @@ import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.PCloudPropertiesDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
-import org.fossify.gallery.dialogs.PCloudNameDialog
+import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
@@ -492,7 +492,7 @@ class MediaAdapter(
     // one item only, the action mode offers it for no more than that
     private fun renamePCloudMedium() {
         val oldPath = getFirstSelectedItemPath() ?: return
-        PCloudNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
+        RemoteNameDialog(activity, oldPath.getFilenameFromPath(), org.fossify.commons.R.string.rename) { newName ->
             activity.writeToPCloud(listOf(oldPath.getParentPath()), { renameFile(oldPath, newName) }) {
                 activity.runOnUiThread {
                     listener?.refreshItems()

@@ -94,7 +94,7 @@
     <string name="pcloud_interval_hours">%d hours</string>
     <string name="pcloud_interval_day">1 day</string>
     <string name="pcloud_rescan_after_write">Rescan a pCloud folder after deleting, renaming or creating in it</string>
-    <string name="pcloud_name">Name</string>
+    <string name="remote_name">Name</string>
     <string name="pcloud_delete_confirmation">Delete %1$s from pCloud? It goes to the trash on pcloud.com, which this app cannot read.</string>
     <string name="pcloud_delete_folder_confirmation">Delete %1$s from pCloud, with everything inside? It goes to the trash on pcloud.com, which this app cannot read.</string>
     <string name="pcloud_recycle_bin">pCloud recycle bin</string>
@@ -185,6 +185,7 @@
     <string name="smb_video_cache_summary">Videos downloaded for watching are dropped a day after they were last watched</string>
     <string name="smb_video_cache_cleared">Deleted the downloaded videos.</string>
     <string name="smb_no_move_yet">Moving to or from the network share is not supported yet. A copy can be made instead.</string>
+    <string name="smb_no_overwrite_yet">%1$s cannot be written over on the network share yet. Save it under another name, or save it to this device.</string>
     <string name="smb_no_remote_copy_to_share">A copy onto the network share can only come from this device, for now.</string>
     <string name="smb_transfer_channel">Network share copies</string>
     <string name="smb_transfer_started">Copying started, the notification shows its progress</string>

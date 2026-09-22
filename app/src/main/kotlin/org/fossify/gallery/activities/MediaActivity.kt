@@ -66,7 +66,7 @@ import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
-import org.fossify.gallery.dialogs.PCloudNameDialog
+import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
@@ -949,7 +949,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // it is shown the way a new local folder is: as the temporary tile at the top of the
     // folder list, until something is moved into it or the app is left
     private fun createNewPCloudFolder() {
-        PCloudNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
+        RemoteNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
             var newPath = ""
             writeToPCloud(listOf(mPath), { newPath = createFolder(mPath, name) }) { success ->
                 if (success) {

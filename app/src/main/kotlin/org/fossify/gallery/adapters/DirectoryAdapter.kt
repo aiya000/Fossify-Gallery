@@ -75,7 +75,7 @@ import org.fossify.gallery.databinding.DirectoryItemListBinding
 import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.ExcludeFolderDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
-import org.fossify.gallery.dialogs.PCloudNameDialog
+import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
@@ -469,7 +469,7 @@ class DirectoryAdapter(
         val sourcePath = dir.path
         activity.handleLockedFolderOpening(sourcePath) { success ->
             if (success) {
-                PCloudNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
+                RemoteNameDialog(activity, dir.name, org.fossify.commons.R.string.rename) { newName ->
                     val newPath = "${sourcePath.getParentPath()}/$newName"
                     activity.writeToPCloud(listOf(newPath), { renameFolder(sourcePath, newName) }) {
                         activity.runOnUiThread {

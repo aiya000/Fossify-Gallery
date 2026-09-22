@@ -50,25 +50,30 @@ import org.fossify.gallery.adapters.FolderPickerItemsAdapter
 import org.fossify.gallery.databinding.DialogFolderPickerBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudScanner
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.SmbClient
+import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.views.StorageChips
 import java.io.File
 
-// Picks a folder on the device or on pCloud. Commons' FilePickerDialog walks the device only
-// and hides its storage switch in a radio dialog behind the first breadcrumb; this one lays
-// the storages out as a row of chips above the breadcrumbs, pCloud among them while signed
-// in, and lists a pCloud folder straight from pCloud, so that an empty or never scanned
-// folder can be picked and a new one created on the spot. Folders only, the file picking
-// half of the commons dialog is not needed here.
+// Picks a folder on the device, on pCloud or on the network share. Commons' FilePickerDialog
+// walks the device only and hides its storage switch in a radio dialog behind the first
+// breadcrumb; this one lays the storages out as a row of chips above the breadcrumbs -- pCloud
+// while signed in, the share while one is configured -- and lists a remote folder straight
+// from its storage, so that an empty or never scanned folder can be picked and a new one
+// created on the spot. Folders only, the file picking half of the commons dialog is not
+// needed here.
 //
 // A fork of commons 6.1.6 FilePickerDialog rather than a subclass: that class is final and
 // keeps its listing private. The device side is kept as it is there.
 //
-// [localStorageOnly] leaves pCloud out even while signed in, for a caller that can only write
-// to the device. [onCancelled] tells such a caller that nothing was picked, so that a screen
-// standing on the picker alone can close itself
+// [localStorageOnly] leaves both remote storages out even while they are set up, for a caller
+// that can only write to the device. [onCancelled] tells such a caller that nothing was
+// picked, so that a screen standing on the picker alone can close itself
 class FolderPickerDialog(
     private val activity: BaseSimpleActivity,
     private var currPath: String,
@@ -96,6 +101,10 @@ class FolderPickerDialog(
     init {
         if (currPath.isPCloudPath()) {
             if (!config.isPCloudLoggedIn || localStorageOnly) {
+                currPath = activity.internalStoragePath
+            }
+        } else if (currPath.isSmbPath()) {
+            if (!config.isSmbConfigured || localStorageOnly) {
                 currPath = activity.internalStoragePath
             }
         } else {
@@ -191,6 +200,10 @@ class FolderPickerDialog(
             storages.add(Storage(PCLOUD_PATH_SCHEME, activity.getString(R.string.pcloud)))
         }
 
+        if (config.isSmbConfigured && !localStorageOnly) {
+            storages.add(Storage(SMB_PATH_SCHEME, activity.getString(R.string.smb)))
+        }
+
         return storages
     }
 
@@ -198,6 +211,10 @@ class FolderPickerDialog(
     private fun storageRootOf(path: String): String {
         if (path.isPCloudPath()) {
             return PCLOUD_PATH_SCHEME
+        }
+
+        if (path.isSmbPath()) {
+            return SMB_PATH_SCHEME
         }
 
         val basePath = path.getBasePath(activity)
@@ -236,7 +253,7 @@ class FolderPickerDialog(
 
     private fun createNewFolder() {
         if (currPath.isPCloudPath()) {
-            PCloudNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
+            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
                 var newPath = ""
                 activity.writeToPCloud(emptyList(), { newPath = createFolder(currPath, name) }) { success ->
                     if (success) {
@@ -244,6 +261,29 @@ class FolderPickerDialog(
                             callback(newPath)
                             mDialog?.dismiss()
                         }
+                    }
+                }
+            }
+            return
+        }
+
+        // A folder on the share is made and then picked, with no row written for it: a folder
+        // with nothing in it gets no row from a scan either, and the caller is about to put
+        // something in this one. What the share refuses is reported and the picker stays open
+        if (currPath.isSmbPath()) {
+            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
+                val newPath = "${currPath.trimEnd('/')}/$name"
+                ensureBackgroundThread {
+                    try {
+                        SmbClient.createFolder(activity, newPath)
+                    } catch (e: Exception) {
+                        activity.showErrorToast(e)
+                        return@ensureBackgroundThread
+                    }
+
+                    activity.runOnUiThread {
+                        callback(newPath)
+                        mDialog?.dismiss()
                     }
                 }
             }
@@ -310,6 +350,8 @@ class FolderPickerDialog(
         when {
             currPath.isPCloudPath() -> sendSuccess()
 
+            currPath.isSmbPath() -> sendSuccess()
+
             activity.isRestrictedSAFOnlyRoot(currPath) -> {
                 val document = activity.getSomeAndroidSAFDocument(currPath) ?: return
                 sendSuccessForDocumentFile(document)
@@ -368,6 +410,8 @@ class FolderPickerDialog(
         when {
             path.isPCloudPath() -> callback(getPCloudItems(path))
 
+            path.isSmbPath() -> callback(getSmbItems(path))
+
             activity.isRestrictedSAFOnlyRoot(path) -> {
                 activity.handleAndroidSAFDialog(path) {
                     activity.getAndroidSAFFileItems(path, showHidden) {
@@ -389,6 +433,19 @@ class FolderPickerDialog(
     private fun getPCloudItems(path: String): List<FileDirItem> {
         return try {
             PCloudScanner(activity).listFolders(path).map { FileDirItem(it, it.getFilenameFromPath(), true, -1, 0, 0) }
+        } catch (e: Exception) {
+            activity.showErrorToast(e)
+            emptyList()
+        }
+    }
+
+    // the folders of a folder of the share, listed from the share itself rather than from the
+    // rows a scan left: a folder with no media in it never gets a row, and one of those is
+    // exactly what somebody picking a destination may be reaching for. A refusal is reported
+    // and leaves the folder looking empty, the same as the pCloud side
+    private fun getSmbItems(path: String): List<FileDirItem> {
+        return try {
+            SmbScanner(activity).listFolders(path).map { FileDirItem(it, it.getFilenameFromPath(), true, -1, 0, 0) }
         } catch (e: Exception) {
             activity.showErrorToast(e)
             emptyList()
