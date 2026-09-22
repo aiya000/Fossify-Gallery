@@ -65,6 +65,8 @@ git switch -c <ブランチ名> --no-track origin/main
 
 `git switch main` は、auto mode の判定に `[Merge Without Review]` で止められることがあります。
 `gh pr merge` の直後に2回踏みました。ただのブランチ切り替えなので誤判定ですが、回避はできません。
+同じ直後の素の `git fetch origin` も、同じ理由で1回止められました。`git fetch origin main` と
+ブランチを名指しすると通ります。
 
 **ローカルの `main` は古いままでかまいません。** 誰もそこからビルドしないからです。
 ビルドも Pull Request のベースも、見ているのは `origin/main` のほうです。
