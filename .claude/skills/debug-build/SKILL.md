@@ -37,8 +37,10 @@ Build the `foss` flavor debug APK.
 ## Notes
 
 - The debug build uses the application id `io.github.aiya000.fossify.gallery.debug`, so it coexists with a release build or the official app
-- **Installing the debug build needs no permission.** It is a separate app from the release one and cannot touch its
-  data, so go straight on to the `debug-install` skill whenever the change is one the user will want to try on the
-  device. Asking first only makes them wait. The release build is the opposite -- see `release-install`
+- **Putting the debug build on the user's phone needs asking**, since 2026-09-22: it is their emergency spare for
+  when the release build is broken, so it is not replaced from under them. What they try day to day is the release
+  build, and that one installs freely -- so a change ready to be tried goes through `release-build` and
+  `release-install`, not through here. See `debug-install`
+    - onto the **emulator** it goes freely; that is what `test-device/` drives all day
 - If the user's machine was restarted or the session was resumed, a background build may have been killed silently:
   check the log and the APK timestamp before trusting an earlier build

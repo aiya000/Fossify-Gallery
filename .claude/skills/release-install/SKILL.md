@@ -1,6 +1,6 @@
 ---
 name: release-install
-description: Install the signed foss release APK of this Gallery app on the connected device with adb. Use when the user asks to install or deploy the production / release build; build it first with the `release-build` skill if needed.
+description: Install the signed foss release APK of this Gallery app on the connected device with adb. Use whenever a release build should reach the device -- the user asks for it, or a change is ready for them to try -- without asking permission first; build it first with the `release-build` skill if needed.
 ---
 
 # release-install
@@ -35,6 +35,11 @@ Install the signed `foss` release APK on the device connected via adb.
 
 ## Notes
 
+- **No permission is needed to install it.** The release build is the app the user actually uses, so a change that
+  is ready for them belongs on the device without being asked about first: install it and say so afterwards.
+  `adb install` draws nothing on the screen, so it cannot interrupt them either
+    - the **debug** build is the one that waits to be asked now, and for the opposite reason -- see `debug-install`
+- Never install while the user has asked to wait ("インストールは待って") — build only
 - The release build uses the application id `io.github.aiya000.fossify.gallery`, which is this fork's own id.
   The official Fossify Gallery (`org.fossify.gallery`) is a separate app and can stay installed next to it
 - An app built from this repository before the id change is also a separate app now. It keeps its own settings,

@@ -1,6 +1,6 @@
 ---
 name: debug-install
-description: Install the built foss debug APK of this Gallery app on the connected device with adb. Use whenever a debug build should reach the device -- the user asks for it, or a change is ready for them to try -- without asking permission first; build it first with the `debug-build` skill if needed.
+description: Install the built foss debug APK of this Gallery app on the connected device with adb. Use when the user asks for the debug build on the device -- ask first, it is the spare they fall back on when the release build is broken; build it first with the `debug-build` skill if needed. For the emulator this does not apply, see the skill body.
 ---
 
 # debug-install
@@ -44,9 +44,12 @@ Install the `foss` debug APK on the device connected via adb.
 
 - The debug build is `io.github.aiya000.fossify.gallery.debug`, a separate app from the release build, with its own settings
   (folder groups, pins, etc. are not shared)
-- **No permission is needed to install it.** `adb install` does not show on the screen and the debug app cannot reach
-  the release app's data, so install it as soon as there is something worth trying, and say so afterwards rather than
-  asking beforehand. This is the debug build only; the release build still waits to be asked (`release-install`)
+- **Ask before putting it on the user's phone.** Since 2026-09-22 the debug build is their **emergency spare**: the
+  one they reach for when the release build turns out to be broken. Replacing it without asking would take that
+  spare away at the moment it is most likely to be needed. What they try day to day is the release build, and
+  that one installs freely (`release-install`) -- the two swapped places
+- **The emulator is not the phone.** Nothing here applies to `ANDROID_SERIAL=emulator-5554`: the driving scripts of
+  `test-device/` install the debug build onto it constantly, and that is what it is for
 - Never install while the user has asked to wait ("インストールは待って") — build only
 - Installing restarts the app, which kills any scan or transfer running in it, and changes its pid. When a `logcat`
   capture is pinned to the pid, or the device is in the middle of something being measured, finish that first
