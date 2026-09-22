@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.content.Context
 import android.util.Log
+import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.extensions.favoritesDB
@@ -9,6 +10,7 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.rebuildDirectoryRow
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.models.Medium
+import java.io.File
 
 // Changes the share on the user's behalf and keeps the cache in step with what was changed, the
 // same shape as PCloudWriter. The share is asked first and the rows follow only once it has
@@ -24,6 +26,10 @@ import org.fossify.gallery.models.Medium
 class SmbWriter(private val context: Context) {
     companion object {
         private const val TAG = "SmbWrite"
+
+        // what the original is called while a write over it is in flight. It is visible on the
+        // share for those few seconds, so it says what it is
+        private const val STASH_SUFFIX = "being-replaced"
     }
 
     // Deletes media from the share and drops their rows. The list is walked to the end even
@@ -127,6 +133,61 @@ class SmbWriter(private val context: Context) {
         media.forEach { renameCachedCopies(it.path, newPath + it.path.substring(path.length), it) }
         Log.i(TAG, "Renamed a folder on the share to \"$newName\", with ${media.size} media under it")
         return newPath
+    }
+
+    // Writes a local file over a medium of the share, without ever leaving the medium missing.
+    //
+    // The share has no "replace this file" request of its own: create() refuses a name that is
+    // taken, and opening the file that is there to write over it in place would leave a torn
+    // medium behind if the write broke off half way. So the original is renamed aside first --
+    // one request, nothing downloaded or uploaded again for it -- the new content is written
+    // under the name that is now free, and only once that has landed is the stash deleted. When
+    // the write fails the stash is given its name back, so what is on the share afterwards is
+    // either the old file or the new one, never neither. This is PCloudWriter.overwriteFile()
+    // built out of the requests the share has.
+    //
+    // There is no bin here to take an overwritten medium back out of, as above, which is why the
+    // screens ask before they call this at all. The caller keeps the local file it handed in, so
+    // nothing the user made is lost even when the stash cannot be put back
+    fun overwriteFile(path: String, localPath: String) {
+        val local = File(localPath)
+        val name = path.getFilenameFromPath()
+        val stashPath = "$path.$STASH_SUFFIX"
+        // read before anything moves, so the cached copies can still be told by their old name
+        val medium = context.mediaDB.getMediumByPath(path)
+        SmbClient.rename(context, path, "$name.$STASH_SUFFIX")
+
+        try {
+            SmbClient.create(context, path) { output -> local.inputStream().use { it.copyTo(output) } }
+            // the gallery sorts by this, and a medium written over is a medium changed just now
+            SmbClient.setModified(context, path, local.lastModified())
+        } catch (e: Exception) {
+            try {
+                SmbClient.rename(context, stashPath, name)
+            } catch (restore: Exception) {
+                // the one outcome worth a line of its own: the share is left holding the medium
+                // under a name this app invented, and nobody would think to look for it
+                Log.e(TAG, "$stashPath could not be given its name back after a failed overwrite", restore)
+            }
+
+            Log.w(TAG, "$path could not be written over on the share", e)
+            throw e
+        }
+
+        SmbClient.delete(context, stashPath)
+        medium?.let {
+            // The size and the modification time are what name a cached copy, so the copies of
+            // what was there before are dropped while the row still says which ones they are.
+            // The row then moves on to the new pair, which is what stops the old copy being
+            // served for the new content
+            SmbFileCache(context).deleteCopy(path, it.size, it.modified)
+            SmbVideoCache(context).deleteCopy(path, it.size, it.modified)
+            context.mediaDB.updateSizeAndModified(path = path, size = local.length(), modified = local.lastModified())
+        }
+
+        // the folder's thumbnail may be this medium, and the folder's own row counts its bytes
+        context.rebuildDirectoryRow(path.getParentPath())
+        Log.i(TAG, "Wrote over \"$name\" on the share")
     }
 
     // What the share renamed is the same bytes, so whatever was fetched or downloaded for it is

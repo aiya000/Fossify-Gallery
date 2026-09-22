@@ -189,7 +189,6 @@
     <string name="smb_delete_confirmation">%1$s をネットワーク共有から削除しますか？ 共有にはごみ箱がないため、元に戻せません。</string>
     <string name="smb_delete_folder_confirmation">%1$s と、その中のすべてをネットワーク共有から削除しますか？ 共有にはごみ箱がないため、元に戻せません。</string>
     <string name="smb_no_move_yet">ネットワーク共有への移動・共有からの移動には、まだ対応していません。コピーは行えます。</string>
-    <string name="smb_no_overwrite_yet">ネットワーク共有の %1$s には、まだ上書きできません。別の名前で保存するか、この端末に保存してください。</string>
     <string name="smb_no_remote_copy_to_share">ネットワーク共有へコピーできるのは、今のところこの端末のファイルだけです。</string>
     <string name="smb_transfer_channel">ネットワーク共有のコピー</string>
     <string name="smb_transfer_started">コピーを開始しました。進み具合は通知に表示されます</string>

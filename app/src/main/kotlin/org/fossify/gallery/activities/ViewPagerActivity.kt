@@ -1074,10 +1074,33 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
-    // The share takes a new file only; an existing name never reaches here, ensureWritablePath()
-    // turns it away while the rename that a replace needs is still missing (#28). The folder is
-    // walked again afterwards, which is the only way the cache learns of what was written
+    // The share takes both now: a name that is free is a new file, and one the user has agreed to
+    // write over goes through the stash and replace that keeps the medium whole the whole way
+    // (#28). Which of the two it is, is asked of the share rather than of the cache -- the same
+    // question ensureWritablePath() asked a moment ago, and a share holds files this app never
+    // scanned.
+    //
+    // A new file has the folder walked again afterwards, which is the only way the cache learns
+    // of it. An overwrite carries its own rows, so nothing is walked for it
     private fun sendRotatedImageToShare(staged: File, newPath: String) {
+        val taken = try {
+            SmbClient.fileExists(this, newPath)
+        } catch (e: Exception) {
+            Log.w("SmbWrite", "Could not ask the share whether it already has $newPath", e)
+            runOnUiThread { showErrorToast(e) }
+            return
+        }
+
+        if (taken) {
+            writeToShare({ overwriteFile(newPath, staged.absolutePath) }) { success ->
+                if (success) {
+                    rotationSaved()
+                }
+            }
+
+            return
+        }
+
         try {
             SmbClient.create(this, newPath) { output -> staged.inputStream().use { it.copyTo(output) } }
             SmbClient.setModified(this, newPath, staged.lastModified())

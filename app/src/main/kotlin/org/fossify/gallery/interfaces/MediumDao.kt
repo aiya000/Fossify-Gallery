@@ -79,6 +79,13 @@ interface MediumDao {
     @Query("UPDATE OR REPLACE media SET full_path = :newFolder || substr(full_path, length(:oldFolder) + 1), parent_path = :newFolder || substr(parent_path, length(:oldFolder) + 1) WHERE full_path LIKE :oldFolder || '/%'")
     fun updatePathsUnderFolder(oldFolder: String, newFolder: String)
 
+    // After a medium's own bytes were replaced where they lie -- a write over a file of the
+    // share. The path does not move, so nothing follows it; what changes is the size and the
+    // modification time, and those two also name the cached copy of it, so a row left saying the
+    // old pair would have the copy of the old content served for the new one
+    @Query("UPDATE media SET size = :size, last_modified = :modified WHERE full_path = :path COLLATE NOCASE")
+    fun updateSizeAndModified(path: String, size: Long, modified: Long)
+
     @Query("UPDATE media SET date_taken = :dateTaken WHERE full_path = :path COLLATE NOCASE")
     fun updateFavoriteDateTaken(path: String, dateTaken: Long)
 
