@@ -52,6 +52,7 @@ import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
 import org.fossify.gallery.helpers.PCLOUD_RESIZE_DIR
 import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
@@ -61,8 +62,6 @@ import org.fossify.gallery.helpers.SMB_EDIT_DIR
 import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
-import org.fossify.gallery.jobs.PCloudTransferService
-import org.fossify.gallery.jobs.SmbTransferService
 import org.fossify.gallery.models.DateTaken
 import java.io.*
 import java.text.SimpleDateFormat
@@ -517,10 +516,11 @@ fun BaseSimpleActivity.toggleFileVisibility(oldPath: String, hide: Boolean, call
     }
 }
 
-// [localDestinationOnly] keeps pCloud out of the picker, for a caller whose files can only go
-// to the device. [onCancelled] fires when the picker is left without a destination, and
-// [onPCloudTransferQueued] once a pCloud destination's transfer is with the service, both for
-// a caller that has nothing else on screen
+// Asks for a destination, then asks the storage the files are on to copy or move them there,
+// see MediaStorage.copyMoveTo(). [localDestinationOnly] keeps pCloud out of the picker, for a
+// caller whose files can only go to the device. [onCancelled] fires when the picker is left
+// without a destination, and [onPCloudTransferQueued] once a remote transfer is with its
+// service, both for a caller that has nothing else on screen
 fun BaseSimpleActivity.tryCopyMoveFilesTo(
     fileDirItems: ArrayList<FileDirItem>,
     isCopyOperation: Boolean,
@@ -546,207 +546,8 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
         localDestinationOnly = localDestinationOnly,
         isCopyOperation = isCopyOperation,
         onCancelled = onCancelled
-    ) {
-        copyMoveFilesToPickedDestination(fileDirItems, source, it, isCopyOperation, onPCloudTransferQueued, callback)
-    }
-}
-
-// Copies or moves the files to an already picked real folder, asking for SAF access if
-// needed. With a remote storage on either side the transfer goes to a service instead and the
-// callback never fires: nothing has moved when this returns, the screens learn of the end
-// through the service's listeners
-fun BaseSimpleActivity.copyMoveFilesToPickedDestination(
-    fileDirItems: ArrayList<FileDirItem>,
-    source: String,
-    destination: String,
-    isCopyOperation: Boolean,
-    onPCloudTransferQueued: (() -> Unit)? = null,
-    callback: (destinationPath: String) -> Unit
-) {
-    // The share is copied off, copied onto, and moved in either direction and within itself
-    // (#28). What still cannot be done is arriving from another remote storage: what goes onto
-    // the share is read off a file of the device, and anything already remote would have to be
-    // staged on the way. The picker turns that away too; this is the backstop for it
-    if (source.isSmbPath() || destination.isSmbPath()) {
-        if (destination.isSmbPath() && source.isRemotePath() && !source.isSmbPath()) {
-            toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
-            return
-        }
-
-        startSmbTransfer(fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued)
-        return
-    }
-
-    if (source.isPCloudPath() || destination.isPCloudPath()) {
-        startPCloudTransfer(fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued)
-        return
-    }
-
-    handleSAFDialog(source) {
-        if (it) {
-            copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopyOperation, true, config.shouldShowHidden, callback)
-        }
-    }
-}
-
-// Queues the transfer once the storage permissions the local side needs are in: a move away
-// from the device deletes the sources afterwards, a download writes into the destination.
-// The notification permission is asked for so that the progress can be seen; the transfer
-// runs without it too.
-//
-// [onQueued] fires once the job is with the service, which is several dialogs later than this
-// returns. A caller whose only business was this transfer waits for it rather than for the
-// copy callback, which never comes for a pCloud transfer
-fun BaseSimpleActivity.startPCloudTransfer(
-    fileDirItems: ArrayList<FileDirItem>,
-    source: String,
-    destination: String,
-    isCopyOperation: Boolean,
-    onQueued: (() -> Unit)? = null
-) {
-    if (!config.isPCloudLoggedIn) {
-        toast(R.string.pcloud_log_in_required)
-        return
-    }
-
-    val paths = fileDirItems.map { it.path }
-    if (paths.isEmpty()) {
-        return
-    }
-
-    val kind = when {
-        source.isPCloudPath() && destination.isPCloudPath() -> PCloudTransferService.Kind.WITHIN_PCLOUD
-        destination.isPCloudPath() -> PCloudTransferService.Kind.UPLOAD
-        else -> PCloudTransferService.Kind.DOWNLOAD
-    }
-
-    val enqueue = {
-        handleNotificationPermission {
-            // a transfer into the temporary folder tile turns it into a real folder, the way
-            // a local copy or move drops the tile; the service rebuilds the folder's row
-            if (destination == config.tempFolderPath) {
-                config.tempFolderPath = ""
-            }
-
-            PCloudTransferService.enqueue(this, PCloudTransferService.Job(kind, paths, destination, isCopyOperation))
-            toast(R.string.pcloud_transfer_started)
-            onQueued?.invoke()
-        }
-    }
-
-    when (kind) {
-        PCloudTransferService.Kind.UPLOAD -> if (isCopyOperation) {
-            enqueue()
-        } else {
-            handleSAFDialog(source) { granted ->
-                if (granted) {
-                    checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
-                        if (allowed) {
-                            enqueue()
-                        }
-                    }
-                }
-            }
-        }
-
-        PCloudTransferService.Kind.DOWNLOAD -> handleSAFDialog(destination) { granted ->
-            if (granted) {
-                handleSAFDialogSdk30(destination) { allowed ->
-                    if (allowed) {
-                        enqueue()
-                    }
-                }
-            }
-        }
-
-        PCloudTransferService.Kind.WITHIN_PCLOUD -> enqueue()
-    }
-}
-
-// Queues a copy or a move that has the share on one side, once the permissions it needs are in:
-// a folder on the device is written into, a folder on pCloud wants an account, a move away from
-// the device deletes the files it read, and a move inside the share wants nothing at all. The
-// notification permission is asked for so that the progress can be seen; the transfer runs
-// without it too.
-//
-// [onQueued] fires once the job is with the service, which is several dialogs later than this
-// returns. A caller whose only business was this transfer waits for it rather than for the copy
-// callback, which never comes for a transfer
-fun BaseSimpleActivity.startSmbTransfer(
-    fileDirItems: ArrayList<FileDirItem>,
-    source: String,
-    destination: String,
-    isCopyOperation: Boolean,
-    onQueued: (() -> Unit)? = null
-) {
-    if (!config.isSmbConfigured) {
-        toast(R.string.smb_not_configured)
-        return
-    }
-
-    val paths = fileDirItems.map { it.path }
-    if (paths.isEmpty()) {
-        return
-    }
-
-    val kind = when {
-        source.isSmbPath() && destination.isSmbPath() -> SmbTransferService.Kind.WITHIN_SHARE
-        destination.isSmbPath() -> SmbTransferService.Kind.FROM_DEVICE
-        destination.isPCloudPath() -> SmbTransferService.Kind.TO_PCLOUD
-        else -> SmbTransferService.Kind.TO_DEVICE
-    }
-
-    if (kind == SmbTransferService.Kind.TO_PCLOUD && !config.isPCloudLoggedIn) {
-        toast(R.string.pcloud_log_in_required)
-        return
-    }
-
-    // a move within the share is a move whatever the caller thought it was asking for: there is
-    // no copy within the share, see SmbTransferService.Job
-    val isCopy = isCopyOperation && kind != SmbTransferService.Kind.WITHIN_SHARE
-    val enqueue = {
-        handleNotificationPermission {
-            // a transfer into the temporary folder tile turns it into a real folder, the way a
-            // local copy or move drops the tile; the service rebuilds the folder's row
-            if (destination == config.tempFolderPath) {
-                config.tempFolderPath = ""
-            }
-
-            SmbTransferService.enqueue(this, SmbTransferService.Job(kind, paths, destination, isCopy))
-            toast(if (isCopy) R.string.smb_transfer_started else R.string.smb_move_started)
-            onQueued?.invoke()
-        }
-    }
-
-    when (kind) {
-        // nothing of the device is touched, so there is nothing to ask for
-        SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.WITHIN_SHARE -> enqueue()
-
-        // what a copy onto the share reads is media the app already lists; a move also deletes
-        // those files afterwards, which is what the storage permissions are wanted for
-        SmbTransferService.Kind.FROM_DEVICE -> if (isCopy) {
-            enqueue()
-        } else {
-            handleSAFDialog(source) { granted ->
-                if (granted) {
-                    checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
-                        if (allowed) {
-                            enqueue()
-                        }
-                    }
-                }
-            }
-        }
-
-        SmbTransferService.Kind.TO_DEVICE -> handleSAFDialog(destination) { granted ->
-            if (granted) {
-                handleSAFDialogSdk30(destination) { allowed ->
-                    if (allowed) {
-                        enqueue()
-                    }
-                }
-            }
-        }
+    ) { destination ->
+        MediaStorage.of(this, source).copyMoveTo(this, fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued, callback)
     }
 }
 

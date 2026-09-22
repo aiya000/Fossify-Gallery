@@ -101,6 +101,21 @@ class MediaStorageTest {
         assertFalse(smb.canResize)
     }
 
+    // where media can be copied or moved to: anywhere, but for pCloud straight onto the share,
+    // which would have to be staged on the way (#28). The destination picker turns that pair
+    // away, and copyMoveTo() refuses it if asked anyway
+    @Test
+    fun `every pair of storages can be transferred between, but pCloud onto the share`() {
+        for (source in listOf(device, pCloud, smb)) {
+            assertTrue(source.canTransferTo(device))
+            assertTrue(source.canTransferTo(pCloud))
+        }
+
+        assertTrue(device.canTransferTo(smb))
+        assertTrue(smb.canTransferTo(smb))
+        assertFalse(pCloud.canTransferTo(smb))
+    }
+
     @Test
     fun `only the share streams its videos`() {
         assertTrue(smb.streamsVideos)

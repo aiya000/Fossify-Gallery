@@ -16,6 +16,8 @@ import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
+import org.fossify.commons.models.FileDirItem
+import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.directoryDB
@@ -26,6 +28,8 @@ import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.writeToShare
+import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbTransferService
 
 // The three places a medium can be: this device, pCloud, and the network share. The set is
 // closed, so a `when` over it is exhaustive, and a fourth storage would fail to compile rather
@@ -35,7 +39,8 @@ import org.fossify.gallery.extensions.writeToShare
 // know -- a menu that was not told is exactly how #71 and #72 happened. A difference that is
 // data ("is a name renamed one at a time", "is there a file to hand to another app") is a
 // property; a difference that is steps is an override. The operations come over one family at
-// a time (#106); renaming is here, the rest still lives where it always has.
+// a time (#106); renaming and copying or moving are here, the rest still lives where it
+// always has.
 //
 // It holds a Context because the operations need one (the database, the notifications, the
 // services), so it is a holder of behaviour rather than a value: two of them are not equal,
@@ -117,6 +122,183 @@ sealed class MediaStorage(protected val context: Context) {
         throw UnsupportedOperationException("${javaClass.simpleName} renames one folder at a time, see canRenameSeveralFolders")
     }
 
+    // --- copying and moving: a pair of storages, the one the media are on and the one the
+    // folder they go to is on. Between two folders of the device it is done on the spot; with a
+    // remote storage on either side it goes to a service, one job at a time with a progress
+    // notification, and the screens learn of the end through the service's listeners
+
+    // Runs [then] once the app may change this storage's media where they are. On the device
+    // that is the media management prompt; a remote storage has nothing in the MediaStore to
+    // manage, and is asked nothing
+    abstract fun onceAllowedToChangeMedia(activity: BaseSimpleActivity, then: () -> Unit)
+
+    // whether media of this storage can be copied or moved into a folder of [destination]. What
+    // goes onto the share is read off a file of the device, and what is already remote would
+    // have to be staged on the way, which is not built (#28); the destination picker turns such
+    // a folder away, and copyMoveTo() is the backstop
+    open fun canTransferTo(destination: MediaStorage): Boolean = true
+
+    // Copies or moves [fileDirItems], all of them in the folder [source] of this storage, into
+    // the folder [destination], which may be on any storage. [onDone] gets the destination once
+    // the files are there, which is only ever between two folders of the device: a transfer
+    // with a remote storage on either side goes to a service and never calls it -- nothing has
+    // moved when this returns -- and [onQueued] fires instead once the job is with the service,
+    // several permission dialogs later. A caller whose only business was the transfer waits for
+    // that. A pair that cannot be done says so and stops
+    abstract fun copyMoveTo(
+        activity: BaseSimpleActivity,
+        fileDirItems: ArrayList<FileDirItem>,
+        source: String,
+        destination: String,
+        isCopy: Boolean,
+        onQueued: (() -> Unit)?,
+        onDone: (destination: String) -> Unit
+    )
+
+    // Queues a transfer between the device and pCloud, or within pCloud, once the storage
+    // permissions the device's side needs are in: a move away from the device deletes the
+    // sources afterwards, a download writes into the destination. The notification permission
+    // is asked for so that the progress can be seen; the transfer runs without it too
+    protected fun enqueuePCloudTransfer(
+        activity: BaseSimpleActivity,
+        kind: PCloudTransferService.Kind,
+        fileDirItems: ArrayList<FileDirItem>,
+        source: String,
+        destination: String,
+        isCopy: Boolean,
+        onQueued: (() -> Unit)?
+    ) {
+        if (!context.config.isPCloudLoggedIn) {
+            activity.toast(R.string.pcloud_log_in_required)
+            return
+        }
+
+        val paths = fileDirItems.map { it.path }
+        if (paths.isEmpty()) {
+            return
+        }
+
+        val enqueue = {
+            activity.handleNotificationPermission {
+                // a transfer into the temporary folder tile turns it into a real folder, the way
+                // a local copy or move drops the tile; the service rebuilds the folder's row
+                if (destination == context.config.tempFolderPath) {
+                    context.config.tempFolderPath = ""
+                }
+
+                PCloudTransferService.enqueue(activity, PCloudTransferService.Job(kind, paths, destination, isCopy))
+                activity.toast(R.string.pcloud_transfer_started)
+                onQueued?.invoke()
+            }
+        }
+
+        when (kind) {
+            PCloudTransferService.Kind.UPLOAD -> if (isCopy) {
+                enqueue()
+            } else {
+                activity.handleSAFDialog(source) { granted ->
+                    if (granted) {
+                        activity.checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
+                            if (allowed) {
+                                enqueue()
+                            }
+                        }
+                    }
+                }
+            }
+
+            PCloudTransferService.Kind.DOWNLOAD -> activity.handleSAFDialog(destination) { granted ->
+                if (granted) {
+                    activity.handleSAFDialogSdk30(destination) { allowed ->
+                        if (allowed) {
+                            enqueue()
+                        }
+                    }
+                }
+            }
+
+            PCloudTransferService.Kind.WITHIN_PCLOUD -> enqueue()
+        }
+    }
+
+    // Queues a copy or a move that has the share on one side, once the permissions it needs are
+    // in: a folder on the device is written into, a folder on pCloud wants an account, a move
+    // away from the device deletes the files it read, and a move inside the share wants nothing
+    // at all. The notification permission is asked for so that the progress can be seen; the
+    // transfer runs without it too
+    protected fun enqueueSmbTransfer(
+        activity: BaseSimpleActivity,
+        kind: SmbTransferService.Kind,
+        fileDirItems: ArrayList<FileDirItem>,
+        source: String,
+        destination: String,
+        isCopy: Boolean,
+        onQueued: (() -> Unit)?
+    ) {
+        if (!context.config.isSmbConfigured) {
+            activity.toast(R.string.smb_not_configured)
+            return
+        }
+
+        val paths = fileDirItems.map { it.path }
+        if (paths.isEmpty()) {
+            return
+        }
+
+        if (kind == SmbTransferService.Kind.TO_PCLOUD && !context.config.isPCloudLoggedIn) {
+            activity.toast(R.string.pcloud_log_in_required)
+            return
+        }
+
+        // a move within the share is a move whatever the caller thought it was asking for: there
+        // is no copy within the share, see SmbTransferService.Job
+        val isReallyCopy = isCopy && kind != SmbTransferService.Kind.WITHIN_SHARE
+        val enqueue = {
+            activity.handleNotificationPermission {
+                // a transfer into the temporary folder tile turns it into a real folder, the way
+                // a local copy or move drops the tile; the service rebuilds the folder's row
+                if (destination == context.config.tempFolderPath) {
+                    context.config.tempFolderPath = ""
+                }
+
+                SmbTransferService.enqueue(activity, SmbTransferService.Job(kind, paths, destination, isReallyCopy))
+                activity.toast(if (isReallyCopy) R.string.smb_transfer_started else R.string.smb_move_started)
+                onQueued?.invoke()
+            }
+        }
+
+        when (kind) {
+            // nothing of the device is touched, so there is nothing to ask for
+            SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.WITHIN_SHARE -> enqueue()
+
+            // what a copy onto the share reads is media the app already lists; a move also
+            // deletes those files afterwards, which is what the storage permissions are wanted for
+            SmbTransferService.Kind.FROM_DEVICE -> if (isReallyCopy) {
+                enqueue()
+            } else {
+                activity.handleSAFDialog(source) { granted ->
+                    if (granted) {
+                        activity.checkManageMediaOrHandleSAFDialogSdk30(paths.first()) { allowed ->
+                            if (allowed) {
+                                enqueue()
+                            }
+                        }
+                    }
+                }
+            }
+
+            SmbTransferService.Kind.TO_DEVICE -> activity.handleSAFDialog(destination) { granted ->
+                if (granted) {
+                    activity.handleSAFDialogSdk30(destination) { allowed ->
+                        if (allowed) {
+                            enqueue()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     class Device(context: Context) : MediaStorage(context) {
         override fun holds(path: String) = !path.isRemotePath()
         override val isRemote = false
@@ -137,14 +319,17 @@ sealed class MediaStorage(protected val context: Context) {
         override val canShowFolderProperties = true
         override val canExcludeFolders = true
 
+        override fun onceAllowedToChangeMedia(activity: BaseSimpleActivity, then: () -> Unit) {
+            activity.handleMediaManagementPrompt(then)
+        }
+
         // The commons dialogs do the renaming themselves, file and MediaStore; what is left to
-        // do here is the app's own rows. The prompt before them asks for the right to change
-        // files on this device, which is nothing a remote storage needs
+        // do here is the app's own rows
         override fun renameMedium(activity: BaseSimpleActivity, path: String, onDone: (newPath: String?) -> Unit) {
-            activity.handleMediaManagementPrompt {
+            onceAllowedToChangeMedia(activity) {
                 if (isOnARootTheSystemKeeps(activity, path)) {
                     onDone(null)
-                    return@handleMediaManagementPrompt
+                    return@onceAllowedToChangeMedia
                 }
 
                 RenameItemDialog(activity, path) { newPath ->
@@ -157,10 +342,10 @@ sealed class MediaStorage(protected val context: Context) {
         }
 
         override fun renameSeveralMedia(activity: BaseSimpleActivity, paths: List<String>, onDone: () -> Unit) {
-            activity.handleMediaManagementPrompt {
+            onceAllowedToChangeMedia(activity) {
                 if (isOnARootTheSystemKeeps(activity, paths.first())) {
                     onDone()
-                    return@handleMediaManagementPrompt
+                    return@onceAllowedToChangeMedia
                 }
 
                 RenameDialog(activity, ArrayList(paths), true) {
@@ -220,6 +405,29 @@ sealed class MediaStorage(protected val context: Context) {
                 onDone()
             }
         }
+
+        // between two folders of the device the commons copy does it, once the source folder
+        // may be written to; a remote destination is an upload for its service
+        override fun copyMoveTo(
+            activity: BaseSimpleActivity,
+            fileDirItems: ArrayList<FileDirItem>,
+            source: String,
+            destination: String,
+            isCopy: Boolean,
+            onQueued: (() -> Unit)?,
+            onDone: (destination: String) -> Unit
+        ) {
+            when (of(context, destination)) {
+                is Device -> activity.handleSAFDialog(source) { granted ->
+                    if (granted) {
+                        activity.copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopy, true, context.config.shouldShowHidden, onDone)
+                    }
+                }
+
+                is PCloud -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.UPLOAD, fileDirItems, source, destination, isCopy, onQueued)
+                is Smb -> enqueueSmbTransfer(activity, SmbTransferService.Kind.FROM_DEVICE, fileDirItems, source, destination, isCopy, onQueued)
+            }
+        }
     }
 
     class PCloud(context: Context) : MediaStorage(context) {
@@ -241,6 +449,8 @@ sealed class MediaStorage(protected val context: Context) {
         override val canRenameSeveralFolders = false
         override val canShowFolderProperties = false
         override val canExcludeFolders = false
+
+        override fun onceAllowedToChangeMedia(activity: BaseSimpleActivity, then: () -> Unit) = then()
 
         // the name goes to pCloud, and the writer carries the rows over with it; the folder is
         // then read again from pCloud, if the settings ask for that after a write
@@ -266,6 +476,27 @@ sealed class MediaStorage(protected val context: Context) {
                 }
             }
         }
+
+        // pCloud straight onto the share would have to be staged on the way, see #28
+        override fun canTransferTo(destination: MediaStorage) = destination !is Smb
+
+        // every pair is the pCloud service's, downloading, uploading or moving within the
+        // account; the share is the one it cannot reach
+        override fun copyMoveTo(
+            activity: BaseSimpleActivity,
+            fileDirItems: ArrayList<FileDirItem>,
+            source: String,
+            destination: String,
+            isCopy: Boolean,
+            onQueued: (() -> Unit)?,
+            onDone: (destination: String) -> Unit
+        ) {
+            when (of(context, destination)) {
+                is Device -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.DOWNLOAD, fileDirItems, source, destination, isCopy, onQueued)
+                is PCloud -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.WITHIN_PCLOUD, fileDirItems, source, destination, isCopy, onQueued)
+                is Smb -> activity.toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
+            }
+        }
     }
 
     class Smb(context: Context) : MediaStorage(context) {
@@ -287,6 +518,8 @@ sealed class MediaStorage(protected val context: Context) {
         override val canRenameSeveralFolders = false
         override val canShowFolderProperties = false
         override val canExcludeFolders = false
+
+        override fun onceAllowedToChangeMedia(activity: BaseSimpleActivity, then: () -> Unit) = then()
 
         // the name goes to the share, and the writer carries the row and the cached copies over
         // with it, so what a viewer is holding is not fetched again. Nothing is rescanned
@@ -311,6 +544,26 @@ sealed class MediaStorage(protected val context: Context) {
                     }
                 }
             }
+        }
+
+        // every pair is the share's service's: off the share onto the device or pCloud, and
+        // within the share, where no bytes travel at all and a copy is a move
+        override fun copyMoveTo(
+            activity: BaseSimpleActivity,
+            fileDirItems: ArrayList<FileDirItem>,
+            source: String,
+            destination: String,
+            isCopy: Boolean,
+            onQueued: (() -> Unit)?,
+            onDone: (destination: String) -> Unit
+        ) {
+            val kind = when (of(context, destination)) {
+                is Device -> SmbTransferService.Kind.TO_DEVICE
+                is PCloud -> SmbTransferService.Kind.TO_PCLOUD
+                is Smb -> SmbTransferService.Kind.WITHIN_SHARE
+            }
+
+            enqueueSmbTransfer(activity, kind, fileDirItems, source, destination, isCopy, onQueued)
         }
     }
 

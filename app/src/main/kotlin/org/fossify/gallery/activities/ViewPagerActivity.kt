@@ -916,13 +916,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
-        // a remote source has no MediaStore entry to manage
-        if (getCurrentPath().isRemotePath()) {
-            copyMoveTo(isCopyOperation)
-            return
-        }
-
-        handleMediaManagementPrompt {
+        MediaStorage.of(this, getCurrentPath()).onceAllowedToChangeMedia(this) {
             copyMoveTo(isCopyOperation)
         }
     }

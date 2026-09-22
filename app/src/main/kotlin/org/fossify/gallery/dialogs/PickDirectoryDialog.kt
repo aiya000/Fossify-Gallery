@@ -49,9 +49,9 @@ import org.fossify.gallery.extensions.getAllGroupDirectories
 import org.fossify.gallery.extensions.getGroupedDirectories
 import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.isPCloudPath
-import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
@@ -618,10 +618,9 @@ class PickDirectoryDialog(
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
                     return@DirectoryAdapter
-                } else if (isPickingCopyMoveDestination && path.isSmbPath() && sourcePath.isRemotePath() && !sourcePath.isSmbPath()) {
-                    // What goes onto the share from outside it is read off a file of the device;
-                    // anything already remote would have to be staged on the way, see #28. The
-                    // share to itself is another thing entirely -- no bytes travel at all
+                } else if (isPickingCopyMoveDestination && !MediaStorage.of(activity, sourcePath).canTransferTo(MediaStorage.of(activity, path))) {
+                    // pCloud straight onto the share, see MediaStorage.canTransferTo(); the share
+                    // to itself is another thing entirely -- no bytes travel at all
                     activity.toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
