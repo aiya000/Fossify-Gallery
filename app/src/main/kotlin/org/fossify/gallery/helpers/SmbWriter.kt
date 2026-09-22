@@ -135,6 +135,33 @@ class SmbWriter(private val context: Context) {
         return newPath
     }
 
+    // Moves a medium into another folder of the same share. Answers the path it has now.
+    //
+    // No bytes move. The share does this with the same request a rename uses, so a video of
+    // several gigabytes travels as fast as a thumbnail -- which is the whole reason a move within
+    // one storage is worth having as its own case, instead of a copy followed by a delete.
+    //
+    // A name the destination already has gets a number, the way a copy into a folder does: the
+    // user picked a folder and not a name, so a collision there is not theirs to be asked about.
+    // The rows and the cached copies follow, since what moved is the same bytes under a new path
+    fun moveFileTo(path: String, destinationFolder: String): String {
+        // read before the rows move, so the cached copies can be found under their old name
+        val medium = context.mediaDB.getMediumByPath(path)
+        val newPath = availableName(destinationFolder, path.getFilenameFromPath()) { SmbClient.fileExists(context, it) }
+        SmbClient.moveTo(context, path, newPath)
+        GalleryDatabase.getInstance(context).runInTransaction {
+            context.updateDBMediaPath(path, newPath)
+        }
+
+        medium?.let { renameCachedCopies(path, newPath, it) }
+        // both ends: the folder it left may now be empty, and the one it arrived in has a medium
+        // more -- and either of their thumbnails may have been this one
+        context.rebuildDirectoryRow(path.getParentPath())
+        context.rebuildDirectoryRow(destinationFolder)
+        Log.i(TAG, "Moved a medium into $destinationFolder on the share")
+        return newPath
+    }
+
     // Writes a local file over a medium of the share, without ever leaving the medium missing.
     //
     // The share has no "replace this file" request of its own: create() refuses a name that is

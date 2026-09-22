@@ -618,14 +618,10 @@ class PickDirectoryDialog(
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
                     return@DirectoryAdapter
-                } else if (isPickingCopyMoveDestination && path.isSmbPath() && !isCopyOperation) {
-                    // a move would have to delete the original once the copy landed, and the
-                    // share does not do that in either direction yet, see #28
-                    activity.toast(R.string.smb_no_move_yet, Toast.LENGTH_LONG)
-                    return@DirectoryAdapter
-                } else if (isPickingCopyMoveDestination && path.isSmbPath() && sourcePath.isRemotePath()) {
-                    // what goes onto the share is read off a file of the device; anything
-                    // already remote would have to be staged on the way, see #28
+                } else if (isPickingCopyMoveDestination && path.isSmbPath() && sourcePath.isRemotePath() && !sourcePath.isSmbPath()) {
+                    // What goes onto the share from outside it is read off a file of the device;
+                    // anything already remote would have to be staged on the way, see #28. The
+                    // share to itself is another thing entirely -- no bytes travel at all
                     activity.toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
