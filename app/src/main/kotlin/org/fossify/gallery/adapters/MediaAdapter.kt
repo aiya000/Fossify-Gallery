@@ -671,13 +671,8 @@ class MediaAdapter(
     }
 
     private fun checkMediaManagementAndCopy(isCopyOperation: Boolean) {
-        // a remote source has no MediaStore entry to manage
-        if (getFirstSelectedItemPath()?.isRemotePath() == true) {
-            copyMoveTo(isCopyOperation)
-            return
-        }
-
-        activity.handleMediaManagementPrompt {
+        val firstPath = getFirstSelectedItemPath() ?: return
+        MediaStorage.of(activity, firstPath).onceAllowedToChangeMedia(activity) {
             copyMoveTo(isCopyOperation)
         }
     }

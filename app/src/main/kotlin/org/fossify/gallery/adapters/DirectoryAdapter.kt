@@ -82,7 +82,6 @@ import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbFolderHidden
 import org.fossify.gallery.extensions.isSmbPath
-import org.fossify.gallery.extensions.copyMoveFilesToPickedDestination
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
 import org.fossify.gallery.extensions.favoritesDB
@@ -839,7 +838,7 @@ class DirectoryAdapter(
                         // selection lands in the destination and the folders become one, which is
                         // hard to walk back. Ask first, and name the way to keep them apart
                         confirmFolderJoin(destinationPath, fileDirItems.size) {
-                            activity.copyMoveFilesToPickedDestination(fileDirItems, source, destinationPath, false) {
+                            MediaStorage.of(activity, source).copyMoveTo(activity, fileDirItems, source, destinationPath, isCopy = false, onQueued = null) {
                                 onFilesCopiedMoved(fileDirItems, it)
                             }
                         }
