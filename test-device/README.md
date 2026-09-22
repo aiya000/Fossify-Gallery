@@ -99,6 +99,14 @@ at afterwards.
   file — the picker refusing a folder of the share as a *move* destination, with the share still
   empty of it, so "the share gained nothing" cannot pass by accident — and ends on the same
   numbering check as `50`, from the other side
+- **`75-save-as-storages.sh`** — #92 and #71: "Save as" knows all three storages, and a photo of
+  the share can be rotated and saved. The bug it was written for ended in an OS toast reading
+  `java.io.FileNotFoundException: sm…`: the viewer handed the share's pseudo path to the file
+  APIs, for the source it read as much as for the destination it wrote. It checks the chip row
+  (this device, pCloud, the network share — the app is signed in to the stub so that a missing
+  pCloud chip means something), that the path box no longer shows a raw `smb:` path glued to
+  this device's label, and that the save lands as a file on the device while the photo on the
+  share stays byte for byte what it was
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage
