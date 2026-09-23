@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.dialogs.RenameDialog
 import org.fossify.commons.dialogs.RenameItemDialog
@@ -158,6 +159,14 @@ sealed class MediaStorage(protected val context: Context) {
 
     // one folder, given another name where it is, with everything under it following
     abstract fun renameFolder(activity: BaseSimpleActivity, path: String, onDone: (newPath: String?) -> Unit)
+
+    // A new folder under [parentPath], its name asked for, and its path handed back on the
+    // main thread; null when nothing was made, the dialog cancelled or the storage refusing,
+    // which it has said itself. The device's dialog makes the directory; a remote folder is
+    // made through the storage's API with no row written for it -- a folder with nothing in
+    // it gets no row from a scan either, and the caller is about to put something in it or
+    // to show it as the temporary tile at the top of the folder list
+    abstract fun createFolder(activity: BaseSimpleActivity, parentPath: String, onDone: (newPath: String?) -> Unit)
 
     // several folders at once, the device's alone, the same as renameSeveralMedia()
     open fun renameSeveralFolders(activity: BaseSimpleActivity, paths: List<String>, onDone: () -> Unit) {
@@ -695,6 +704,11 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
+        // commons' dialog makes the directory and calls back with it on success only
+        override fun createFolder(activity: BaseSimpleActivity, parentPath: String, onDone: (newPath: String?) -> Unit) {
+            CreateNewFolderDialog(activity, parentPath) { onDone(it) }
+        }
+
         override fun renameSeveralFolders(activity: BaseSimpleActivity, paths: List<String>, onDone: () -> Unit) {
             RenameItemsDialog(activity, ArrayList(paths)) {
                 onDone()
@@ -1069,6 +1083,17 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
+        // the folder is made through the API and given a row of its own in the items table,
+        // so that it can be picked and written into before any scan has seen it
+        override fun createFolder(activity: BaseSimpleActivity, parentPath: String, onDone: (newPath: String?) -> Unit) {
+            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
+                var newPath = ""
+                context.writeToPCloud(listOf(parentPath), { newPath = createFolder(parentPath, name) }) { made ->
+                    activity.runOnUiThread { onDone(newPath.takeIf { made }) }
+                }
+            }
+        }
+
         // pCloud straight onto the share would have to be staged on the way, see #28
         override fun canTransferTo(destination: MediaStorage) = destination !is Smb
 
@@ -1308,6 +1333,17 @@ sealed class MediaStorage(protected val context: Context) {
                             activity.runOnUiThread { onDone(newPath.takeIf { renamed }) }
                         }
                     }
+                }
+            }
+        }
+
+        // the folder is made on the share and nothing else: no row, since a scan writes none
+        // for an empty folder either. What the share refuses is reported by the writer
+        override fun createFolder(activity: BaseSimpleActivity, parentPath: String, onDone: (newPath: String?) -> Unit) {
+            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
+                val newPath = "${parentPath.trimEnd('/')}/$name"
+                context.writeToShare({ createFolder(newPath) }) { made ->
+                    activity.runOnUiThread { onDone(newPath.takeIf { made }) }
                 }
             }
         }

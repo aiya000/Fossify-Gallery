@@ -292,6 +292,13 @@ class SmbWriter(private val context: Context) {
     // group; see SmbScanner.moveFolderRows(). The share moves the whole subtree itself in the one
     // request, so there is no half-renamed folder to think about here -- unlike the recursive
     // delete, which is many requests and can stop in the middle
+    // a folder made where the pseudo path says, with whatever is missing above it; no row is
+    // written, a scan writes none for an empty folder either
+    fun createFolder(path: String) {
+        SmbClient.createFolder(context, path)
+        Log.i(TAG, "Made the folder \"${path.getFilenameFromPath()}\" on the share")
+    }
+
     fun renameFolder(path: String, newName: String): String {
         val newPath = "${path.getParentPath()}/$newName"
         val media = context.mediaDB.getMediaWithPrefix("$path/")

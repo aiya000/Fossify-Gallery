@@ -21,7 +21,6 @@ import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import kotlin.math.abs
 import org.fossify.commons.dialogs.ConfirmationDialog
-import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.appLaunched
@@ -88,7 +87,6 @@ import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
-import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.addTempFolderIfNeeded
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.createDirectoryFromMedia
@@ -116,7 +114,6 @@ import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.rescanSmb
-import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -153,6 +150,7 @@ import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
@@ -686,11 +684,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    // a temporary pCloud folder only comes off the list, it is never deleted: the app does
-    // not delete a folder on pCloud on its own, and the one the user just made stays where
-    // it was put, empty or not
+    // a temporary folder of pCloud or of the share only comes off the list, it is never
+    // deleted: the app does not delete a folder on a remote storage on its own, and the one
+    // the user just made stays where it was put, empty or not
     private fun removeTempFolder() {
-        if (config.tempFolderPath.isPCloudPath()) {
+        if (config.tempFolderPath.isRemotePath()) {
             config.tempFolderPath = ""
             return
         }
@@ -1355,35 +1353,37 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    // With the folder list showing pCloud alone, the new folder goes to the pCloud root: the
-    // picker below only walks the device. With both storages on screen it stays a local
-    // folder; a pCloud folder can be created from inside any pCloud folder
+    // With the folder list showing one remote storage alone, the new folder goes to that
+    // storage's root: the picker below only walks the device. With every storage on screen
+    // it stays a local folder; a remote folder can be made from inside any folder of it.
+    // The new folder is empty and has no Directory row, so it is shown the way a new local
+    // folder is: as the temporary tile at the top, until something is moved into it or the
+    // app is left
     private fun createNewFolder() {
-        if (config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD) {
-            RemoteNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
-                // the new folder is empty and has no Directory row, so it is shown the way a
-                // new local folder is: as the temporary tile at the top, until something is
-                // moved into it or the app is left
-                var newPath = ""
-                writeToPCloud(listOf(PCLOUD_PATH_SCHEME), { newPath = createFolder(PCLOUD_PATH_SCHEME, name) }) { success ->
-                    if (success) {
-                        config.tempFolderPath = newPath
-                        ensureBackgroundThread {
-                            gotDirectories(addTempFolderIfNeeded(getCurrentlyDisplayedDirs()))
-                        }
-                    }
-                }
+        fun showAsTempFolder(newPath: String?) {
+            if (newPath == null) {
+                return
             }
+
+            config.tempFolderPath = newPath
+            ensureBackgroundThread {
+                gotDirectories(addTempFolderIfNeeded(getCurrentlyDisplayedDirs()))
+            }
+        }
+
+        val remoteRoot = when {
+            config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD -> PCLOUD_PATH_SCHEME
+            config.isSmbConfigured && config.storageFilter == STORAGE_FILTER_SMB -> SMB_PATH_SCHEME
+            else -> null
+        }
+
+        if (remoteRoot != null) {
+            MediaStorage.of(this, remoteRoot).createFolder(this, remoteRoot, ::showAsTempFolder)
             return
         }
 
         FilePickerDialog(this, internalStoragePath, false, config.shouldShowHidden, false, true) {
-            CreateNewFolderDialog(this, it) {
-                config.tempFolderPath = it
-                ensureBackgroundThread {
-                    gotDirectories(addTempFolderIfNeeded(getCurrentlyDisplayedDirs()))
-                }
-            }
+            MediaStorage.of(this, it).createFolder(this, it, ::showAsTempFolder)
         }
     }
 

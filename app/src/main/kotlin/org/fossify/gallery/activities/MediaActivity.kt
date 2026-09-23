@@ -16,7 +16,6 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.SimpleTarget
 import com.bumptech.glide.request.transition.Transition
 import org.fossify.commons.dialogs.ConfirmationDialog
-import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.appLockManager
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
@@ -65,7 +64,6 @@ import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
-import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
@@ -79,7 +77,6 @@ import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.restoreFromRecycleBin
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
-import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.getHumanizedFilename
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.launchAbout
@@ -394,10 +391,11 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             findItem(R.id.folder_view).isVisible = mShowAll
             findItem(R.id.open_camera).isVisible = mShowAll
             findItem(R.id.about).isVisible = mShowAll
+            // on every storage that is set up, see MediaStorage.createFolder()
             findItem(R.id.create_new_folder).isVisible =
-                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
-                    // creating a folder on the share is not in yet, that is the write step
-                    && !mPath.isSmbPath()
+                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES
+                    && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
+                    && (!mPath.isSmbPath() || config.isSmbConfigured)
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
             findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
             // offered on every folder, not only on one of the share: a folder does not always
@@ -902,27 +900,12 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // the storage makes it, see MediaStorage.createFolder(); the new folder is shown as the
+    // temporary tile at the top of the folder list until something is put in it
     private fun createNewFolder() {
-        if (mPath.isPCloudPath()) {
-            createNewPCloudFolder()
-            return
-        }
-
-        CreateNewFolderDialog(this, mPath) {
-            config.tempFolderPath = it
-        }
-    }
-
-    // Inside the folder on screen. The new folder is empty and has no row in the cache, so
-    // it is shown the way a new local folder is: as the temporary tile at the top of the
-    // folder list, until something is moved into it or the app is left
-    private fun createNewPCloudFolder() {
-        RemoteNameDialog(this, "", org.fossify.commons.R.string.create_new_folder) { name ->
-            var newPath = ""
-            writeToPCloud(listOf(mPath), { newPath = createFolder(mPath, name) }) { success ->
-                if (success) {
-                    config.tempFolderPath = newPath
-                }
+        MediaStorage.of(this, mPath).createFolder(this, mPath) { newPath ->
+            if (newPath != null) {
+                config.tempFolderPath = newPath
             }
         }
     }

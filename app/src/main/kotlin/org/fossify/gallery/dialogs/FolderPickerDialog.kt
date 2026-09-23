@@ -8,7 +8,6 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.documentfile.provider.DocumentFile
 import androidx.recyclerview.widget.LinearLayoutManager
 import org.fossify.commons.activities.BaseSimpleActivity
-import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
@@ -51,11 +50,10 @@ import org.fossify.gallery.databinding.DialogFolderPickerBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
-import org.fossify.gallery.extensions.writeToPCloud
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
-import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.views.StorageChips
 import java.io.File
@@ -251,48 +249,14 @@ class FolderPickerDialog(
         tryUpdateItems()
     }
 
+    // the folder is made the way its storage makes one, see MediaStorage.createFolder(), and
+    // then picked; what a storage refuses it has reported, and the picker stays open
     private fun createNewFolder() {
-        if (currPath.isPCloudPath()) {
-            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
-                var newPath = ""
-                activity.writeToPCloud(emptyList(), { newPath = createFolder(currPath, name) }) { success ->
-                    if (success) {
-                        activity.runOnUiThread {
-                            callback(newPath)
-                            mDialog?.dismiss()
-                        }
-                    }
-                }
+        MediaStorage.of(activity, currPath).createFolder(activity, currPath) { newPath ->
+            if (newPath != null) {
+                callback(newPath)
+                mDialog?.dismiss()
             }
-            return
-        }
-
-        // A folder on the share is made and then picked, with no row written for it: a folder
-        // with nothing in it gets no row from a scan either, and the caller is about to put
-        // something in this one. What the share refuses is reported and the picker stays open
-        if (currPath.isSmbPath()) {
-            RemoteNameDialog(activity, "", org.fossify.commons.R.string.create_new_folder) { name ->
-                val newPath = "${currPath.trimEnd('/')}/$name"
-                ensureBackgroundThread {
-                    try {
-                        SmbClient.createFolder(activity, newPath)
-                    } catch (e: Exception) {
-                        activity.showErrorToast(e)
-                        return@ensureBackgroundThread
-                    }
-
-                    activity.runOnUiThread {
-                        callback(newPath)
-                        mDialog?.dismiss()
-                    }
-                }
-            }
-            return
-        }
-
-        CreateNewFolderDialog(activity, currPath) {
-            callback(it)
-            mDialog?.dismiss()
         }
     }
 
