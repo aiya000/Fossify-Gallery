@@ -1,6 +1,10 @@
 package org.fossify.gallery.helpers
 
 import android.content.ContextWrapper
+import org.fossify.commons.extensions.getParentPath
+import org.fossify.gallery.extensions.fromSmbRecycleBinPath
+import org.fossify.gallery.extensions.toSmbRecycleBinPath
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -116,18 +120,40 @@ class MediaStorageTest {
         assertFalse(pCloud.canTransferTo(smb))
     }
 
-    // where a delete goes: through the app's bin on the device and on pCloud, for good on the
-    // share (#28, until #112). What is in a bin already is deleted for good from there; the
-    // device's bin is a path under the app's files, which the context here cannot answer for
+    // Every storage has a bin, and a medium in one is deleted for good from there (#112). The
+    // two remote bins are a folder in the storage's root, and a medium in it is told by its
+    // path; the device's bin is a path under the app's files, which the context here cannot
+    // answer for
     @Test
-    fun `the share is the one storage with no recycle bin`() {
-        assertTrue(device.hasRecycleBin)
-        assertTrue(pCloud.hasRecycleBin)
-        assertFalse(smb.hasRecycleBin)
-
+    fun `a medium in a remote bin is told by its path`() {
         assertTrue(pCloud.isInRecycleBin("pcloud:/.gallery-recycle-bin/Camera/IMG_0001.jpg"))
         assertFalse(pCloud.isInRecycleBin("pcloud:/Camera/IMG_0001.jpg"))
+        assertFalse(pCloud.isInRecycleBin("pcloud:/.gallery-recycle-bin"))
+
+        assertTrue(smb.isInRecycleBin("smb:/.gallery-recycle-bin/Screens/a.jpg"))
         assertFalse(smb.isInRecycleBin("smb:/Screens/a.jpg"))
+        assertFalse(smb.isInRecycleBin("smb:/.gallery-recycle-bin"))
+    }
+
+    // the bin on the share keeps the original layout under its folder, so the path in the bin
+    // and the path out of it are each other's inverse, at any depth and in the root
+    @Test
+    fun `a path of the share goes into its bin and back`() {
+        assertEquals("smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg", "smb:/Trips/Osaka/IMG_0001.jpg".toSmbRecycleBinPath())
+        assertEquals("smb:/.gallery-recycle-bin/a.jpg", "smb:/a.jpg".toSmbRecycleBinPath())
+        assertEquals("smb:/Trips/Osaka/IMG_0001.jpg", "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg".fromSmbRecycleBinPath())
+        assertEquals("smb:/a.jpg", "smb:/.gallery-recycle-bin/a.jpg".fromSmbRecycleBinPath())
+        assertEquals("smb:/Trips/Osaka", "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg".fromSmbRecycleBinPath().getParentPath())
+        assertEquals("smb:", "smb:/.gallery-recycle-bin/a.jpg".fromSmbRecycleBinPath().getParentPath())
+    }
+
+    // what the restore dialog shows as the destination
+    @Test
+    fun `a remote path is shown without its scheme`() {
+        assertEquals("/Camera", pCloud.humanizedPath("pcloud:/Camera"))
+        assertEquals("/", pCloud.humanizedPath("pcloud:"))
+        assertEquals("/Trips/Osaka", smb.humanizedPath("smb:/Trips/Osaka"))
+        assertEquals("/", smb.humanizedPath("smb:"))
     }
 
     @Test

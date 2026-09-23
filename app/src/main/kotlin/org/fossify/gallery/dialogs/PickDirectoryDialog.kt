@@ -554,7 +554,7 @@ class PickDirectoryDialog(
         binding.directoriesStorages.beVisibleIf(showStorageChips)
 
         val distinctDirs = newDirs
-            .filter { (showFavoritesBin || (!it.isRecycleBin() && !it.areFavorites())) && !it.isPCloudRecycleBin() && isShownByStorageChips(it) }
+            .filter { (showFavoritesBin || (!it.isRecycleBin() && !it.areFavorites())) && isShownByStorageChips(it) }
             .distinctBy { it.path.getDistinctPath() }
             .toMutableList() as ArrayList<Directory>
         val sortedDirs = activity.getSortedDirectories(distinctDirs)

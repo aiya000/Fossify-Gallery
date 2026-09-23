@@ -279,7 +279,7 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
         }
 
         val storage = MediaStorage.ofAll(this, filtered.map { it.path }) ?: return
-        val toBin = storage.hasRecycleBin && config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
+        val toBin = config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
         val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
         toast(resources.getQuantityString(progress, filtered.size, filtered.size))
 

@@ -61,32 +61,27 @@ import org.fossify.gallery.databinding.PhotoItemListBinding
 import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
-import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
-import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
 import org.fossify.gallery.extensions.loadImage
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openPath
 import org.fossify.gallery.extensions.rescanFolderMedia
-import org.fossify.gallery.extensions.restoreRecycleBinPaths
+import org.fossify.gallery.extensions.restoreFromRecycleBin
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
 import org.fossify.gallery.extensions.shareMediaPaths
 import org.fossify.gallery.extensions.shareMediumPath
-import org.fossify.gallery.extensions.showRestoreConfirmationDialog
 import org.fossify.gallery.extensions.toggleFileVisibility
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
-import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
-import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -226,9 +221,9 @@ class MediaAdapter(
         // selection mixing storages is no storage, and is offered nothing that goes through one:
         // favorites, the confirmation of a pick and the video download are all that is left
         val storage = MediaStorage.ofAll(activity, selectedPaths)
-        // a medium in the pCloud bin is restored or deleted for good, nothing else: copying or
-        // sharing it would go by a remote path the bin does not keep
-        val isInPCloudBin = isInRecycleBin && storage is MediaStorage.PCloud
+        // a medium in a remote storage's bin is restored or deleted for good, nothing else:
+        // copying or sharing it would go by a path the bin does not keep
+        val isInRemoteBin = isInRecycleBin && storage?.isRemote == true
         menu.apply {
             findItem(R.id.cab_change_order).isVisible = canReorder()
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
@@ -253,12 +248,12 @@ class MediaAdapter(
                 storage != null && storage.canResize && (storage.canResizeSeveral || isOneItemSelected) && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible =
-                selectedPaths.all { it.startsWith(activity.recycleBinPath) } || selectedPaths.all { it.isPCloudRecycleBinPath() }
+                selectedPaths.all { MediaStorage.of(activity, it).isInRecycleBin(it) }
             findItem(R.id.cab_create_shortcut).isVisible = storage?.canCreateShortcut == true && isOneItemSelected
-            // a medium of the share is deleted from it for good; there is no recycle bin on a
+            // every storage deletes through its own bin, and for good out of it
             // share, and the confirmation says so
             findItem(R.id.cab_delete).isVisible = storage != null
-            findItem(R.id.cab_share).isVisible = storage?.canShare == true && !isInPCloudBin
+            findItem(R.id.cab_share).isVisible = storage?.canShare == true && !isInRemoteBin
             // rotating a remote image writes it back over itself, the same as editing does
             findItem(R.id.cab_rotate).isVisible =
                 storage != null && storage.canRotate && (!storage.isRemote || canWriteBackToRemote) && !isInRecycleBin
@@ -266,7 +261,7 @@ class MediaAdapter(
             // the gallery knows rather than from a file on the device (#60)
             findItem(R.id.cab_properties).isVisible = storage != null
             // media of the share are copied off it by SmbTransferService
-            findItem(R.id.cab_copy_to).isVisible = storage != null && !isInPCloudBin
+            findItem(R.id.cab_copy_to).isVisible = storage != null && !isInRemoteBin
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -544,44 +539,13 @@ class MediaAdapter(
         }
     }
 
+    // each back to where it came from through its own storage; the dialog names where the
+    // first one goes, and can send the lot somewhere else when they are all on one storage,
+    // see restoreFromRecycleBin()
     private fun restoreFiles() {
-        val paths = getSelectedPaths()
-        if (paths.firstOrNull()?.isPCloudRecycleBinPath() == true) {
-            restorePCloudFiles(paths)
-            return
-        }
-
-        if (paths.size > 1) {
-            activity.showRestoreConfirmationDialog(paths.size) {
-                doRestoreFiles(paths)
-            }
-        } else {
-            doRestoreFiles(paths)
-        }
-    }
-
-    private fun doRestoreFiles(paths: ArrayList<String>) {
-        activity.restoreRecycleBinPaths(paths) {
+        activity.restoreFromRecycleBin(getSelectedPaths()) {
             listener?.refreshItems()
             finishActMode()
-        }
-    }
-
-    // the dialog names where the first one goes back to, as the example for the selection,
-    // and can send the lot somewhere else
-    private fun restorePCloudFiles(paths: ArrayList<String>) {
-        ensureBackgroundThread {
-            val (folder, exists) = PCloudWriter(activity).restoreDestinationOf(paths.first())
-            activity.runOnUiThread {
-                PCloudRestoreDialog(activity, paths.size, folder, !exists) { destination ->
-                    activity.writeToPCloud(emptyList(), { restoreFromRecycleBin(paths, destination) }) {
-                        activity.runOnUiThread {
-                            listener?.refreshItems()
-                            finishActMode()
-                        }
-                    }
-                }
-            }
         }
     }
 

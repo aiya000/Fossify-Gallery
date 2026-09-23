@@ -1043,9 +1043,11 @@ class SettingsActivity : SimpleActivity() {
     private fun setupEmptyRecycleBin() {
         ensureBackgroundThread {
             try {
+                // what the one bin holds on the three storages together; a device row that
+                // does not know its size is read off its file
                 mRecycleBinContentSize = mediaDB.getDeletedMedia().sumByLong { medium ->
                     val size = medium.size
-                    if (size == 0L) {
+                    if (size == 0L && !medium.path.isRemotePath()) {
                         val path = medium.path.removePrefix(RECYCLE_BIN).prependIndent(recycleBinPath)
                         File(path).length()
                     } else {

@@ -18,6 +18,7 @@ import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.handleDeletePasswordProtection
 import org.fossify.commons.extensions.handleLockedFolderOpening
+import org.fossify.commons.extensions.humanizePath
 import org.fossify.commons.extensions.internalStoragePath
 import org.fossify.commons.extensions.isAStorageRootFolder
 import org.fossify.commons.extensions.isAccessibleWithSAFSdk30
@@ -52,10 +53,16 @@ import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.isSmbRecycleBinPath
+import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.recycleBin
 import org.fossify.gallery.extensions.rescanSmbFolders
+import org.fossify.gallery.extensions.restoreRecycleBinPaths
 import org.fossify.gallery.extensions.saveRotatedImageToFile
+import org.fossify.gallery.extensions.toPCloudRemotePath
+import org.fossify.gallery.extensions.toSmbRemotePath
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.writeToPCloud
@@ -74,7 +81,8 @@ import java.util.concurrent.CountDownLatch
 // know -- a menu that was not told is exactly how #71 and #72 happened. A difference that is
 // data ("is a name renamed one at a time", "is there a file to hand to another app") is a
 // property; a difference that is steps is an override. The operations came over one family at
-// a time (#106): fetching, renaming, copying or moving, deleting and writing are all here.
+// a time (#106): fetching, renaming, copying or moving, deleting and writing are all here, and
+// the recycle bin's own -- restoring, emptying, sweeping -- with the deleting (#112).
 //
 // It holds a Context because the operations need one (the database, the notifications, the
 // services), so it is a holder of behaviour rather than a value: two of them are not equal,
@@ -336,17 +344,41 @@ sealed class MediaStorage(protected val context: Context) {
     // --- deleting: asked about, allowed, and done, in three steps a screen strings together
     // with its own updates in between. The settings that shape the question -- the delete
     // password, "do not ask again", the bin and "skip the bin" -- are the same on every storage;
-    // what differs is the words, whether there is a bin to pass through, and what the deleting
-    // itself is. Emptying a bin and restoring out of one are the bins' own, and stay where they
-    // are until #112 settles what the bins become
-
-    // whether media of this storage pass through a recycle bin on the way out, when the
-    // setting is on. The share has none, and a delete on it is for good (#28, until #112)
-    abstract val hasRecycleBin: Boolean
+    // what differs is the words and what the deleting itself is.
+    //
+    // Every storage has a recycle bin, and a medium deleted into it stays on the storage it was
+    // on: the device's bin is the app's own files directory, a remote storage's a folder in its
+    // root, moved into and out of with one request and no bytes (#112). The folder list shows
+    // the three as one bin, and the rows and the "deleted when" are the app's; what a storage
+    // does here is the moving, the restoring, the deleting for good and the daily sweep
 
     // whether [path] names something already in this storage's recycle bin, which is deleted
     // for good from there and offered no bin to skip
     abstract fun isInRecycleBin(path: String): Boolean
+
+    // Where a medium in the bin goes back to, and whether that folder is still there; for the
+    // dialog that asks before a restore. A remote storage may ask the network, so off the main
+    // thread
+    abstract fun restoreDestinationOf(binPath: String): Pair<String, Boolean>
+
+    // Brings [binPaths], all in this storage's bin, back out of it: into the folder each was
+    // deleted from, made again when it is gone, or into [destinationFolder] for all of them; a
+    // name that is taken there gets a number. [onDone] runs on the main thread with whether it
+    // all went; what did not is told to the user here
+    abstract fun restoreFromBin(activity: BaseSimpleActivity, binPaths: List<String>, destinationFolder: String?, onDone: (restored: Boolean) -> Unit)
+
+    // Deletes everything in this storage's bin for good, the rows with the files. [onDone] runs
+    // on the main thread with whether it all went; a storage with nothing in its bin says yes
+    // without asking anybody
+    abstract fun emptyBin(activity: BaseSimpleActivity, onDone: (emptied: Boolean) -> Unit)
+
+    // Deletes for good what went into this storage's bin before [olderThan], the rows with the
+    // files. Blocking and off the main thread; what fails is left for the next sweep and thrown
+    abstract fun sweepBin(olderThan: Long)
+
+    // a path of this storage as the user reads it: the device's with the storage's name in
+    // place of its mount point, a remote storage's without its scheme
+    abstract fun humanizedPath(path: String): String
 
     // the question before [media] go, in the storage's own words: into the bin when [toBin],
     // for good otherwise
@@ -384,11 +416,11 @@ sealed class MediaStorage(protected val context: Context) {
                 config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { onConfirmed(config.tempSkipRecycleBin) }
                 config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> onConfirmed(config.tempSkipRecycleBin)
                 else -> {
-                    val canUseBin = hasRecycleBin && config.useRecycleBin && !isInRecycleBin(media.first().path)
+                    val canUseBin = config.useRecycleBin && !isInRecycleBin(media.first().path)
                     val question = deleteMediaQuestion(activity, media, toBin = canUseBin && !config.tempSkipRecycleBin)
                     DeleteWithRememberDialog(activity, question, canUseBin) { remember, skipRecycleBin ->
                         config.tempSkipDeleteConfirmation = remember
-                        if (remember && hasRecycleBin) {
+                        if (remember) {
                             config.tempSkipRecycleBin = skipRecycleBin
                         }
 
@@ -403,7 +435,7 @@ sealed class MediaStorage(protected val context: Context) {
     // into the bin, which the settings decide and no checkbox does
     fun confirmDeleteFolders(activity: BaseSimpleActivity, paths: List<String>, onConfirmed: (toRecycleBin: Boolean) -> Unit) {
         val config = context.config
-        val toBin = hasRecycleBin && config.useRecycleBin && !config.tempSkipRecycleBin
+        val toBin = config.useRecycleBin && !config.tempSkipRecycleBin
         when {
             config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { onConfirmed(toBin) }
             config.skipDeleteConfirmation -> onConfirmed(toBin)
@@ -439,8 +471,8 @@ sealed class MediaStorage(protected val context: Context) {
     // Runs [then] with [path] once it may be written to: whatever is there already has been
     // agreed to be written over, when [confirmOverwrite] asks for that, and the device's own
     // grants are in. [onCancel] runs when the user says no, or the storage could not be asked.
-    // Neither remote storage has a recycle bin an overwritten medium could come back out of,
-    // so the question is asked for real there too (#28)
+    // An overwritten medium does not pass through the recycle bin on any storage, so the
+    // question is asked for real
     open fun ensureWritable(activity: BaseSimpleActivity, path: String, confirmOverwrite: Boolean, onCancel: (() -> Unit)?, then: (String) -> Unit) {
         ensureBackgroundThread {
             val taken = try {
@@ -692,8 +724,49 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        override val hasRecycleBin = true
+        // The bin is the app's own files directory, with each file kept under its full original
+        // path; the rows name it with RECYCLE_BIN in place of that directory, and the bin's
+        // listing hands them out with the directory put back, which is what a path here is
         override fun isInRecycleBin(path: String) = path.startsWith(context.recycleBinPath)
+
+        override fun restoreDestinationOf(binPath: String): Pair<String, Boolean> {
+            val folder = binPath.removePrefix(context.recycleBinPath).getParentPath()
+            return Pair(folder, File(folder).isDirectory)
+        }
+
+        // a copy back out of the app's directory, then the file in the bin goes; the commons
+        // extension has the folder rewritten to Pictures when the system will not let it be
+        // written to, and says so
+        override fun restoreFromBin(activity: BaseSimpleActivity, binPaths: List<String>, destinationFolder: String?, onDone: (restored: Boolean) -> Unit) {
+            activity.restoreRecycleBinPaths(ArrayList(binPaths), destinationFolder) {
+                onDone(true)
+            }
+        }
+
+        override fun emptyBin(activity: BaseSimpleActivity, onDone: (emptied: Boolean) -> Unit) {
+            ensureBackgroundThread {
+                val emptied = try {
+                    context.recycleBin.deleteRecursively()
+                    context.mediaDB.clearDeviceRecycleBin()
+                    true
+                } catch (e: Exception) {
+                    Log.w("RecycleBin", "The device's recycle bin could not be emptied", e)
+                    false
+                }
+
+                activity.runOnUiThread { onDone(emptied) }
+            }
+        }
+
+        override fun sweepBin(olderThan: Long) {
+            context.mediaDB.getOldDeviceRecycleBinItems(olderThan).forEach {
+                if (File(it.path.replaceFirst(RECYCLE_BIN, context.recycleBinPath)).delete()) {
+                    context.mediaDB.deleteMediumPath(it.path)
+                }
+            }
+        }
+
+        override fun humanizedPath(path: String): String = context.humanizePath(path)
 
         // named with their size, which is read off the files
         override fun deleteMediaQuestion(activity: BaseSimpleActivity, media: List<Medium>, toBin: Boolean): String {
@@ -1017,9 +1090,44 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // the app's own bin on pCloud, a folder in the root, see PCLOUD_RECYCLE_BIN
-        override val hasRecycleBin = true
+        // the app's own bin on pCloud, a folder in the root, see PCLOUD_RECYCLE_BIN; the writer
+        // moves in and out of it by file id and carries the rows along
         override fun isInRecycleBin(path: String) = path.isPCloudRecycleBinPath()
+
+        override fun restoreDestinationOf(binPath: String) = PCloudWriter(context).restoreDestinationOf(binPath)
+
+        override fun restoreFromBin(activity: BaseSimpleActivity, binPaths: List<String>, destinationFolder: String?, onDone: (restored: Boolean) -> Unit) {
+            context.writeToPCloud(emptyList(), { restoreFromRecycleBin(binPaths, destinationFolder) }) { restored ->
+                activity.runOnUiThread { onDone(restored) }
+            }
+        }
+
+        // nothing in the bin means nothing to ask pCloud, and no account to ask it with
+        override fun emptyBin(activity: BaseSimpleActivity, onDone: (emptied: Boolean) -> Unit) {
+            ensureBackgroundThread {
+                if (context.mediaDB.getPCloudDeletedMedia().isEmpty()) {
+                    activity.runOnUiThread { onDone(true) }
+                    return@ensureBackgroundThread
+                }
+
+                context.writeToPCloud(emptyList(), { emptyRecycleBin() }) { emptied ->
+                    activity.runOnUiThread { onDone(emptied) }
+                }
+            }
+        }
+
+        override fun sweepBin(olderThan: Long) {
+            if (!context.config.isPCloudLoggedIn) {
+                return
+            }
+
+            val old = context.mediaDB.getOldPCloudRecycleBinItems(olderThan)
+            if (old.isNotEmpty()) {
+                PCloudWriter(context).deleteFromRecycleBin(old.map { it.path })
+            }
+        }
+
+        override fun humanizedPath(path: String): String = path.toPCloudRemotePath()
 
         override fun deleteMediaQuestion(activity: BaseSimpleActivity, media: List<Medium>, toBin: Boolean): String {
             val id = if (toBin) R.string.pcloud_move_to_recycle_bin_confirmation else R.string.pcloud_delete_confirmation
@@ -1221,25 +1329,75 @@ sealed class MediaStorage(protected val context: Context) {
             enqueueSmbTransfer(activity, kind, fileDirItems, source, destination, isCopy, onQueued)
         }
 
-        // no bin on the share and none made (#28): a delete is for good, the question says so,
-        // and there is no bin to offer to skip. #112 is where that changes
-        override val hasRecycleBin = false
-        override fun isInRecycleBin(path: String) = false
+        // the app's own bin on the share, a folder in the root that keeps the original layout,
+        // see SMB_RECYCLE_BIN; the writer moves in and out of it with the rename request, no
+        // bytes travelling, and carries the rows and the cached copies along
+        override fun isInRecycleBin(path: String) = path.isSmbRecycleBinPath()
 
-        override fun deleteMediaQuestion(activity: BaseSimpleActivity, media: List<Medium>, toBin: Boolean) =
-            activity.getString(R.string.smb_delete_confirmation, namesOf(activity, media.map { it.path }))
+        override fun restoreDestinationOf(binPath: String) = SmbWriter(context).restoreDestinationOf(binPath)
 
-        override fun deleteFoldersQuestion(activity: BaseSimpleActivity, paths: List<String>, toBin: Boolean) =
-            activity.getString(R.string.smb_delete_folder_confirmation, namesOf(activity, paths))
+        override fun restoreFromBin(activity: BaseSimpleActivity, binPaths: List<String>, destinationFolder: String?, onDone: (restored: Boolean) -> Unit) {
+            context.writeToShare({ restoreFromRecycleBin(binPaths, destinationFolder) }) { restored ->
+                activity.runOnUiThread { onDone(restored) }
+            }
+        }
+
+        // nothing in the bin means nothing to ask the share, and no share to ask
+        override fun emptyBin(activity: BaseSimpleActivity, onDone: (emptied: Boolean) -> Unit) {
+            ensureBackgroundThread {
+                if (context.mediaDB.getSmbDeletedMedia().isEmpty()) {
+                    activity.runOnUiThread { onDone(true) }
+                    return@ensureBackgroundThread
+                }
+
+                context.writeToShare({ emptyRecycleBin() }) { emptied ->
+                    activity.runOnUiThread { onDone(emptied) }
+                }
+            }
+        }
+
+        // one small request per expired medium; a share that is off today is tried tomorrow
+        override fun sweepBin(olderThan: Long) {
+            if (!context.config.isSmbConfigured) {
+                return
+            }
+
+            val old = context.mediaDB.getOldSmbRecycleBinItems(olderThan)
+            if (old.isNotEmpty()) {
+                SmbWriter(context).deleteFromRecycleBin(old.map { it.path })
+            }
+        }
+
+        override fun humanizedPath(path: String): String = "/${path.toSmbRemotePath()}"
+
+        override fun deleteMediaQuestion(activity: BaseSimpleActivity, media: List<Medium>, toBin: Boolean): String {
+            val id = if (toBin) R.string.smb_move_to_recycle_bin_confirmation else R.string.smb_delete_confirmation
+            return activity.getString(id, namesOf(activity, media.map { it.path }))
+        }
+
+        override fun deleteFoldersQuestion(activity: BaseSimpleActivity, paths: List<String>, toBin: Boolean): String {
+            val id = if (toBin) R.string.smb_move_folder_to_recycle_bin_confirmation else R.string.smb_delete_folder_confirmation
+            return activity.getString(id, namesOf(activity, paths))
+        }
 
         override fun onceMayDeleteMedia(activity: BaseSimpleActivity, fileDirItems: List<FileDirItem>, then: () -> Unit) = then()
         override fun onceMayDeleteFolders(activity: BaseSimpleActivity, path: String, then: () -> Unit) = then()
 
-        // from the share and from nowhere else; the writer takes the rows with the files, and
-        // nothing is rescanned
+        // into the app's bin on the share, for good from there, or for good from where it is;
+        // the writer takes the rows with the files, and nothing is rescanned
         override fun deleteMedia(activity: BaseSimpleActivity, fileDirItems: ArrayList<FileDirItem>, skipRecycleBin: Boolean, onDone: (deleted: Boolean) -> Unit) {
             val paths = fileDirItems.map { it.path }
-            context.writeToShare({ deleteFiles(paths) }) { deleted ->
+            val isInBin = isInRecycleBin(paths.first())
+            val toBin = context.config.useRecycleBin && !skipRecycleBin && !isInBin
+            val write: SmbWriter.() -> Unit = {
+                when {
+                    toBin -> moveToRecycleBin(paths)
+                    isInBin -> deleteFromRecycleBin(paths)
+                    else -> deleteFiles(paths)
+                }
+            }
+
+            context.writeToShare(write) { deleted ->
                 activity.runOnUiThread { onDone(deleted) }
             }
         }
@@ -1247,8 +1405,9 @@ sealed class MediaStorage(protected val context: Context) {
         // nothing is rescanned afterwards: what the share still has of a folder that only half
         // went is put right by the next walk of it, and a walk of a whole share is minutes
         override fun deleteFolders(activity: BaseSimpleActivity, paths: List<String>, toRecycleBin: Boolean, onDone: () -> Unit) {
-            activity.toast(activity.resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
-            context.writeToShare({ deleteFolders(paths) }) {
+            val base = if (toRecycleBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
+            activity.toast(activity.resources.getQuantityString(base, paths.size, paths.size))
+            context.writeToShare({ deleteFolders(paths, toRecycleBin) }) {
                 activity.runOnUiThread { onDone() }
             }
         }

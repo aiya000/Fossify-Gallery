@@ -6,8 +6,11 @@ import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.extensions.favoritesDB
+import org.fossify.gallery.extensions.fromSmbRecycleBinPath
+import org.fossify.gallery.extensions.isSmbRecycleBinPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.rebuildDirectoryRow
+import org.fossify.gallery.extensions.toSmbRecycleBinPath
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -16,10 +19,11 @@ import java.io.File
 // same shape as PCloudWriter. The share is asked first and the rows follow only once it has
 // agreed, so a refused write leaves the cache as it was.
 //
-// There is no recycle bin here, and there will not be one. The app's own bin is a folder on the
-// storage it belongs to, and a folder the app made on somebody's NAS is a folder they would have
-// to know about and clean up themselves; what is deleted from the share is deleted (#28). The
-// screens say so before they ask this to do anything.
+// The app's own recycle bin is a folder on the share, the same as on pCloud, see
+// moveToRecycleBin(): a delete moves the medium into it with the one request a rename uses,
+// and no bytes travel for a delete or a restore. That is why the bin is on the share and not
+// on this device (#112). It was "no bin on the share" once (#28), when the share was taken
+// for somebody else's NAS; it is the maintainer's own.
 //
 // Blocking and talking to the network, so call it off the main thread; throws what smbj threw
 // when the share refused, and an IOException when it could not be reached
@@ -68,7 +72,9 @@ class SmbWriter(private val context: Context) {
         failure?.let { throw it }
     }
 
-    // The folders and everything under them, from the share and from the cache alike.
+    // The folders and everything under them, from the share and from the cache alike. With
+    // toRecycleBin the media the gallery lists under them, at any depth, go to the recycle bin
+    // first, one by one; the folder, with whatever else was in it, then goes for good.
     //
     // A folder whose delete failed keeps its rows, even though a recursive delete may have taken
     // some of what was under it before it stopped. The rows then name media the share no longer
@@ -76,12 +82,17 @@ class SmbWriter(private val context: Context) {
     // says the folder is still there, which is the true half of what happened. Forgetting it
     // instead would take a folder that is still on the share out of the gallery, and leave
     // someone believing they had deleted something they had not
-    fun deleteFolders(paths: List<String>) {
+    fun deleteFolders(paths: List<String>, toRecycleBin: Boolean = false) {
         val scanner = SmbScanner(context)
         var done = 0
         var failure: Exception? = null
         paths.forEach { path ->
             try {
+                if (toRecycleBin) {
+                    val media = context.mediaDB.getPathsWithPrefix("$path/").filter { !it.isSmbRecycleBinPath() }
+                    moveToRecycleBin(media, refreshFolders = false)
+                }
+
                 SmbClient.deleteFolder(context, path)
             } catch (e: Exception) {
                 Log.w(TAG, "$path could not be deleted from the share", e)
@@ -95,6 +106,162 @@ class SmbWriter(private val context: Context) {
 
         Log.i(TAG, "Deleted $done of ${paths.size} folders from the share")
         failure?.let { throw it }
+    }
+
+    // Moves media into the app's recycle bin on the share -- a folder in the root, made on
+    // first use, see SMB_RECYCLE_BIN -- and marks their rows deleted under the path each has
+    // there. The bin keeps the original layout, so the path in the bin is the original path
+    // under the bin's folder; the same file deleted twice gets a number the second time. The
+    // rows keep their name, which is what a restore gives the file back, and the cached copies
+    // follow the file so the bin's thumbnails are not fetched again.
+    //
+    // One at a time, and the list is walked to the end when one fails, the same as
+    // deleteFiles(): what went wrong is thrown once the rest is through. The folders the media
+    // were in get their rows rebuilt, unless the caller is about to drop them anyway
+    fun moveToRecycleBin(paths: List<String>, refreshFolders: Boolean = true) {
+        if (paths.isEmpty()) {
+            return
+        }
+
+        var done = 0
+        var failure: Exception? = null
+        paths.forEach { path ->
+            val medium = context.mediaDB.getMediumByPath(path)
+            try {
+                val binFolder = path.toSmbRecycleBinPath().getParentPath()
+                SmbClient.createFolder(context, binFolder)
+                val binPath = availableName(binFolder, path.getFilenameFromPath()) { SmbClient.fileExists(context, it) }
+                SmbClient.moveTo(context, path, binPath)
+                GalleryDatabase.getInstance(context).runInTransaction {
+                    context.mediaDB.updateDeleted(binPath, System.currentTimeMillis(), path)
+                    context.favoritesDB.deleteFavoritePath(path)
+                }
+
+                medium?.let { renameCachedCopies(path, binPath, it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "$path could not be moved into the share's recycle bin", e)
+                failure = e
+                return@forEach
+            }
+
+            done++
+        }
+
+        if (refreshFolders) {
+            paths.map { it.getParentPath() }.distinct().forEach { context.rebuildDirectoryRow(it) }
+        }
+
+        // said once per batch, after the rows have moved with the files, so the line means "they
+        // are in the bin and the folder would not show them"
+        Log.i(TAG, "Moved $done of ${paths.size} media into the share's recycle bin")
+        failure?.let { throw it }
+    }
+
+    // Brings media back out of the recycle bin, into the folder each was deleted from, or into
+    // destinationFolder for all of them. A folder the share no longer has is made again, with
+    // the folders above it; a name that is taken there gets a number. The rows follow, with
+    // their deleted mark cleared, and the folders restored into get their rows rebuilt; the
+    // folders left empty in the bin are taken away. Answers the paths the media have now
+    fun restoreFromRecycleBin(paths: List<String>, destinationFolder: String? = null): List<String> {
+        val restored = ArrayList<String>()
+        var failure: Exception? = null
+        paths.forEach { binPath ->
+            val medium = context.mediaDB.getMediumByPath(binPath)
+            val name = medium?.name ?: binPath.getFilenameFromPath()
+            val folder = destinationFolder ?: binPath.fromSmbRecycleBinPath().getParentPath()
+            try {
+                SmbClient.createFolder(context, folder)
+                val newPath = availableName(folder, name) { SmbClient.fileExists(context, it) }
+                SmbClient.moveTo(context, binPath, newPath)
+                GalleryDatabase.getInstance(context).runInTransaction {
+                    context.mediaDB.restoreDeleted(binPath, newPath, folder, newPath.getFilenameFromPath())
+                }
+
+                medium?.let { renameCachedCopies(binPath, newPath, it) }
+                pruneEmptyBinFolders(binPath.getParentPath())
+                restored.add(newPath)
+            } catch (e: Exception) {
+                Log.w(TAG, "$binPath could not be restored from the share's recycle bin", e)
+                failure = e
+            }
+        }
+
+        restored.map { it.getParentPath() }.distinct().forEach { context.rebuildDirectoryRow(it) }
+        Log.i(TAG, "Restored ${restored.size} of ${paths.size} media from the share's recycle bin")
+        failure?.let { throw it }
+        return restored
+    }
+
+    // Deletes media in the recycle bin for good, and drops their rows and their cached copies.
+    // A file the share no longer has counts as deleted. The list is walked to the end when one
+    // fails, so that the daily sweep gets as far as it can and tries the rest again tomorrow
+    fun deleteFromRecycleBin(paths: List<String>) {
+        var done = 0
+        var failure: Exception? = null
+        paths.forEach { binPath ->
+            val medium = context.mediaDB.getMediumByPath(binPath)
+            try {
+                SmbClient.delete(context, binPath)
+                pruneEmptyBinFolders(binPath.getParentPath())
+            } catch (e: Exception) {
+                Log.w(TAG, "$binPath could not be deleted from the share's recycle bin", e)
+                failure = e
+                return@forEach
+            }
+
+            context.mediaDB.deleteMediumPath(binPath)
+            medium?.let {
+                SmbFileCache(context).deleteCopy(binPath, it.size, it.modified)
+                SmbVideoCache(context).deleteCopy(binPath, it.size, it.modified)
+            }
+
+            done++
+        }
+
+        Log.i(TAG, "Deleted $done of ${paths.size} media from the share's recycle bin")
+        failure?.let { throw it }
+    }
+
+    fun emptyRecycleBin() {
+        deleteFromRecycleBin(context.mediaDB.getSmbDeletedMedia().map { it.path })
+    }
+
+    // The path a medium was deleted from is where a restore puts it back, and whether the
+    // share still has that folder; for the dialog that asks before a restore. Asks the share,
+    // which is a request over the network, so this belongs off the main thread. A share that
+    // cannot be asked is taken to have the folder: the dialog is not the place to report that,
+    // the restore that follows it is
+    fun restoreDestinationOf(binPath: String): Pair<String, Boolean> {
+        val folder = binPath.fromSmbRecycleBinPath().getParentPath()
+        val exists = folder == SMB_PATH_SCHEME || try {
+            SmbClient.folderExists(context, folder)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not ask the share whether it still has $folder", e)
+            true
+        }
+
+        return Pair(folder, exists)
+    }
+
+    // the folders of the bin's layout are made as media go in, and taken away again once they
+    // hold nothing, from the one the medium was in up to the bin itself, which stays. A folder
+    // that still holds something ends the walk, and so does one that would not go
+    private fun pruneEmptyBinFolders(folder: String) {
+        var current = folder
+        while (current != SMB_RECYCLE_BIN && current.isSmbRecycleBinPath()) {
+            val removed = try {
+                SmbClient.deleteFolderIfEmpty(context, current)
+            } catch (e: Exception) {
+                Log.w(TAG, "$current, a folder of the share's recycle bin, could not be looked at", e)
+                false
+            }
+
+            if (!removed) {
+                return
+            }
+
+            current = current.getParentPath()
+        }
     }
 
     // Gives a medium of the share another name, in the folder it is already in. Answers the new
@@ -173,7 +340,7 @@ class SmbWriter(private val context: Context) {
     // either the old file or the new one, never neither. This is PCloudWriter.overwriteFile()
     // built out of the requests the share has.
     //
-    // There is no bin here to take an overwritten medium back out of, as above, which is why the
+    // An overwritten medium does not pass through the bin, on any storage, which is why the
     // screens ask before they call this at all. The caller keeps the local file it handed in, so
     // nothing the user made is lost even when the stash cannot be put back
     fun overwriteFile(path: String, localPath: String) {

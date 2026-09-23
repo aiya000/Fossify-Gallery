@@ -186,7 +186,7 @@ class PCloudWriter(private val context: Context) {
     // full scans, see PCloudItemDao.deleteAllOutsideRecycleBin()
     private fun recycleBinFolderId(): Long {
         context.pCloudItemsDB.getItem(PCLOUD_RECYCLE_BIN)?.let { return it.itemId }
-        val folderId = PCloudApi.createFolderIfNotExists(apiHost, accessToken, 0L, PCLOUD_RECYCLE_BIN_FOLDER_NAME)
+        val folderId = PCloudApi.createFolderIfNotExists(apiHost, accessToken, 0L, RECYCLE_BIN_FOLDER_NAME)
         context.pCloudItemsDB.insertAll(listOf(PCloudItem(null, PCLOUD_RECYCLE_BIN, folderId, true, 0L, false, 0L)))
         return folderId
     }

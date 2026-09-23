@@ -11,8 +11,8 @@
 #
 # Off the share it is a copy followed by a delete, and the order of those two is the whole thing:
 # the original may only go once the new one is whole. A build that deleted first, or deleted after
-# a copy that failed, loses the file outright -- and the share has no recycle bin to take it back
-# out of.
+# a copy that failed, loses the file outright -- a file that never reached the destination is not
+# in any recycle bin either.
 #
 # Nothing in the fixture's counts may be moved -- 10-scan-whole-share.sh asserts on them -- so this
 # script brings its own two media and takes back whatever is left of them, at either end, on the

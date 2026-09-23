@@ -57,7 +57,6 @@ import org.fossify.commons.extensions.isGone
 import org.fossify.commons.extensions.isMediaFile
 import org.fossify.commons.extensions.isPathOnOTG
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
-import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toFileDirItem
@@ -140,13 +139,12 @@ import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_DAILY
 import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_MONTHLY
 import org.fossify.gallery.helpers.GROUP_DESCENDING
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
-import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MediaStorage
+import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCloudSyncPolicy
-import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.RemoteScanScheduler
@@ -155,7 +153,6 @@ import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
@@ -1617,6 +1614,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val lastModifieds = mLastMediaFetcher!!.getLastModifieds()
         val dateTakens = mLastMediaFetcher!!.getDateTakens()
 
+        // the one recycle bin, holding what was deleted on any of the three storages (#112)
         if (
             config.showRecycleBinAtFolders
             && !config.showRecycleBinLast
@@ -1631,23 +1629,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     }
 
                     dirs.add(0, recycleBin)
-                }
-            } catch (ignored: Exception) {
-            }
-        }
-
-        // the pCloud bin the same way; "bin last" is applied when the list is sorted, so it
-        // goes in first here either way
-        if (config.showRecycleBinAtFolders && config.isPCloudLoggedIn && !dirs.map { it.path }.contains(PCLOUD_RECYCLE_BIN)) {
-            try {
-                if (mediaDB.getPCloudDeletedMediaCount() > 0) {
-                    val pCloudRecycleBin = Directory().apply {
-                        path = PCLOUD_RECYCLE_BIN
-                        name = getString(R.string.pcloud_recycle_bin)
-                        location = LOCATION_PCLOUD
-                    }
-
-                    dirs.add(0, pCloudRecycleBin)
                 }
             } catch (ignored: Exception) {
             }
@@ -1771,7 +1752,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
                 // update directories and media files in the local db, delete invalid items. Intentionally creating a new thread
                 updateDBDirectory(directory)
-                if (!directory.isRecycleBin() && !directory.isPCloudRecycleBin() && !directory.areFavorites()) {
+                if (!directory.isRecycleBin() && !directory.areFavorites()) {
                     Thread {
                         try {
                             mediaDB.insertAll(curMedia)
@@ -1780,7 +1761,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     }.start()
                 }
 
-                if (!directory.isRecycleBin() && !directory.isPCloudRecycleBin()) {
+                if (!directory.isRecycleBin()) {
                     getCachedMedia(directory.path, getVideosOnly, getImagesOnly) {
                         val mediaToDelete = ArrayList<Medium>()
                         it.forEach {
@@ -2164,20 +2145,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (config.useRecycleBin) {
             try {
                 val binFolder = dirs.firstOrNull { it.path == RECYCLE_BIN }
-                if (binFolder != null && mediaDB.getDeletedMedia().isEmpty()) {
+                if (binFolder != null && mediaDB.getDeletedMediaCount() == 0L) {
                     invalidDirs.add(binFolder)
                 }
             } catch (ignored: Exception) {
             }
         }
 
-        try {
-            val pCloudBinFolder = dirs.firstOrNull { it.isPCloudRecycleBin() }
-            if (pCloudBinFolder != null && mediaDB.getPCloudDeletedMediaCount() == 0L) {
-                invalidDirs.add(pCloudBinFolder)
-            }
-        } catch (ignored: Exception) {
-        }
+        // the "pCloud recycle bin" tile from before the three bins were one (#112), should a
+        // row of it still be in the cache
+        invalidDirs.addAll(dirs.filter { it.path == PCLOUD_RECYCLE_BIN })
 
         if (invalidDirs.isNotEmpty()) {
             dirs.removeAll(invalidDirs)
@@ -2234,32 +2211,19 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }, LAST_MEDIA_CHECK_PERIOD)
     }
 
+    // once a day, what has been in the recycle bin for a month goes for good, on each of the
+    // three storages through that storage; what fails today is tried again tomorrow
     private fun checkRecycleBinItems() {
         if (config.useRecycleBin && config.lastBinCheck < System.currentTimeMillis() - DAY_SECONDS * 1000) {
             config.lastBinCheck = System.currentTimeMillis()
             Handler().postDelayed({
                 ensureBackgroundThread {
-                    try {
-                        val filesToDelete = mediaDB.getOldRecycleBinItems(
-                            System.currentTimeMillis() - MONTH_MILLISECONDS
-                        )
-                        filesToDelete.forEach {
-                            if (File(it.path.replaceFirst(RECYCLE_BIN, recycleBinPath)).delete()) {
-                                mediaDB.deleteMediumPath(it.path)
-                            }
-                        }
-                    } catch (e: Exception) {
-                    }
-
-                    // the month-old media in the pCloud bin go for good the same way, through
-                    // pCloud; what fails today is tried again tomorrow
-                    if (config.isPCloudLoggedIn) {
+                    val olderThan = System.currentTimeMillis() - MONTH_MILLISECONDS
+                    listOf(MediaStorage.Device(this), MediaStorage.PCloud(this), MediaStorage.Smb(this)).forEach { storage ->
                         try {
-                            val oldPCloudItems = mediaDB.getOldPCloudRecycleBinItems(System.currentTimeMillis() - MONTH_MILLISECONDS)
-                            if (oldPCloudItems.isNotEmpty()) {
-                                PCloudWriter(this).deleteFromRecycleBin(oldPCloudItems.map { it.path })
-                            }
+                            storage.sweepBin(olderThan)
                         } catch (e: Exception) {
+                            Log.w("RecycleBin", "The sweep of the ${storage.javaClass.simpleName} recycle bin did not finish", e)
                         }
                     }
                 }

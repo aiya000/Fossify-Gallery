@@ -99,7 +99,6 @@ import org.fossify.gallery.helpers.LOCATION_SMB
 import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCLOUD_RESULT_ALREADY_EXISTS
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudSyncPolicy
@@ -196,13 +195,6 @@ fun Context.movePinnedDirectoriesToFront(dirs: ArrayList<Directory>): ArrayList<
         val binIndex = dirs.indexOfFirst { it.isRecycleBin() }
         if (binIndex != -1) {
             val bin = dirs.removeAt(binIndex)
-            dirs.add(bin)
-        }
-
-        // the pCloud bin goes last too, after the device's one
-        val pCloudBinIndex = dirs.indexOfFirst { it.isPCloudRecycleBin() }
-        if (pCloudBinIndex != -1) {
-            val bin = dirs.removeAt(pCloudBinIndex)
             dirs.add(bin)
         }
     }
@@ -382,7 +374,7 @@ fun Context.getDirectParentSubfolders(
     val foldersWithoutMediaFiles = ArrayList<String>()
 
     for (path in folders) {
-        if (path == RECYCLE_BIN || path == PCLOUD_RECYCLE_BIN || path == FAVORITES) {
+        if (path == RECYCLE_BIN || path == FAVORITES) {
             continue
         }
 
@@ -444,10 +436,6 @@ fun Context.getDirectParentSubfolders(
 
     if (currentPathPrefix.isEmpty() && folders.contains(RECYCLE_BIN)) {
         currentPaths.add(RECYCLE_BIN)
-    }
-
-    if (currentPathPrefix.isEmpty() && folders.contains(PCLOUD_RECYCLE_BIN)) {
-        currentPaths.add(PCLOUD_RECYCLE_BIN)
     }
 
     if (currentPathPrefix.isEmpty() && folders.contains(FAVORITES)) {
@@ -638,7 +626,6 @@ fun Context.getFolderNameFromPath(path: String): String {
         otgPath -> getString(org.fossify.commons.R.string.usb)
         FAVORITES -> getString(org.fossify.commons.R.string.favorites)
         RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
-        PCLOUD_RECYCLE_BIN -> getString(R.string.pcloud_recycle_bin)
         PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
         else -> path.getFilenameFromPath()
     }
@@ -778,15 +765,14 @@ fun Context.humanizeAnyPath(path: String): String = when {
     else -> humanizePath(path)
 }
 
-// Which folders the storage filter lets through. Favorites and virtual groups belong to no
-// storage and always pass; the device's recycle bin has a device path, so it goes with the
-// device's folders, and the pCloud bin has a pCloud path and goes with pCloud's
+// Which folders the storage filter lets through. Favorites, virtual groups and the recycle bin
+// belong to no one storage and always pass: the bin holds what was deleted on all three (#112)
 fun Context.isShownByStorageFilter(directory: Directory): Boolean {
     val path = directory.path
     val isPCloud = path.isPCloudPath()
     val isSmb = path.isSmbPath()
     return when {
-        directory.areFavorites() || directory.isGroup() -> true
+        directory.areFavorites() || directory.isGroup() || directory.isRecycleBin() -> true
         // a storage that is no longer set up shows nothing whatever the filter says, so a cache
         // left behind by signing out or by clearing the share does not reappear
         isPCloud && !config.isPCloudLoggedIn -> false
@@ -1202,7 +1188,7 @@ fun Context.getCachedDirectories(
         }
 
         if (!config.showRecycleBinAtFolders) {
-            directories.removeAll { it.isRecycleBin() || it.isPCloudRecycleBin() }
+            directories.removeAll { it.isRecycleBin() }
         }
 
         val shouldShowHidden = config.shouldShowHidden || forceShowHidden
@@ -1220,9 +1206,8 @@ fun Context.getCachedDirectories(
             folderNoMediaStatuses["$folder/$NOMEDIA"] = true
         }
 
-        // the pCloud bin's pseudo path is a dot folder's, which is not to hide it
         var filteredDirectories = directories.filter {
-            it.isPCloudRecycleBin() || it.path.shouldFolderBeVisible(
+            it.path.shouldFolderBeVisible(
                 excludedPaths = excludedPaths,
                 includedPaths = includedPaths,
                 showHidden = shouldShowHidden,
@@ -1302,12 +1287,11 @@ fun Context.getCachedMedia(
             media.addAll(mediaDB.getFavorites())
         }
 
+        // the one bin: the device's deleted media under the files they were copied to, and the
+        // remote storages' as their rows say
         if (path == RECYCLE_BIN) {
             media.addAll(getUpdatedDeletedMedia())
-        }
-
-        if (path == PCLOUD_RECYCLE_BIN) {
-            media.addAll(mediaDB.getPCloudDeletedMedia())
+            media.addAll(mediaDB.getRemoteDeletedMedia())
         }
 
         if (config.filterMedia and TYPE_PORTRAITS != 0) {
@@ -1478,7 +1462,7 @@ fun Context.updateFavorite(path: String, isFavorite: Boolean) {
 // remove the "recycle_bin" from the file path prefix, replace it with real bin path /data/user...
 fun Context.getUpdatedDeletedMedia(): ArrayList<Medium> {
     val media = try {
-        mediaDB.getDeletedMedia() as ArrayList<Medium>
+        mediaDB.getDeviceDeletedMedia() as ArrayList<Medium>
     } catch (ignored: Exception) {
         ArrayList()
     }

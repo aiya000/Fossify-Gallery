@@ -7,6 +7,7 @@ import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.SMB_RECYCLE_BIN
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -33,6 +34,16 @@ fun String.fromPCloudRecycleBinPath() = "$PCLOUD_PATH_SCHEME${removePrefix(PCLOU
 
 // SMB media carries a pseudo path too, see SMB_PATH_PREFIX
 fun String.isSmbPath() = startsWith(SMB_PATH_SCHEME)
+
+// a medium in the app's recycle bin on the share, see SMB_RECYCLE_BIN. The bin folder itself
+// is not one of them
+fun String.isSmbRecycleBinPath() = startsWith("$SMB_RECYCLE_BIN/")
+
+// "smb:/Trips/Osaka/IMG_0001.jpg" -> "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg"
+fun String.toSmbRecycleBinPath() = "$SMB_RECYCLE_BIN${removePrefix(SMB_PATH_SCHEME)}"
+
+// and back: the path the medium had before it went into the bin
+fun String.fromSmbRecycleBinPath() = "$SMB_PATH_SCHEME${removePrefix(SMB_RECYCLE_BIN)}"
 
 // "smb:/photos/2026/IMG_0001.jpg" -> "photos/2026/IMG_0001.jpg", the path inside the share as
 // smbj wants it, without a leading separator. The root "smb:" becomes ""

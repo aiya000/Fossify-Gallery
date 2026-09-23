@@ -139,15 +139,18 @@ const val UPSTREAM_APP_ID = "org.fossify.gallery"
 const val PCLOUD_PATH_SCHEME = "pcloud:"
 const val PCLOUD_PATH_PREFIX = "$PCLOUD_PATH_SCHEME/"
 
-// The app's own recycle bin on pCloud: a folder in the root that deleted media are moved
-// into, see PCloudWriter.moveToRecycleBin(). The folder is a real one, but the rows of the
-// media in it keep their original layout under this pseudo path, e.g.
+// The app's own recycle bin on a remote storage: a folder of this name in the storage's root
+// that deleted media are moved into, and stay on the storage they came from (#112). The
+// folder list shows one recycle bin, RECYCLE_BIN, for the three storages together; these are
+// where their files lie, and the prefix the rows of the media in them carry
+const val RECYCLE_BIN_FOLDER_NAME = ".gallery-recycle-bin"
+
+// The bin on pCloud, see PCloudWriter.moveToRecycleBin(). The folder is a real one, but the
+// rows of the media in it keep their original layout under this pseudo path, e.g.
 // "pcloud:/.gallery-recycle-bin/Camera/IMG_0001.jpg" for a file that was in "pcloud:/Camera",
 // so that a restore knows where the file came from; where the file lies inside the folder
-// on pCloud never matters, every operation on it goes by its file id. The folder list shows
-// the bin as a folder with this pseudo path, like RECYCLE_BIN for the device's bin
-const val PCLOUD_RECYCLE_BIN_FOLDER_NAME = ".gallery-recycle-bin"
-const val PCLOUD_RECYCLE_BIN = "$PCLOUD_PATH_PREFIX$PCLOUD_RECYCLE_BIN_FOLDER_NAME"
+// on pCloud never matters, every operation on it goes by its file id
+const val PCLOUD_RECYCLE_BIN = "$PCLOUD_PATH_PREFIX$RECYCLE_BIN_FOLDER_NAME"
 
 // under the cache directory: the pCloud media handed to the rest of the app as real files,
 // each a link to its cached copy under the name the medium has on pCloud
@@ -199,6 +202,12 @@ const val PCLOUD_CATEGORY_VIDEO = 2
 // first segment, so one configured host is browsed as one tree and getParentPath() keeps working
 const val SMB_PATH_SCHEME = "smb:"
 const val SMB_PATH_PREFIX = "$SMB_PATH_SCHEME/"
+
+// The bin on the share, see SmbWriter.moveToRecycleBin(). Unlike pCloud's, the folder keeps
+// the original layout for real -- "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg" is
+// both the row's path and where the file lies on the share -- since the share has no file ids
+// to find a file by, and a path is all a row can carry. The scanner leaves the folder out
+const val SMB_RECYCLE_BIN = "$SMB_PATH_PREFIX$RECYCLE_BIN_FOLDER_NAME"
 
 // under the cache directory: the local copies of SMB files, for the parts of the app that need
 // a real file. See SmbFileCache

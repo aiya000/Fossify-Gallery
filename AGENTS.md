@@ -21,6 +21,8 @@
 | 共有でリネームしたら、共有のファイル名は変わったのにグリッドは古いまま。例外も出ない | DAO の宣言順と呼び出しの位置引数がずれていた。名前付き引数にした。再スキャンがずっと隠していた | [agents/database/a-rename-that-updated-nothing.md](./agents/database/a-rename-that-updated-nothing.md) |
 | わざと直しを外したのに、台本の「もう出ていないはず」のチェックだけ緑のままだった | dump に入るのは手前の window ひとつ。ダイアログの後ろの Snackbar は見えない。出るほうを見るチェックに書き換えた | [agents/tests/a-dump-taken-while-a-dialog-is-up.md](./agents/tests/a-dump-taken-while-a-dialog-is-up.md) |
 | エディタは写真を保存したのに、共有には何も書き戻らない。例外も出ない | `ACTION_EDIT` に `FLAG_ACTIVITY_NEW_TASK` が付いている。「Edit with」の一覧が立つと、編集する前に `RESULT_CANCELED` が返る。自前のエディタを名指しで開くようにした | [agents/editor/a-result-that-never-came-back.md](./agents/editor/a-result-that-never-came-back.md) |
+| 台本でタップしたいメニューの文言が、アプリの `strings.xml` に無い | commons の AAR が持っている。ビルド成果物のマージ済みリソースをキー名で引いた | [agents/tests/the-menu-text-lives-in-the-commons-aar.md](./agents/tests/the-menu-text-lives-in-the-commons-aar.md) |
+| 共有のスキャンが、固定データより十数ファイル多く数える。台本は何も足していない | samba の `recycle` モジュールが消したファイルを `.deleted/` にためていた。compose で外して、フォルダを消した | [agents/tests/the-fixture-samba-kept-every-deleted-file.md](./agents/tests/the-fixture-samba-kept-every-deleted-file.md) |
 
 ### この索引に足すこと
 
