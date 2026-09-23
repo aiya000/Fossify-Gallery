@@ -114,7 +114,10 @@ at afterwards.
   with `run-as`, the bin being the app's own files directory with the file kept under its full
   original path -- a delete that skipped the bin would pass the first check and fail the second.
   It pins the same confirmation `55` does: it says "recycle bin", and the "skip the recycle bin"
-  checkbox is on it
+  checkbox is on it. Then the way back out (#112): the one recycle bin opened, the medium
+  restored through the same dialog every storage gets, back where it was with its bytes and with
+  its copy gone from the bin -- the copy used to stay behind until the bin was emptied -- and
+  "Empty the recycle bin" taking the rest away, the tile with it
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
