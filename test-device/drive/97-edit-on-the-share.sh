@@ -17,10 +17,11 @@
 # - the way back. What says the share took the edit is the share: the medium's bytes changed, and
 #   nothing is left under the name the original was stashed as while the new content went up
 #
-# The editor's "Save as" is also checked to be gone here, which is not a detail: saving the copy
-# under another name would leave the edit in this app's cache, where nothing the user has can
-# reach it. "Overwrite original" is the only save that means anything for a medium of the share,
-# and for one of pCloud before it.
+# The editor's "Save as" is checked to be offered as well. It was hidden for a copy at first,
+# since saving the copy under another name would have left the edit in this app's cache; now it
+# asks where to save on every storage and sends the edit there (#105), which
+# 98-save-as-out-of-the-editor.sh drives. What this script drives is the other save, the one
+# that goes back over the original.
 #
 # Nothing in the fixture's counts may be edited -- 10-scan-whole-share.sh asserts on them -- so
 # this script brings its own file and takes it away again on the way in and on the way out.
@@ -209,13 +210,15 @@ else
     finish
 fi
 
-# The copy lives in this app's cache, and "Save as" would put the edit somewhere inside it under
-# another name -- a folder the user has no way to reach. A dump taken while the menu is up holds
-# the menu's window alone, so its absence here means it is absent from the menu
-if python3 "$DRIVE_DIR/ui.py" "$menu" --text "Save as" --exact > /dev/null; then
-    fail "the editor still offers Save as, which would leave the edit inside this app's cache"
+# "Save as" is offered too (#105): it asks where to save, on every storage, and sends the edit
+# there rather than leaving it in the cache the copy lives in. 98-save-as-out-of-the-editor.sh
+# drives that way out; here it only has to be offered. It is `ifRoom` with an icon, so it is the
+# tick on the toolbar when there is room and a line in the overflow when there is not -- the
+# editor's dump from before the rotation holds the toolbar, the menu's dump holds the overflow
+if python3 "$DRIVE_DIR/ui.py" "$editor" --text "Save as" --exact > /dev/null || python3 "$DRIVE_DIR/ui.py" "$menu" --text "Save as" --exact > /dev/null; then
+    pass "and it offers to save the edit under another name, somewhere else"
 else
-    pass "and it does not offer to save the copy under another name"
+    fail "the editor does not offer Save as for a medium of the share, on the toolbar or in its overflow (view trees in $editor and $menu)"
 fi
 
 logcat_reset

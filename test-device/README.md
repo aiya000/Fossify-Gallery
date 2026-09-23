@@ -169,6 +169,15 @@ at afterwards.
   pCloud was on screen, with no policy asked and so no setting to turn it off with. Whether the app
   fetched is read off the requests the stub was sent, which is pCloud's own answer rather than the
   app's
+- **`98-save-as-out-of-the-editor.sh`** — #105: the editor's "Save as" asks where and under what
+  name on every storage, and sends the edit there. A photo of the share is edited twice, and each
+  edit saved under a new name somewhere else: into another folder of the share, read off
+  `fixture/share`, and onto this device, read off `/sdcard`. What it pins besides the copies
+  arriving is the original staying byte for byte what it was, with nothing stashed beside it -- a
+  "Save as" that went back over the photo would pass the first check and fail the second -- and
+  the screen behind the editor not warning that the editor "saved elsewhere", which is what it
+  used to say whenever the copy came back untouched. `97` keeps the other save, the one that
+  writes back over the original
 
 ## pCloud, without a pCloud account
 
