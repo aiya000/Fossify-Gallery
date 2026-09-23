@@ -17,7 +17,6 @@ import android.provider.MediaStore
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
 import android.provider.Settings
-import android.system.Os
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
@@ -52,12 +51,7 @@ import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.MediaStorage
-import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
-import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
-import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.RECYCLE_BIN
-import org.fossify.gallery.helpers.SMB_EDIT_DIR
-import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
 import org.fossify.gallery.models.DateTaken
 import java.io.*
@@ -115,15 +109,11 @@ fun Activity.shareMediaPaths(paths: ArrayList<String>) {
 }
 
 // Most of what the app does with a medium wants a real file on the device: sharing it,
-// printing it, setting it as the wallpaper, opening it in another app, editing it. A pCloud
+// printing it, setting it as the wallpaper, opening it in another app, editing it. A remote
 // medium has none, so it is fetched into the device cache first (once, the fullscreen view's
-// copy is reused) and handed over under its own name. A local path is passed straight
-// through, so a caller never has to know which storage the medium is on.
-//
-// The name matters: the cached copy is named by file id and content hash, and whatever
-// receives the file shows the name it is given, so what is handed over is a hard link to the
-// copy under the medium's own name (a symlink would not do, the provider resolves it to the
-// copy's name); where a link cannot be made, a plain copy.
+// copy is reused) and handed over under its own name, see MediaStorage.fetchForReading(). A
+// local path is passed straight through, so a caller never has to know which storage the
+// medium is on.
 //
 // Fetching runs off the main thread with a toast, and a failure is toasted instead of acted
 // on. The callback runs on the main thread, on a local path that exists.
@@ -133,21 +123,25 @@ fun Activity.withLocalMediaFile(path: String, callback: (localPath: String) -> U
     }
 }
 
+// Each medium is fetched the way its storage does it, see MediaStorage.fetchForReading(); a
+// medium of the device is its own file, and when every path is one there is nothing to fetch
+// and nothing to say
 fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: ArrayList<String>) -> Unit) {
-    if (paths.none { it.isPCloudPath() }) {
+    val remote = paths.map { MediaStorage.of(this, it) }.firstOrNull { it.isRemote }
+    if (remote == null) {
         callback(ArrayList(paths))
         return
     }
 
-    toast(R.string.pcloud_fetching)
+    toast(remote.fetchingMessage())
     ensureBackgroundThread {
         val localPaths = try {
-            fetchPCloudMediaAsFiles(paths)
+            paths.mapTo(ArrayList()) { MediaStorage.of(this, it).fetchForReading(it) }
         } catch (e: Exception) {
             // the reason goes to the log and onto the toast, a bare "could not fetch" left
             // nothing to go on when it happened once on the device
-            Log.w("PCloudFetch", "Could not fetch ${paths.size} pCloud media", e)
-            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+            Log.w("RemoteFetch", "Could not fetch ${paths.size} media", e)
+            toast("${remote.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
@@ -158,96 +152,27 @@ fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: Arr
 }
 
 // The same for an action that is going to write to the file it is given, the editor above
-// all. It gets a copy of its own rather than the link the reading actions get: a link shares
-// its bytes with the cached copy, so an edit written over it would make the cache serve the
-// edited image for the original even when the write back to pCloud never lands. Only one
-// edit is in flight at a time, so the previous copy goes first
+// all: a copy of its own rather than the link the reading actions get, see
+// MediaStorage.fetchForEditing()
 fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -> Unit) {
-    if (!path.isRemotePath()) {
+    val storage = MediaStorage.of(this, path)
+    if (!storage.isRemote) {
         callback(path)
         return
     }
 
-    val onShare = path.isSmbPath()
-    toast(if (onShare) R.string.smb_fetching else R.string.pcloud_fetching)
+    toast(storage.fetchingMessage())
     ensureBackgroundThread {
         val copy = try {
-            if (onShare) fetchSmbMediumForEditing(path) else fetchPCloudMediumForEditing(path)
+            storage.fetchForEditing(path)
         } catch (e: Exception) {
-            val tag = if (onShare) "SmbFetch" else "PCloudFetch"
-            Log.w(tag, "Could not fetch $path for editing", e)
-            val failed = if (onShare) R.string.smb_fetch_failed else R.string.pcloud_fetch_failed
-            toast("${getString(failed)}: ${e.message ?: e.javaClass.simpleName}")
+            Log.w("RemoteFetch", "Could not fetch $path for editing", e)
+            toast("${storage.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
         runOnUiThread {
             callback(copy)
-        }
-    }
-}
-
-// The same for the share. `SmbFileCache` already holds a copy of everything the photo view has
-// drawn, so this is usually a file copy rather than a download; the copy is taken all the same,
-// for the reason above -- what is written must not reach the cache under the original's name
-fun Activity.fetchSmbMediumForEditing(path: String): String {
-    val cached = SmbFileCache(this).fetch(path)
-    val editDir = File(cacheDir, SMB_EDIT_DIR)
-    editDir.deleteRecursively()
-    editDir.mkdirs()
-    return File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }.absolutePath
-}
-
-// The copy itself, for a caller that is already off the main thread and wants to wait for it.
-// Talks to the network and throws what goes wrong
-fun Activity.fetchPCloudMediumForEditing(path: String): String {
-    val cached = PCloudFileCache(this).fetch(path)
-    val editDir = File(cacheDir, PCLOUD_EDIT_DIR)
-    editDir.deleteRecursively()
-    editDir.mkdirs()
-    return File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }.absolutePath
-}
-
-// Talks to the network, so it belongs off the main thread
-private fun Activity.fetchPCloudMediaAsFiles(paths: List<String>): ArrayList<String> {
-    val cache = PCloudFileCache(this)
-    val workDir = File(cacheDir, PCLOUD_WORK_DIR)
-    val localPaths = ArrayList<String>()
-    paths.forEach { path ->
-        if (!path.isPCloudPath()) {
-            localPaths.add(path)
-            return@forEach
-        }
-
-        val cached = cache.fetch(path)
-        val linkDir = File(workDir, cached.nameWithoutExtension)
-        linkDir.mkdirs()
-        val link = File(linkDir, path.getFilenameFromPath())
-        if (!link.isFile || link.length() != cached.length()) {
-            link.delete()
-            try {
-                Os.link(cached.absolutePath, link.absolutePath)
-            } catch (e: Exception) {
-                cached.copyTo(link, overwrite = true)
-            }
-        }
-
-        localPaths.add(link.absolutePath)
-    }
-
-    dropOrphanedPCloudLinks(workDir, cache)
-    return localPaths
-}
-
-// A link keeps the bytes of its cache copy alive after the cache has trimmed the copy away,
-// so every link whose copy is gone is dropped whenever a new one is made. The links in use
-// are kept: an editor may still be holding one
-private fun Activity.dropOrphanedPCloudLinks(workDir: File, cache: PCloudFileCache) {
-    // the links of the older, share-only version of this lived here
-    File(cacheDir, "pcloud-share").deleteRecursively()
-    workDir.listFiles()?.forEach { linkDir ->
-        if (linkDir.isDirectory && !cache.holds(linkDir.name)) {
-            linkDir.deleteRecursively()
         }
     }
 }
@@ -1045,15 +970,10 @@ fun BaseSimpleActivity.launchResizeMultipleImagesDialog(paths: List<String>, cal
     }
 }
 
-// Resizing reads real pixels, so a pCloud image is fetched first and the dialog works on the
+// Resizing reads real pixels, so a remote image is fetched first and the dialog works on the
 // copy while it still names the medium where it lives. The destination is either storage: the
 // picker offers pCloud too, so a resized image can stay on pCloud or come down to the device
 fun BaseSimpleActivity.launchResizeImageDialog(path: String, callback: (() -> Unit)? = null) {
-    if (!path.isPCloudPath()) {
-        showResizeImageDialog(path, path, callback)
-        return
-    }
-
     withLocalMediaFile(path) { localPath ->
         showResizeImageDialog(path, localPath, callback)
     }

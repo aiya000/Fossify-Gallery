@@ -1,10 +1,12 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.system.Os
 import android.util.Log
 import android.widget.Toast
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.dialogs.RenameDialog
 import org.fossify.commons.dialogs.RenameItemDialog
 import org.fossify.commons.dialogs.RenameItemsDialog
@@ -40,10 +42,10 @@ import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.RemoteNameDialog
+import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
-import org.fossify.gallery.extensions.fetchPCloudMediumForEditing
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
@@ -71,9 +73,8 @@ import java.util.concurrent.CountDownLatch
 // What a storage can and cannot do is written here, once, instead of at every menu that has to
 // know -- a menu that was not told is exactly how #71 and #72 happened. A difference that is
 // data ("is a name renamed one at a time", "is there a file to hand to another app") is a
-// property; a difference that is steps is an override. The operations come over one family at
-// a time (#106); renaming, copying or moving, deleting and writing are here, fetching still
-// lives where it always has.
+// property; a difference that is steps is an override. The operations came over one family at
+// a time (#106): fetching, renaming, copying or moving, deleting and writing are all here.
 //
 // It holds a Context because the operations need one (the database, the notifications, the
 // services), so it is a holder of behaviour rather than a value: two of them are not equal,
@@ -500,6 +501,67 @@ sealed class MediaStorage(protected val context: Context) {
         return File(stagingDir, path.getFilenameFromPath())
     }
 
+    // --- fetching: a medium's bytes had in hand as a file of this device. The device's media
+    // are files already; a remote storage's are fetched into the cache, once, and handed out
+    // from there in the shape the caller needs. All of these talk to the network, so they
+    // belong off the main thread, and throw what goes wrong
+
+    // the cached copy itself, for the viewer to draw. On the device that is the file
+    abstract fun fetchedCopy(path: String): File
+
+    // A file to read: handed to another app, printed, set as the wallpaper, shared, resized
+    // from. Whatever receives the file shows the name it is given, so a remote storage's copy
+    // is handed out under the medium's own name. Offered where canOpenWith and its kin say so
+    abstract fun fetchForReading(path: String): String
+
+    // A copy of its own, to write to: the editor above all. A copy rather than a link, since a
+    // link shares its bytes with the cached copy, and an edit written over it would make the
+    // cache serve the edited image for the original even when the write back never lands.
+    // Only one edit is in flight at a time, so the previous copy goes first
+    abstract fun fetchForEditing(path: String): String
+
+    // what is said while a fetch runs, and when it failed; the words name the storage
+    abstract fun fetchingMessage(): String
+    abstract fun fetchFailedMessage(): String
+
+    // the properties of [media]: commons' dialog reads them off the files, a remote storage's
+    // off the rows, since there is no file on the device for that dialog to read
+    abstract fun showProperties(activity: BaseSimpleActivity, media: List<Medium>)
+
+    // a fetched copy under the medium's own name, in a directory of its own next to the
+    // cache: a hard link where one can be made, a plain copy where not. A link keeps the bytes
+    // of its cache copy alive after the cache has trimmed the copy away, so every link whose
+    // copy is gone is dropped whenever a new one is made; the links in use are kept, an editor
+    // may still be holding one
+    protected fun linkUnderOwnName(cached: File, path: String, workDir: File, isStillCached: (linkDirName: String) -> Boolean): String {
+        val linkDir = File(workDir, cached.nameWithoutExtension)
+        linkDir.mkdirs()
+        val link = File(linkDir, path.getFilenameFromPath())
+        if (!link.isFile || link.length() != cached.length()) {
+            link.delete()
+            try {
+                Os.link(cached.absolutePath, link.absolutePath)
+            } catch (e: Exception) {
+                cached.copyTo(link, overwrite = true)
+            }
+        }
+
+        workDir.listFiles()?.forEach { other ->
+            if (other.isDirectory && !isStillCached(other.name)) {
+                other.deleteRecursively()
+            }
+        }
+
+        return link.absolutePath
+    }
+
+    // a fetched copy of its own in [editDir], emptied first
+    protected fun copyForEditing(cached: File, path: String, editDir: File): String {
+        editDir.deleteRecursively()
+        editDir.mkdirs()
+        return File(editDir, path.getFilenameFromPath()).also { cached.copyTo(it, overwrite = true) }.absolutePath
+    }
+
     class Device(context: Context) : MediaStorage(context) {
         override fun holds(path: String) = !path.isRemotePath()
         override val isRemote = false
@@ -870,6 +932,21 @@ sealed class MediaStorage(protected val context: Context) {
 
         override fun editNotWrittenMessage(activity: BaseSimpleActivity): String =
             throw UnsupportedOperationException("nothing is written back to the device")
+
+        // the file is already here
+        override fun fetchedCopy(path: String) = File(path)
+        override fun fetchForReading(path: String) = path
+        override fun fetchForEditing(path: String) = path
+        override fun fetchingMessage(): String = throw UnsupportedOperationException("nothing is fetched from the device")
+        override fun fetchFailedMessage(): String = throw UnsupportedOperationException("nothing is fetched from the device")
+
+        override fun showProperties(activity: BaseSimpleActivity, media: List<Medium>) {
+            if (media.size == 1) {
+                PropertiesDialog(activity, media.first().path, context.config.shouldShowHidden)
+            } else {
+                PropertiesDialog(activity, media.map { it.path } as ArrayList<String>, context.config.shouldShowHidden)
+            }
+        }
     }
 
     class PCloud(context: Context) : MediaStorage(context) {
@@ -1032,10 +1109,10 @@ sealed class MediaStorage(protected val context: Context) {
         // which pCloud's own web and app honour
         override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
             val localPath = try {
-                activity.fetchPCloudMediumForEditing(path)
+                fetchForEditing(path)
             } catch (e: Exception) {
                 Log.w("PCloudTransfer", "Could not fetch $path to rotate it", e)
-                activity.toast("${activity.getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+                activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
                 return
             }
 
@@ -1055,6 +1132,26 @@ sealed class MediaStorage(protected val context: Context) {
 
         override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_writing_back)
         override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_edit_not_written)
+
+        // the cache names a copy by file id and content hash, which is what the link directory
+        // is named after too, so a link's directory says whether its copy is still there
+        override fun fetchedCopy(path: String): File = PCloudFileCache(context).fetch(path)
+
+        override fun fetchForReading(path: String): String {
+            val cache = PCloudFileCache(context)
+            val workDir = File(context.cacheDir, PCLOUD_WORK_DIR)
+            // the links of the older, share-only version of this lived here
+            File(context.cacheDir, "pcloud-share").deleteRecursively()
+            return linkUnderOwnName(cache.fetch(path), path, workDir) { cache.holds(it) }
+        }
+
+        override fun fetchForEditing(path: String) = copyForEditing(PCloudFileCache(context).fetch(path), path, File(context.cacheDir, PCLOUD_EDIT_DIR))
+        override fun fetchingMessage(): String = context.getString(R.string.pcloud_fetching)
+        override fun fetchFailedMessage(): String = context.getString(R.string.pcloud_fetch_failed)
+
+        override fun showProperties(activity: BaseSimpleActivity, media: List<Medium>) {
+            RemotePropertiesDialog(activity, media)
+        }
     }
 
     class Smb(context: Context) : MediaStorage(context) {
@@ -1226,6 +1323,24 @@ sealed class MediaStorage(protected val context: Context) {
 
         override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_writing_back)
         override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_edit_not_written)
+
+        // SmbFileCache already holds a copy of everything the photo view has drawn, so a fetch
+        // is usually a file copy rather than a download
+        override fun fetchedCopy(path: String): File = SmbFileCache(context).fetch(path)
+
+        // not offered: a medium of the share is not fetched for reading yet, see #71 and
+        // canOpenWith, canShare, canSetAs, canResize
+        override fun fetchForReading(path: String): String {
+            throw UnsupportedOperationException("a medium of the share is not fetched for reading yet, see #71")
+        }
+
+        override fun fetchForEditing(path: String) = copyForEditing(SmbFileCache(context).fetch(path), path, File(context.cacheDir, SMB_EDIT_DIR))
+        override fun fetchingMessage(): String = context.getString(R.string.smb_fetching)
+        override fun fetchFailedMessage(): String = context.getString(R.string.smb_fetch_failed)
+
+        override fun showProperties(activity: BaseSimpleActivity, media: List<Medium>) {
+            RemotePropertiesDialog(activity, media)
+        }
     }
 
     companion object {

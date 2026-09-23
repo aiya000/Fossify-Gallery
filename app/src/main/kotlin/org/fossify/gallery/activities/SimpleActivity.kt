@@ -18,7 +18,6 @@ import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.StoragePermissionRequiredDialog
 import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openRemoteEditor
 import org.fossify.gallery.extensions.updateDirectoryPath
@@ -126,7 +125,7 @@ open class SimpleActivity : BaseSimpleActivity() {
     // File(), so a remote medium's pseudo path -- "smb:/00-Pictures/a.png" -- would open the
     // editor on nothing at all and then throw when it saved
     fun editMedium(path: String) {
-        if (!path.isRemotePath()) {
+        if (!MediaStorage.of(this, path).isRemote) {
             openEditor(path)
             return
         }
