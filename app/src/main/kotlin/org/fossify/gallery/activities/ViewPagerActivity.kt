@@ -22,7 +22,6 @@ import android.graphics.drawable.Icon
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
-import android.util.Log
 import android.view.MenuItem
 import android.view.View
 import android.view.WindowManager
@@ -110,15 +109,12 @@ import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
-import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openPath
-import org.fossify.gallery.extensions.pCloudItemsDB
-import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.restoreRecycleBinPath
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
@@ -133,7 +129,6 @@ import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withEditableMediaFile
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
-import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
@@ -173,8 +168,6 @@ import org.fossify.gallery.helpers.ROTATE_BY_ASPECT_RATIO
 import org.fossify.gallery.helpers.ROTATE_BY_DEVICE_ROTATION
 import org.fossify.gallery.helpers.ROTATE_BY_SYSTEM_SETTING
 import org.fossify.gallery.helpers.SELECTED_PATHS
-import org.fossify.gallery.helpers.REMOTE_SAVE_DIR
-import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_NEXT_ITEM
@@ -188,7 +181,6 @@ import org.fossify.gallery.helpers.SLIDESHOW_DEFAULT_INTERVAL
 import org.fossify.gallery.helpers.SLIDESHOW_FADE_DURATION
 import org.fossify.gallery.helpers.SLIDESHOW_SLIDE_DURATION
 import org.fossify.gallery.helpers.SLIDESHOW_START_ON_ENTER
-import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_IMAGES
 import org.fossify.gallery.helpers.TYPE_PORTRAITS
@@ -995,123 +987,28 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     // Saving a rotated image, wherever it came from and wherever it is going.
     //
-    // "Save as" asks the same question on all three storages now: where, and under what name.
-    // A pCloud medium used to skip the question and write back over itself, which meant the
-    // one thing it could do was the one thing it never asked about.
-    //
-    // The source may have no file on this device and the destination may take no file at all,
-    // so the rotation always happens on a local file, and only then is the result handed to
-    // whichever storage was picked
+    // "Save as" asks the same question on all three storages: where, and under what name. The
+    // source may have no file on this device, so it is fetched into one first; the destination
+    // may take no file at all, so the rotation is written into whatever file the destination's
+    // storage hands out -- the destination itself on the device, a staging file for a remote
+    // storage -- and the storage takes it from there, see MediaStorage.writeInto()
     private fun saveImageAs() {
         val currPath = getCurrentPath()
         val degrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
         SaveAsDialog(this, currPath, false, localStorageOnly = false) { newPath ->
-            if (newPath.isRemotePath()) {
-                saveRotatedImageToRemote(currPath, newPath, degrees)
-            } else {
-                saveRotatedImageToDevice(currPath, newPath, degrees)
-            }
-        }
-    }
-
-    // A folder of this device, which SAF may have something to say about. The source can still
-    // be remote, so it is fetched before anything reads it
-    private fun saveRotatedImageToDevice(sourcePath: String, newPath: String, degrees: Int) {
-        handleSAFDialog(newPath) { granted ->
-            if (!granted) {
-                return@handleSAFDialog
-            }
-
-            withEditableMediaFile(sourcePath) { localSource ->
+            withEditableMediaFile(currPath) { localSource ->
                 toast(org.fossify.commons.R.string.saving)
-                ensureBackgroundThread {
-                    saveRotatedImageToFile(localSource, newPath, degrees, true) {
+                MediaStorage.of(this, newPath).writeInto(this, newPath, { target, wrote ->
+                    ensureBackgroundThread {
+                        saveRotatedImageToFile(localSource, target, degrees, true) {
+                            wrote(true)
+                        }
+                    }
+                }) { written ->
+                    if (written) {
                         rotationSaved()
                     }
                 }
-            }
-        }
-    }
-
-    // A folder on pCloud or on the share. The rotated image is written into a file of this
-    // device first, under the name it is to have there, because that is what both storages
-    // take -- and because a write that breaks off then leaves nothing behind on them
-    private fun saveRotatedImageToRemote(sourcePath: String, newPath: String, degrees: Int) {
-        withEditableMediaFile(sourcePath) { localSource ->
-            toast(org.fossify.commons.R.string.saving)
-            ensureBackgroundThread {
-                val stagingDir = File(cacheDir, REMOTE_SAVE_DIR).apply {
-                    deleteRecursively()
-                    mkdirs()
-                }
-
-                val staged = File(stagingDir, newPath.getFilenameFromPath())
-                saveRotatedImageToFile(localSource, staged.absolutePath, degrees, true) {
-                    if (newPath.isSmbPath()) {
-                        sendRotatedImageToShare(staged, newPath)
-                    } else {
-                        sendRotatedImageToPCloud(staged, newPath)
-                    }
-                }
-            }
-        }
-    }
-
-    // The share takes both now: a name that is free is a new file, and one the user has agreed to
-    // write over goes through the stash and replace that keeps the medium whole the whole way
-    // (#28). Which of the two it is, is asked of the share rather than of the cache -- the same
-    // question ensureWritablePath() asked a moment ago, and a share holds files this app never
-    // scanned.
-    //
-    // A new file has the folder walked again afterwards, which is the only way the cache learns
-    // of it. An overwrite carries its own rows, so nothing is walked for it
-    private fun sendRotatedImageToShare(staged: File, newPath: String) {
-        val taken = try {
-            SmbClient.fileExists(this, newPath)
-        } catch (e: Exception) {
-            Log.w("SmbWrite", "Could not ask the share whether it already has $newPath", e)
-            runOnUiThread { showErrorToast(e) }
-            return
-        }
-
-        if (taken) {
-            writeToShare({ overwriteFile(newPath, staged.absolutePath) }) { success ->
-                if (success) {
-                    rotationSaved()
-                }
-            }
-
-            return
-        }
-
-        try {
-            SmbClient.create(this, newPath) { output -> staged.inputStream().use { it.copyTo(output) } }
-            SmbClient.setModified(this, newPath, staged.lastModified())
-        } catch (e: Exception) {
-            Log.w("SmbWrite", "Could not save $newPath onto the share", e)
-            runOnUiThread { showErrorToast(e) }
-            return
-        }
-
-        rescanSmbFolders(listOf(newPath.getParentPath()), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
-            rotationSaved()
-        }
-    }
-
-    // pCloud takes both: a name that is free is an upload, and one the user has agreed to write
-    // over goes through the replace that keeps the medium whole the whole way
-    private fun sendRotatedImageToPCloud(staged: File, newPath: String) {
-        val folder = newPath.getParentPath()
-        val isTaken = pCloudItemsDB.getItem(newPath) != null
-        writeToPCloud(listOf(folder), {
-            if (isTaken) {
-                overwriteFile(newPath, staged.absolutePath)
-            } else {
-                uploadFile(staged.absolutePath, folder)
-            }
-        }) { success ->
-            if (success) {
-                rotationSaved()
             }
         }
     }

@@ -15,9 +15,9 @@ import org.fossify.commons.extensions.showKeyboard
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.databinding.DialogSaveAsBinding
-import org.fossify.gallery.extensions.ensureWritablePath
 import org.fossify.gallery.extensions.humanizeAnyPath
 import org.fossify.gallery.extensions.isRemotePath
+import org.fossify.gallery.helpers.MediaStorage
 
 // Asks where to save and under what name.
 //
@@ -120,11 +120,8 @@ class SaveAsDialog(
             return
         }
 
-        activity.ensureWritablePath(
-            targetPath = newPath,
-            confirmOverwrite = true,
-            onCancel = cancelCallback
-        ) {
+        // whether the name is taken, and may be written over, is the storage's to answer
+        MediaStorage.of(activity, newPath).ensureWritable(activity, newPath, confirmOverwrite = true, onCancel = cancelCallback) {
             callback(newPath)
             dismiss()
         }

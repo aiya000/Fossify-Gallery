@@ -18,21 +18,15 @@ import org.fossify.gallery.R
 import org.fossify.gallery.dialogs.StoragePermissionRequiredDialog
 import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.fetchPCloudMediumForEditing
-import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
-import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openRemoteEditor
-import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.extensions.withEditableMediaFile
-import org.fossify.gallery.extensions.writeToPCloud
-import org.fossify.gallery.extensions.writeToShare
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.UPSTREAM_APP_ID
 import org.fossify.gallery.helpers.getPermissionsToRequest
 import java.io.File
-import java.util.concurrent.CountDownLatch
 
 open class SimpleActivity : BaseSimpleActivity() {
 
@@ -156,92 +150,51 @@ open class SimpleActivity : BaseSimpleActivity() {
         return true
     }
 
-    // The copy is left where it is whatever happens: it is the only place the edit exists
-    // until the storage has taken it, and when the storage will not take it the user is told
-    // where it is rather than losing the work.
-    //
-    // The share is written over through the stash and replace of SmbWriter.overwriteFile(),
-    // so what is on the share afterwards is either the old medium or the edited one
+    // The storage writes the copy back over the original and carries its rows along, see
+    // MediaStorage.overwriteMedium(); what is said around that is this screen's. The copy is
+    // left where it is whatever happens: it is the only place the edit exists until the
+    // storage has taken it, and when the storage will not take it the user is told where it
+    // is rather than losing the work
     private fun writeEditBackToRemote(edit: RemoteEdit, editorSaidItSaved: Boolean, onWritten: () -> Unit) {
-        val onShare = edit.remotePath.isSmbPath()
+        val storage = MediaStorage.of(this, edit.remotePath)
         val copy = File(edit.localPath)
         if (!copy.isFile || (copy.length() == edit.size && copy.lastModified() == edit.lastModified)) {
             // the editor was left without saving. When it says it saved and the copy is
             // untouched all the same, it wrote somewhere else, and going quiet here is what
             // makes that look like the write back did nothing at all
             if (editorSaidItSaved) {
-                Log.w(if (onShare) "SmbWrite" else "PCloudTransfer", "The editor reported a save but left ${edit.localPath} untouched")
-                toast(if (onShare) R.string.smb_edit_not_written else R.string.pcloud_edit_not_written, Toast.LENGTH_LONG)
+                Log.w("RemoteEdit", "The editor reported a save but left ${edit.localPath} untouched")
+                toast(storage.editNotWrittenMessage(this), Toast.LENGTH_LONG)
             }
 
             return
         }
 
-        toast(if (onShare) R.string.smb_writing_back else R.string.pcloud_writing_back)
-        val onWriteDone: (success: Boolean) -> Unit = { success ->
-            runOnUiThread {
-                if (success) {
-                    toast(org.fossify.commons.R.string.file_saved)
-                    onWritten()
-                } else {
-                    // the storage already said what went wrong; this says what is left
-                    toast(getString(R.string.remote_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
-                }
+        toast(storage.writingBackMessage(this))
+        storage.overwriteMedium(this, edit.remotePath, edit.localPath) { written ->
+            if (written) {
+                toast(org.fossify.commons.R.string.file_saved)
+                onWritten()
+            } else {
+                // the storage already said what went wrong; this says what is left
+                toast(getString(R.string.remote_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
             }
-        }
-
-        if (onShare) {
-            writeToShare({ overwriteFile(edit.remotePath, edit.localPath) }, onWriteDone)
-        } else {
-            writeToPCloud(listOf(edit.remotePath.getParentPath()), { overwriteFile(edit.remotePath, edit.localPath) }, onWriteDone)
         }
     }
 
-    // Rotates media wherever they live, one after the other, and writes a pCloud one back
-    // over itself: there is no folder on the device to save it beside, and "save a copy
-    // somewhere else" is what copying to this device is for. A JPEG only gets its
-    // Orientation tag turned, which pCloud's own web and app honour
+    // Rotates media wherever they live, one after the other, each the way its storage does
+    // it, see MediaStorage.rotateMediumAndWait()
     fun rotateMedia(paths: List<String>, degrees: Int, onDone: () -> Unit) {
-        val (pCloudPaths, localPaths) = paths.partition { it.isPCloudPath() }
         toast(org.fossify.commons.R.string.saving)
         ensureBackgroundThread {
-            localPaths.forEach { path ->
-                saveRotatedImageToFile(path, path, degrees, true) {}
-            }
-
-            pCloudPaths.forEach { path ->
-                rotatePCloudMediumAndWait(path, degrees)
+            paths.forEach { path ->
+                MediaStorage.of(this, path).rotateMediumAndWait(this, path, degrees)
             }
 
             runOnUiThread {
                 onDone()
             }
         }
-    }
-
-    // Blocks until this one medium is through, so that a selection of them goes up one at a
-    // time rather than all at once
-    private fun rotatePCloudMediumAndWait(path: String, degrees: Int) {
-        val latch = CountDownLatch(1)
-        val localPath = try {
-            fetchPCloudMediumForEditing(path)
-        } catch (e: Exception) {
-            Log.w("PCloudTransfer", "Could not fetch $path to rotate it", e)
-            toast("${getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
-            return
-        }
-
-        saveRotatedImageToFile(localPath, localPath, degrees, true) {
-            writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { success ->
-                if (!success) {
-                    toast(getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
-                }
-
-                latch.countDown()
-            }
-        }
-
-        latch.await()
     }
 
     protected fun registerFileUpdateListener() {

@@ -22,7 +22,6 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
 import com.bumptech.glide.Glide
@@ -54,12 +53,10 @@ import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
-import org.fossify.gallery.helpers.PCLOUD_RESIZE_DIR
 import org.fossify.gallery.helpers.PCLOUD_WORK_DIR
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.SMB_EDIT_DIR
-import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
 import org.fossify.gallery.models.DateTaken
@@ -1062,82 +1059,53 @@ fun BaseSimpleActivity.launchResizeImageDialog(path: String, callback: (() -> Un
     }
 }
 
+// The resized image is written into whatever file the destination's storage hands out -- the
+// destination itself on the device, a staging file for pCloud, which is sent from there under
+// the name it is to have -- and the storage takes it from there, see MediaStorage.writeInto().
+// A name already taken is written over rather than saved beside: the dialog asked about that
+// first. On the device the file keeps its date when the setting says so, and MediaStore is told
 private fun BaseSimpleActivity.showResizeImageDialog(path: String, localPath: String, callback: (() -> Unit)?) {
     val originalSize = localPath.getImageResolution(this) ?: return
     ResizeWithPathDialog(this, originalSize, path) { newSize, newPath ->
+        val storage = MediaStorage.of(this, newPath)
+        val pathLastModifiedMap = mapOf(newPath to File(newPath).lastModified())
         ensureBackgroundThread {
-            if (newPath.isPCloudPath()) {
-                resizeImageToPCloud(localPath, newPath, newSize, callback)
-            } else {
-                resizeImageToDevice(localPath, newPath, newSize, callback)
-            }
-        }
-    }
-}
+            try {
+                if (storage.isRemote) {
+                    toast(storage.writingBackMessage(this))
+                }
 
-private fun BaseSimpleActivity.resizeImageToDevice(sourcePath: String, newPath: String, newSize: Point, callback: (() -> Unit)?) {
-    val file = File(newPath)
-    val pathLastModifiedMap = mapOf(file.absolutePath to file.lastModified())
-    try {
-        resizeImage(sourcePath, newPath, newSize) { success ->
-            if (success) {
-                toast(org.fossify.commons.R.string.file_saved)
+                storage.writeInto(this, newPath, { target, wrote ->
+                    resizeImage(localPath, target, newSize) { success ->
+                        if (!success) {
+                            toast(R.string.image_editing_failed)
+                        }
 
-                val paths = arrayListOf(file.absolutePath)
-                rescanPathsAndUpdateLastModified(paths, pathLastModifiedMap) {
-                    runOnUiThread {
+                        wrote(success)
+                    }
+                }) { written ->
+                    if (!written) {
                         callback?.invoke()
-                    }
-                }
-            } else {
-                toast(R.string.image_editing_failed)
-            }
-        }
-    } catch (e: OutOfMemoryError) {
-        toast(org.fossify.commons.R.string.out_of_memory_error)
-    } catch (e: Exception) {
-        showErrorToast(e)
-    }
-}
-
-// The resized image is written into the cache under the name it is to have on pCloud, because
-// an upload carries the name of the file it is given, and sent from there. A name already
-// taken is overwritten rather than uploaded beside: the dialog asked about that first
-private fun BaseSimpleActivity.resizeImageToPCloud(sourcePath: String, newPath: String, newSize: Point, callback: (() -> Unit)?) {
-    val resizeDir = File(cacheDir, PCLOUD_RESIZE_DIR)
-    resizeDir.deleteRecursively()
-    resizeDir.mkdirs()
-    val resized = File(resizeDir, newPath.getFilenameFromPath())
-
-    try {
-        resizeImage(sourcePath, resized.absolutePath, newSize) { success ->
-            if (!success) {
-                toast(R.string.image_editing_failed)
-                return@resizeImage
-            }
-
-            val destinationFolder = newPath.getParentPath()
-            toast(R.string.pcloud_writing_back)
-            writeToPCloud(listOf(destinationFolder), {
-                if (pCloudItemsDB.getItem(newPath) != null) {
-                    overwriteFile(newPath, resized.absolutePath)
-                } else {
-                    uploadFile(resized.absolutePath, destinationFolder)
-                }
-            }) { uploaded ->
-                runOnUiThread {
-                    if (uploaded) {
-                        toast(org.fossify.commons.R.string.file_saved)
+                        return@writeInto
                     }
 
-                    callback?.invoke()
+                    toast(org.fossify.commons.R.string.file_saved)
+                    if (storage.isRemote) {
+                        callback?.invoke()
+                    } else {
+                        rescanPathsAndUpdateLastModified(arrayListOf(newPath), pathLastModifiedMap) {
+                            runOnUiThread {
+                                callback?.invoke()
+                            }
+                        }
+                    }
                 }
+            } catch (e: OutOfMemoryError) {
+                toast(org.fossify.commons.R.string.out_of_memory_error)
+            } catch (e: Exception) {
+                showErrorToast(e)
             }
         }
-    } catch (e: OutOfMemoryError) {
-        toast(org.fossify.commons.R.string.out_of_memory_error)
-    } catch (e: Exception) {
-        showErrorToast(e)
     }
 }
 
@@ -1287,96 +1255,6 @@ fun BaseSimpleActivity.writeBitmapToCache(
             }
         } else {
             callback(null)
-        }
-    }
-}
-
-fun BaseSimpleActivity.ensureWritablePath(
-    targetPath: String,
-    confirmOverwrite: Boolean = true,
-    onCancel: (() -> Unit)? = null,
-    callback: (String) -> Unit,
-) {
-    if (targetPath.isRemotePath()) {
-        ensureWritableRemotePath(targetPath, confirmOverwrite, onCancel, callback)
-        return
-    }
-
-    fun proceedAfterGrants() {
-        handleSAFDialogSdk30(targetPath) { granted ->
-            if (!granted) {
-                onCancel?.invoke()
-                return@handleSAFDialogSdk30
-            }
-            callback(targetPath)
-        }
-    }
-
-    fun requestGrantsThenProceed() {
-        if (isRPlus() && !isExternalStorageManager()) {
-            val fileDirItem = arrayListOf(File(targetPath).toFileDirItem(this))
-            val fileUris = getFileUrisFromFileDirItems(fileDirItem)
-            updateSDK30Uris(fileUris) { success ->
-                if (success) proceedAfterGrants() else onCancel?.invoke()
-            }
-        } else {
-            proceedAfterGrants()
-        }
-    }
-
-    if (confirmOverwrite && getDoesFilePathExist(targetPath)) {
-        val title = String.format(
-            getString(org.fossify.commons.R.string.file_already_exists_overwrite),
-            targetPath.getFilenameFromPath()
-        )
-        ConfirmationDialog(this, title) {
-            requestGrantsThenProceed()
-        }
-    } else {
-        requestGrantsThenProceed()
-    }
-}
-
-// The same question for a destination on pCloud or on the share: is something already there,
-// and may it be written over.
-//
-// There is no SAF and no File to ask here, so whether the name is taken is asked of the storage
-// itself -- which for the share is a request over the network, hence the background thread.
-// Either can be written over, each by renaming the original aside first, so both are asked the
-// same question the local side asks -- and it is asked for real: neither storage has a recycle
-// bin an overwritten medium could be taken back out of (#28)
-private fun BaseSimpleActivity.ensureWritableRemotePath(
-    targetPath: String,
-    confirmOverwrite: Boolean,
-    onCancel: (() -> Unit)?,
-    callback: (String) -> Unit,
-) {
-    ensureBackgroundThread {
-        val taken = try {
-            if (targetPath.isSmbPath()) {
-                SmbClient.fileExists(this, targetPath)
-            } else {
-                pCloudItemsDB.getItem(targetPath) != null
-            }
-        } catch (e: Exception) {
-            runOnUiThread {
-                showErrorToast(e)
-                onCancel?.invoke()
-            }
-            return@ensureBackgroundThread
-        }
-
-        runOnUiThread {
-            if (!taken || !confirmOverwrite) {
-                callback(targetPath)
-                return@runOnUiThread
-            }
-
-            val title = String.format(
-                getString(org.fossify.commons.R.string.file_already_exists_overwrite),
-                targetPath.getFilenameFromPath()
-            )
-            ConfirmationDialog(this, title) { callback(targetPath) }
         }
     }
 }
