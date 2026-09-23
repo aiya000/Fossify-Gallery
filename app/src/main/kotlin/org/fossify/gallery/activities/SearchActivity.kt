@@ -263,7 +263,7 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     // written back, and the results are refreshed once the storage has taken it
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            handleRemoteEditResult(resultCode) { refreshItems() }
+            handleRemoteEditResult(resultCode, resultData) { refreshItems() }
         }
 
         super.onActivityResult(requestCode, resultCode, resultData)

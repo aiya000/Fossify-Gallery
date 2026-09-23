@@ -223,6 +223,14 @@ const val SMB_WORK_DIR = "smb-work"
 // cache and be served from there; see PCLOUD_EDIT_DIR, which is the same idea for pCloud
 const val SMB_EDIT_DIR = "smb-edit"
 
+// the editor's intent: the pseudo path the copy it was handed was fetched from, when it was.
+// "Save as" then asks about the folder the medium lives in rather than the cache the copy is in
+const val EDIT_ORIGIN_PATH = "edit_origin_path"
+
+// the editor's result: where "Save as" put the edit, when it went somewhere other than over
+// the original. The screen that opened the editor on a copy then has nothing to write back
+const val EDIT_SAVED_TO = "edit_saved_to"
+
 // under the cache directory: an image on its way to a folder of a remote storage, under the
 // name it is to have there. One save is in flight at a time, so the folder is emptied first
 const val REMOTE_SAVE_DIR = "remote-save"

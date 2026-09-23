@@ -51,6 +51,7 @@ import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.dialogs.RestoreFromBinDialog
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.EDIT_ORIGIN_PATH
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
@@ -221,12 +222,16 @@ fun Activity.openEditor(path: String, forceChooser: Boolean = false) {
 // saving" and lets the copy go, and the edit the user makes a moment later reaches nothing.
 //
 // Offering the job to another app's editor would be wrong here anyway: what it would be handed is
-// a path inside this app's cache, which is not a file anything outside this app can write to
-fun Activity.openRemoteEditor(localPath: String) {
+// a path inside this app's cache, which is not a file anything outside this app can write to.
+//
+// The editor is told where the copy came from as well, so that its "Save as" opens on the
+// medium's own folder and not on the cache
+fun Activity.openRemoteEditor(localPath: String, originPath: String) {
     val intent = Intent(this, EditActivity::class.java).apply {
         action = Intent.ACTION_EDIT
         setDataAndType(Uri.fromFile(File(localPath)), localPath.getMimeType())
         putExtra(REAL_FILE_PATH, localPath)
+        putExtra(EDIT_ORIGIN_PATH, originPath)
     }
 
     startActivityForResult(intent, REQUEST_EDIT_IMAGE)

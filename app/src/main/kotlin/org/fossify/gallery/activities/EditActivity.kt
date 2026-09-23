@@ -70,9 +70,9 @@ import org.fossify.gallery.extensions.resolveUriScheme
 import org.fossify.gallery.extensions.showContentDescriptionOnLongClick
 import org.fossify.gallery.extensions.writeBitmapToCache
 import org.fossify.gallery.extensions.writeExif
+import org.fossify.gallery.helpers.EDIT_ORIGIN_PATH
+import org.fossify.gallery.helpers.EDIT_SAVED_TO
 import org.fossify.gallery.helpers.MediaStorage
-import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
-import org.fossify.gallery.helpers.SMB_EDIT_DIR
 import org.fossify.gallery.helpers.ASPECT_RATIO_FOUR_THREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_FREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_ONE_ONE
@@ -126,6 +126,14 @@ class EditActivity : BaseCropActivity() {
     private val binding by viewBinding(ActivityEditBinding::inflate)
 
     private var overwriteRequested = false
+
+    // where the copy this activity was opened on came from, for one fetched off pCloud or off
+    // the share; null for a medium of this device, which is edited where it lies
+    private var originPath: String? = null
+
+    // where "Save as" put the edit, once it has; handed back in the result so that the screen
+    // that opened this one on a copy knows there is nothing to write back over the original
+    private var savedElsewhereTo: String? = null
 
     override val cropImageView: CropImageView
         get() = binding.cropImageView
@@ -233,14 +241,10 @@ class EditActivity : BaseCropActivity() {
         }
 
         // A medium of pCloud or of the network share is edited through a copy in this app's
-        // cache, and saving that copy under another name would leave the edit in the cache,
-        // where nothing can reach it. The save that means something for one is the one that
-        // goes back to the storage it came from, which the viewer does with the copy once this
-        // activity has written it
-        val editPath = uri?.path
-        if (editPath?.contains("/$PCLOUD_EDIT_DIR/") == true || editPath?.contains("/$SMB_EDIT_DIR/") == true) {
-            binding.editorToolbar.menu.findItem(R.id.save_as).isVisible = false
-        }
+        // cache. "Overwrite original" writes that copy, and the screen that opened this one
+        // puts it back over the medium; "Save as" asks about the medium's own folder instead
+        // of the cache, see resolveSaveAsPath(), and sends the edit wherever was picked
+        originPath = intent.getStringExtra(EDIT_ORIGIN_PATH)
 
         loadDefaultImageView()
         setupBottomActions()
@@ -391,6 +395,8 @@ class EditActivity : BaseCropActivity() {
 
     private fun startSaveFlow(overwrite: Boolean) {
         overwriteRequested = overwrite
+        // a "Save as" that did not go through leaves nothing behind for the next save to say
+        savedElsewhereTo = null
         setOldExif()
         when {
             binding.cropImageView.isVisible() -> cropImage()
@@ -465,7 +471,7 @@ class EditActivity : BaseCropActivity() {
         } else {
             resolveSaveAsPath { path ->
                 withFilteredImage {
-                    saveBitmapToPath(it, path, showSavingToast = true)
+                    saveBitmapAs(it, path, showSavingToast = true)
                 }
             }
         }
@@ -865,19 +871,77 @@ class EditActivity : BaseCropActivity() {
         }
     }
 
+    // Where to save and under what name, asked the same way on every storage: the dialog opens
+    // on the folder the medium lives in -- for a copy of a remote medium, the medium's folder
+    // and not the cache -- and its picker offers every storage that is set up, since the
+    // result is routed by destination, see saveBitmapAs()
     private fun resolveSaveAsPath(callback: (String) -> Unit) {
         runOnUiThread {
+            val origin = originPath
+            if (origin != null) {
+                SaveAsDialog(this, origin, true, localStorageOnly = false, callback = callback)
+                return@runOnUiThread
+            }
+
             resolveUriScheme(
                 uri = saveUri,
                 onPath = {
-                    SaveAsDialog(this, it, true, callback = callback)
+                    SaveAsDialog(this, it, true, localStorageOnly = false, callback = callback)
                 },
                 onContentUri = {
                     val (path, append) = proposeNewFilePath(it)
-                    SaveAsDialog(this, path, append, callback = callback)
+                    SaveAsDialog(this, path, append, localStorageOnly = false, callback = callback)
                 }
             )
         }
+    }
+
+    // "Save as", wherever it is going. A folder of this device takes the file straight, with
+    // the grants and the MediaStore scan that always went with it; a folder of pCloud or of
+    // the share takes it through its storage, which hands out a staging file and sends what
+    // is written into it up under that name, see MediaStorage.writeInto(). The dialog has
+    // already asked about a name that is taken
+    private fun saveBitmapAs(bitmap: Bitmap, path: String, showSavingToast: Boolean) {
+        savedElsewhereTo = path
+        val storage = MediaStorage.of(this, path)
+        if (!storage.isRemote) {
+            saveBitmapToPath(bitmap, path, showSavingToast)
+            return
+        }
+
+        if (showSavingToast) {
+            toast(org.fossify.commons.R.string.saving)
+        }
+
+        storage.writeInto(this, path, { target, wrote ->
+            ensureBackgroundThread {
+                val written = try {
+                    val file = File(target)
+                    file.outputStream().use { compressInto(bitmap, file, it) }
+                    writeExif(oldExif, file.toUri())
+                    true
+                } catch (e: OutOfMemoryError) {
+                    toast(org.fossify.commons.R.string.out_of_memory_error)
+                    false
+                } catch (e: Exception) {
+                    showErrorToast(e)
+                    false
+                }
+
+                wrote(written)
+            }
+        }) { written ->
+            if (written) {
+                setResult(RESULT_OK, resultIntent())
+                toast(org.fossify.commons.R.string.file_saved)
+                finish()
+            }
+        }
+    }
+
+    // the launch intent is what every save hands back; a "Save as" says where it went as well
+    private fun resultIntent(): Intent = intent.apply {
+        savedElsewhereTo?.let { putExtra(EDIT_SAVED_TO, it) }
     }
 
     private fun saveBitmap(overwrite: Boolean, bitmap: Bitmap, showSavingToast: Boolean = true) {
@@ -895,7 +959,7 @@ class EditActivity : BaseCropActivity() {
             )
         } else {
             resolveSaveAsPath { path ->
-                saveBitmapToPath(bitmap, path, showSavingToast)
+                saveBitmapAs(bitmap, path, showSavingToast)
             }
         }
     }
@@ -948,17 +1012,23 @@ class EditActivity : BaseCropActivity() {
         }
 
         out.use {
-            if (resizeWidth > 0 && resizeHeight > 0) {
-                val resized = bitmap.scale(resizeWidth, resizeHeight, false)
-                resized.compress(file.absolutePath.getCompressionFormat(), 90, out)
-            } else {
-                bitmap.compress(file.absolutePath.getCompressionFormat(), 90, out)
-            }
+            compressInto(bitmap, file, it)
         }
 
         writeExif(oldExif, file.toUri())
-        setResult(RESULT_OK, intent)
+        setResult(RESULT_OK, resultIntent())
         scanFinalPath(file.absolutePath)
+    }
+
+    // the bitmap, at the size the resize dialog asked for if it did, in the format the
+    // file's name says
+    private fun compressInto(bitmap: Bitmap, file: File, out: OutputStream) {
+        if (resizeWidth > 0 && resizeHeight > 0) {
+            val resized = bitmap.scale(resizeWidth, resizeHeight, false)
+            resized.compress(file.absolutePath.getCompressionFormat(), 90, out)
+        } else {
+            bitmap.compress(file.absolutePath.getCompressionFormat(), 90, out)
+        }
     }
 
     private fun saveBitmapToContentUri(
@@ -1017,7 +1087,7 @@ class EditActivity : BaseCropActivity() {
         val paths = arrayListOf(path)
         rescanPaths(paths) {
             fixDateTaken(paths, false)
-            setResult(RESULT_OK, intent)
+            setResult(RESULT_OK, resultIntent())
             toast(org.fossify.commons.R.string.file_saved)
             finish()
         }

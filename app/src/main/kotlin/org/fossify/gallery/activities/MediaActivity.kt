@@ -367,7 +367,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             // an edit of a medium on pCloud or on the share comes back as a copy that still has
             // to be written back, and the grid is refreshed once the storage has taken it
             // rather than now
-            val wasRemoteEdit = handleRemoteEditResult(resultCode) {
+            val wasRemoteEdit = handleRemoteEditResult(resultCode, resultData) {
                 mMedia.clear()
                 refreshItems()
             }

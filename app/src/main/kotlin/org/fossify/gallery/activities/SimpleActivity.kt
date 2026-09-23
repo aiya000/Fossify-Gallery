@@ -1,5 +1,6 @@
 package org.fossify.gallery.activities
 
+import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Bundle
@@ -22,6 +23,7 @@ import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openRemoteEditor
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.extensions.withEditableMediaFile
+import org.fossify.gallery.helpers.EDIT_SAVED_TO
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.UPSTREAM_APP_ID
 import org.fossify.gallery.helpers.getPermissionsToRequest
@@ -133,16 +135,25 @@ open class SimpleActivity : BaseSimpleActivity() {
         withEditableMediaFile(path) { localPath ->
             val copy = File(localPath)
             remoteEdit = RemoteEdit(path, localPath, copy.length(), copy.lastModified())
-            openRemoteEditor(localPath)
+            openRemoteEditor(localPath, path)
         }
     }
 
     // Belongs at the top of onActivityResult() for REQUEST_EDIT_IMAGE. Answers whether an edit
     // of a remote medium was the one that came back, so that a caller can leave its own
-    // handling of a local edit alone. [onWritten] runs once the storage has taken the edit
-    protected fun handleRemoteEditResult(resultCode: Int, onWritten: () -> Unit): Boolean {
+    // handling of a local edit alone. [onWritten] runs once the storage has taken the edit,
+    // or once the editor's "Save as" has put it somewhere else
+    protected fun handleRemoteEditResult(resultCode: Int, resultData: Intent?, onWritten: () -> Unit): Boolean {
         val edit = remoteEdit ?: return false
         remoteEdit = null
+        // "Save as" sent the edit to a folder of its own choosing, through that folder's
+        // storage, and left the copy alone: there is nothing to write back, and the screen
+        // only has to show what arrived
+        if (resultCode == RESULT_OK && resultData?.getStringExtra(EDIT_SAVED_TO) != null) {
+            onWritten()
+            return true
+        }
+
         // what counts is whether the copy the editor was handed came back changed; the result
         // code only says whether it thinks it saved anything at all
         writeEditBackToRemote(edit, resultCode == RESULT_OK, onWritten)

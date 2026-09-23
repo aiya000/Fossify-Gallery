@@ -500,7 +500,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         if (requestCode == REQUEST_EDIT_IMAGE) {
-            val wasRemoteEdit = handleRemoteEditResult(resultCode) {
+            val wasRemoteEdit = handleRemoteEditResult(resultCode, resultData) {
                 mPos = -1
                 mPrevHashcode = 0
                 refreshViewPager()
