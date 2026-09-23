@@ -35,7 +35,6 @@ import org.fossify.commons.extensions.convertToBitmap
 import org.fossify.commons.extensions.doesThisOrParentHaveNoMedia
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getFilenameFromPath
-import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleDeletePasswordProtection
@@ -69,7 +68,6 @@ import org.fossify.gallery.activities.MediaActivity
 import org.fossify.gallery.databinding.DirectoryItemGridRoundedCornersBinding
 import org.fossify.gallery.databinding.DirectoryItemGridSquareBinding
 import org.fossify.gallery.databinding.DirectoryItemListBinding
-import org.fossify.gallery.dialogs.ConfirmDeleteFolderDialog
 import org.fossify.gallery.dialogs.ExcludeFolderDialog
 import org.fossify.gallery.dialogs.FolderGroupNameDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
@@ -94,7 +92,6 @@ import org.fossify.gallery.extensions.removeNoMedia
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.writeToPCloud
-import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
@@ -976,203 +973,59 @@ class DirectoryAdapter(
         }
     }
 
+    // The storage asks, in its own words and with the bin where it has one, see
+    // MediaStorage.confirmDeleteFolders(). The two bins' own tiles are emptied rather than
+    // deleted: pCloud's is asked about here, the device's by its storage, in the emptying words
     private fun askConfirmDelete() {
-        val firstRealPath = getSelectedRealPaths().firstOrNull()
-        if (firstRealPath?.isPCloudPath() == true) {
-            askConfirmPCloudDelete()
-            return
-        }
-
-        if (firstRealPath?.isSmbPath() == true) {
-            askConfirmSmbDelete()
-            return
-        }
-
-        when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection {
-                deleteFolders()
-            }
-
-            config.skipDeleteConfirmation -> deleteFolders()
-            else -> {
-                val itemsCnt = selectedKeys.size
-                if (itemsCnt == 1 && getSelectedItems().first().isRecycleBin()) {
-                    ConfirmationDialog(
-                        activity,
-                        "",
-                        org.fossify.commons.R.string.empty_recycle_bin_confirmation,
-                        org.fossify.commons.R.string.yes,
-                        org.fossify.commons.R.string.no
-                    ) {
-                        deleteFolders()
-                    }
-                    return
-                }
-
-                val items = if (itemsCnt == 1) {
-                    val folder = getSelectedPaths().first().getFilenameFromPath()
-                    "\"$folder\""
-                } else {
-                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-                }
-
-                val fileDirItem = getFirstSelectedItem() ?: return
-                val baseString = if (!config.useRecycleBin || config.tempSkipRecycleBin || (isOneItemSelected() && fileDirItem.areFavorites())) {
-                    org.fossify.commons.R.string.deletion_confirmation
-                } else {
-                    org.fossify.commons.R.string.move_to_recycle_bin_confirmation
-                }
-
-                val question = String.format(resources.getString(baseString), items)
-                val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
-                ConfirmDeleteFolderDialog(activity, question, warning) {
-                    deleteFolders()
-                }
-            }
-        }
-    }
-
-    // The media in pCloud folders go to the app's recycle bin on pCloud when the bin is in
-    // use, like a local folder's do, and the folders themselves to pCloud's own trash; the
-    // delete password and the "skip confirmation" setting apply. The warning line is the
-    // same red one a local folder gets. The pCloud bin's own tile means emptying it
-    private fun askConfirmPCloudDelete() {
-        if (isOneItemSelected() && getSelectedRealPaths().firstOrNull() == PCLOUD_RECYCLE_BIN) {
+        val realPaths = getSelectedRealPaths()
+        if (isOneItemSelected() && realPaths.firstOrNull() == PCLOUD_RECYCLE_BIN) {
             tryEmptyRecycleBin(true)
             return
         }
 
-        val toRecycleBin = config.useRecycleBin && !config.tempSkipRecycleBin
-        val deleteConfirmed = { deletePCloudFolders(toRecycleBin) }
-        when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection(deleteConfirmed)
-            config.skipDeleteConfirmation -> deleteConfirmed()
-            else -> {
-                val itemsCnt = selectedKeys.size
-                val items = if (itemsCnt == 1) {
-                    "\"${getSelectedPaths().first().getFilenameFromPath()}\""
-                } else {
-                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-                }
-
-                val questionId = if (toRecycleBin) R.string.pcloud_move_folder_to_recycle_bin_confirmation else R.string.pcloud_delete_folder_confirmation
-                val question = activity.getString(questionId, items)
-                val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
-                ConfirmDeleteFolderDialog(activity, question, warning) {
-                    deleteConfirmed()
-                }
-            }
+        val storage = MediaStorage.ofAll(activity, realPaths) ?: return
+        storage.confirmDeleteFolders(activity, getSelectedPaths()) { toRecycleBin ->
+            deleteFolders(storage, toRecycleBin)
         }
     }
 
-    // a locked folder is skipped, like deleteFolders() skips it; the parents are rescanned so
-    // that a folder pCloud kept after all comes back
-    private fun deletePCloudFolders(toRecycleBin: Boolean) {
-        val paths = getSelectedRealPaths().filter { it.isPCloudPath() }
-        handleLockedFolderOpeningForFolders(paths) { folders ->
-            if (folders.isEmpty()) {
-                return@handleLockedFolderOpeningForFolders
-            }
-
-            activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
-            val parents = folders.map { it.getParentPath() }.distinct()
-            activity.writeToPCloud(parents, { deleteFolders(folders.toList(), toRecycleBin) }) {
-                activity.runOnUiThread {
-                    finishActMode()
-                    listener?.refreshItems()
-                }
-            }
-        }
-    }
-
-    // A folder of the share goes from the share, with everything under it, and there is no
-    // recycle bin to take it back out of (#28) -- so unlike a local folder or a pCloud one,
-    // this has no bin to move into first and the question says as much. The red warning line
-    // underneath is the same one the other two get
-    private fun askConfirmSmbDelete() {
-        when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deleteSmbFolders() }
-            config.skipDeleteConfirmation -> deleteSmbFolders()
-            else -> {
-                val itemsCnt = selectedKeys.size
-                val items = if (itemsCnt == 1) {
-                    "\"${getSelectedPaths().first().getFilenameFromPath()}\""
-                } else {
-                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-                }
-
-                val question = activity.getString(R.string.smb_delete_folder_confirmation, items)
-                val warning = resources.getQuantityString(org.fossify.commons.R.plurals.delete_warning, itemsCnt, itemsCnt)
-                ConfirmDeleteFolderDialog(activity, question, warning) {
-                    deleteSmbFolders()
-                }
-            }
-        }
-    }
-
-    // a locked folder is skipped, the way deleteFolders() skips it. Nothing is rescanned
-    // afterwards: what the share still has of a folder that only half went is put right by the
-    // next walk of it, and a walk of a whole share is minutes
-    private fun deleteSmbFolders() {
-        val paths = getSelectedRealPaths().filter { it.isSmbPath() }
-        handleLockedFolderOpeningForFolders(paths) { folders ->
-            if (folders.isEmpty()) {
-                return@handleLockedFolderOpeningForFolders
-            }
-
-            activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, folders.size, folders.size))
-            activity.writeToShare({ this.deleteFolders(folders.toList()) }) {
-                activity.runOnUiThread {
-                    finishActMode()
-                    listener?.refreshItems()
-                }
-            }
-        }
-    }
-
-    private fun deleteFolders() {
+    // once the storage may delete, the tiles in the selection are dealt with here -- a group
+    // is only ever ungrouped, the favorites are cleared, the device's bin is emptied -- and
+    // the folders go to the screen that hosts the list, which deletes them through the storage
+    private fun deleteFolders(storage: MediaStorage, toRecycleBin: Boolean) {
         if (selectedKeys.isEmpty()) {
             return
         }
 
-        val SAFPath = getFirstSelectedItemPath() ?: return
+        val firstPath = getFirstSelectedItemPath() ?: return
         val selectedDirs = getSelectedItems()
-        activity.handleSAFDialog(SAFPath) {
-            if (!it) {
-                return@handleSAFDialog
+        storage.onceMayDeleteFolders(activity, firstPath) {
+            val foldersToDelete = ArrayList<String>(selectedKeys.size)
+            selectedDirs.forEach {
+                if (it.isGroup()) {
+                    return@forEach
+                } else if (it.areFavorites() || it.isRecycleBin()) {
+                    if (it.isRecycleBin()) {
+                        tryEmptyRecycleBin(false)
+                    } else {
+                        ensureBackgroundThread {
+                            activity.mediaDB.clearFavorites()
+                            activity.favoritesDB.clearFavorites()
+                            listener?.refreshItems()
+                        }
+                    }
+
+                    if (selectedKeys.size == 1) {
+                        finishActMode()
+                    }
+                } else {
+                    foldersToDelete.add(it.path)
+                }
             }
 
-            activity.handleSAFDialogSdk30(SAFPath) {
-                if (!it) {
-                    return@handleSAFDialogSdk30
-                }
-
-                var foldersToDelete = ArrayList<File>(selectedKeys.size)
-                selectedDirs.forEach {
-                    if (it.isGroup()) {
-                        // virtual groups are removed with "Ungroup", never deleted from the filesystem
-                        return@forEach
-                    } else if (it.areFavorites() || it.isRecycleBin()) {
-                        if (it.isRecycleBin()) {
-                            tryEmptyRecycleBin(false)
-                        } else {
-                            ensureBackgroundThread {
-                                activity.mediaDB.clearFavorites()
-                                activity.favoritesDB.clearFavorites()
-                                listener?.refreshItems()
-                            }
-                        }
-
-                        if (selectedKeys.size == 1) {
-                            finishActMode()
-                        }
-                    } else {
-                        foldersToDelete.add(File(it.path))
-                    }
-                }
-
-                handleLockedFolderOpeningForFolders(foldersToDelete.map { it.absolutePath }) {
-                    listener?.deleteFolders(it.map { File(it) }.toMutableList() as ArrayList<File>)
+            handleLockedFolderOpeningForFolders(foldersToDelete) { folders ->
+                if (folders.isNotEmpty()) {
+                    listener?.deleteFolders(ArrayList(folders), toRecycleBin)
                 }
             }
         }

@@ -23,7 +23,6 @@ import org.fossify.commons.extensions.areSystemAnimationsEnabled
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
-import org.fossify.commons.extensions.deleteFiles
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getIsPathDirectory
@@ -68,7 +67,6 @@ import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
 import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
@@ -88,7 +86,6 @@ import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.launchGesturePlayer
 import org.fossify.gallery.extensions.mediaDB
-import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.openPath
 import org.fossify.gallery.extensions.openRecycleBin
 import org.fossify.gallery.extensions.restoreRecycleBinPaths
@@ -111,6 +108,7 @@ import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -1251,6 +1249,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // The storage does the deleting and takes the rows with it, see MediaStorage.deleteMedia().
+    // What is said on screen while it does is this screen's: the grid has already dropped the
+    // items, and the folder closes behind the last of them. A refused delete has the list read
+    // again, which brings the item back
     override fun tryDeleteFiles(fileDirItems: ArrayList<FileDirItem>, skipRecycleBin: Boolean) {
         val filtered = fileDirItems
             .filter { !getIsPathDirectory(it.path) && it.path.isMediaFile() } as ArrayList
@@ -1258,64 +1260,28 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             return
         }
 
-        if (
-            config.useRecycleBin
-            && !skipRecycleBin
-            && !filtered.first().path.startsWith(recycleBinPath)
-        ) {
-            val movingItems = resources.getQuantityString(
-                org.fossify.commons.R.plurals.moving_items_into_bin,
-                filtered.size,
-                filtered.size
-            )
-            toast(movingItems)
+        val storage = MediaStorage.ofAll(this, filtered.map { it.path }) ?: return
+        val toBin = storage.hasRecycleBin && config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
+        val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
+        toast(resources.getQuantityString(progress, filtered.size, filtered.size))
 
-            movePathsInRecycleBin(filtered.map { it.path } as ArrayList<String>) {
-                if (it) {
-                    deleteFilteredFiles(filtered)
-                } else {
-                    toast(org.fossify.commons.R.string.unknown_error_occurred)
-                }
-            }
-        } else {
-            val deletingItems = resources.getQuantityString(
-                org.fossify.commons.R.plurals.deleting_items,
-                filtered.size,
-                filtered.size
-            )
-            toast(deletingItems)
-            deleteFilteredFiles(filtered)
-        }
-    }
-
-    private fun shouldSkipAuthentication(): Boolean {
-        return intent.getBooleanExtra(SKIP_AUTHENTICATION, false)
-    }
-
-    private fun deleteFilteredFiles(filtered: ArrayList<FileDirItem>) {
-        deleteFiles(filtered) {
-            if (!it) {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
-                return@deleteFiles
+        storage.deleteMedia(this, filtered, skipRecycleBin) { deleted ->
+            if (!deleted) {
+                refreshItems()
+                return@deleteMedia
             }
 
             mMedia.removeAll { filtered.map { it.path }.contains((it as? Medium)?.path) }
-
-            ensureBackgroundThread {
-                val useRecycleBin = config.useRecycleBin
-                filtered.forEach {
-                    if (it.path.startsWith(recycleBinPath) || !useRecycleBin) {
-                        deleteDBPath(it.path)
-                    }
-                }
-            }
-
             if (mMedia.isEmpty()) {
                 deleteDirectoryIfEmpty()
                 deleteDBDirectory()
                 finish()
             }
         }
+    }
+
+    private fun shouldSkipAuthentication(): Boolean {
+        return intent.getBooleanExtra(SKIP_AUTHENTICATION, false)
     }
 
     override fun refreshItems() {

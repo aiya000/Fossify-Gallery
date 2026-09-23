@@ -35,7 +35,6 @@ import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleDeletePasswordProtection
 import org.fossify.commons.extensions.hasOTGConnected
-import org.fossify.commons.extensions.isAccessibleWithSAFSdk30
 import org.fossify.commons.extensions.isExternalStorageManager
 import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isPathOnOTG
@@ -63,13 +62,11 @@ import org.fossify.gallery.databinding.PhotoItemListBinding
 import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
-import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
-import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.isRemotePath
@@ -92,7 +89,6 @@ import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.extensions.writeToPCloud
-import org.fossify.gallery.extensions.writeToShare
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PCloudWriter
@@ -746,225 +742,31 @@ class MediaAdapter(
         }
     }
 
+    // the storage asks, in its own words and with the bin where it has one, see
+    // MediaStorage.confirmDeleteMedia(); the items leave the grid once the storage may delete
+    // them, and the screen that hosts the grid does the deleting through the storage
     private fun checkDeleteConfirmation() {
-        val firstPath = getFirstSelectedItemPath()
-        if (firstPath?.isPCloudPath() == true) {
-            checkPCloudDeleteConfirmation()
-            return
-        }
-
-        if (firstPath?.isSmbPath() == true) {
-            checkSmbDeleteConfirmation()
-            return
-        }
-
-        activity.handleMediaManagementPrompt {
-            if (config.isDeletePasswordProtectionOn) {
-                activity.handleDeletePasswordProtection {
-                    deleteFiles(config.tempSkipRecycleBin)
-                }
-            } else if (config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation) {
-                deleteFiles(config.tempSkipRecycleBin)
-            } else {
-                askConfirmDelete()
-            }
+        val selectedItems = getSelectedItems()
+        val storage = MediaStorage.ofAll(activity, selectedItems.map { it.path }) ?: return
+        storage.confirmDeleteMedia(activity, selectedItems) { skipRecycleBin ->
+            deleteFiles(storage, skipRecycleBin)
         }
     }
 
-    private fun askConfirmDelete() {
-        val itemsCnt = selectedKeys.size
-        val selectedMedia = getSelectedItems()
-        val firstPath = selectedMedia.first().path
-        val fileDirItem = selectedMedia.first().toFileDirItem()
-        val size = fileDirItem.getProperSize(activity, countHidden = true).formatSize()
-        val itemsAndSize = if (itemsCnt == 1) {
-            fileDirItem.mediaStoreId = selectedMedia.first().mediaStoreId
-            "\"${firstPath.getFilenameFromPath()}\" ($size)"
-        } else {
-            val fileDirItems = ArrayList<FileDirItem>(selectedMedia.size)
-            selectedMedia.forEach { medium ->
-                val curFileDirItem = medium.toFileDirItem()
-                fileDirItems.add(curFileDirItem)
-            }
-            val fileSize = fileDirItems.sumByLong { it.getProperSize(activity, countHidden = true) }.formatSize()
-            val deleteItemsString = resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-            "$deleteItemsString ($fileSize)"
-        }
-
-        val isRecycleBin = firstPath.startsWith(activity.recycleBinPath)
-        val baseString =
-            if (config.useRecycleBin && !config.tempSkipRecycleBin && !isRecycleBin) org.fossify.commons.R.string.move_to_recycle_bin_confirmation else org.fossify.commons.R.string.deletion_confirmation
-        val question = String.format(resources.getString(baseString), itemsAndSize)
-        val showSkipRecycleBinOption = config.useRecycleBin && !isRecycleBin
-
-        DeleteWithRememberDialog(activity, question, showSkipRecycleBinOption) { remember, skipRecycleBin ->
-            config.tempSkipDeleteConfirmation = remember
-
-            if (remember) {
-                config.tempSkipRecycleBin = skipRecycleBin
-            }
-
-            deleteFiles(skipRecycleBin)
-        }
-    }
-
-    // pCloud media go to the app's recycle bin on pCloud, with the same "skip the bin" option
-    // local files get, or for good when the bin is off, skipped, or they are in it already.
-    // The delete password and the "skip confirmation" setting apply like for local files. No
-    // media management prompt, there is no MediaStore entry to touch
-    private fun checkPCloudDeleteConfirmation() {
-        val isInBin = getSelectedItems().firstOrNull()?.getIsInRecycleBin() == true
-        val useBin = config.useRecycleBin && !isInBin
-        when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deletePCloudFiles(config.tempSkipRecycleBin) }
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deletePCloudFiles(config.tempSkipRecycleBin)
-            else -> {
-                val itemsCnt = selectedKeys.size
-                val items = if (itemsCnt == 1) {
-                    "\"${getFirstSelectedItemPath()?.getFilenameFromPath()}\""
-                } else {
-                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-                }
-
-                val question = if (useBin && !config.tempSkipRecycleBin) {
-                    activity.getString(R.string.pcloud_move_to_recycle_bin_confirmation, items)
-                } else {
-                    activity.getString(R.string.pcloud_delete_confirmation, items)
-                }
-
-                DeleteWithRememberDialog(activity, question, useBin) { remember, skipRecycleBin ->
-                    config.tempSkipDeleteConfirmation = remember
-                    if (remember) {
-                        config.tempSkipRecycleBin = skipRecycleBin
-                    }
-
-                    deletePCloudFiles(skipRecycleBin)
-                }
-            }
-        }
-    }
-
-    // The items leave the grid right away and the write follows; the list is read again once
-    // it is through, which also brings a refused item back. The folder is not closed when it
-    // ends up empty, the way a local one is: the write may still be on its way
-    private fun deletePCloudFiles(skipRecycleBin: Boolean) {
+    private fun deleteFiles(storage: MediaStorage, skipRecycleBin: Boolean) {
         val selectedItems = getSelectedItems()
         if (selectedItems.isEmpty()) {
             return
         }
 
-        val isInBin = selectedItems.first().getIsInRecycleBin()
-        val toBin = config.useRecycleBin && !skipRecycleBin && !isInBin
-        val paths = selectedItems.map { it.path }
-        val positions = getSelectedItemPositions()
-        media.removeAll(selectedItems)
-        listener?.updateMediaGridDecoration(media)
-        removeSelectedItems(positions)
-        currentMediaHash = media.hashCode()
-
-        val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
-        activity.toast(resources.getQuantityString(progress, paths.size, paths.size))
-        val foldersToRescan = if (isInBin) emptyList() else paths.map { it.getParentPath() }.distinct()
-        val write: PCloudWriter.() -> Unit = {
-            when {
-                toBin -> moveToRecycleBin(paths)
-                isInBin -> deleteFromRecycleBin(paths)
-                else -> deleteFiles(paths)
-            }
-        }
-
-        activity.writeToPCloud(foldersToRescan, write) {
-            activity.runOnUiThread {
-                listener?.refreshItems()
-            }
-        }
-    }
-
-    // A medium of the share is deleted from the share, and from nowhere else: there is no
-    // recycle bin on it to pass through and none is made, so nothing here can be restored
-    // afterwards and the confirmation says as much. The delete password and the "do not ask
-    // again" setting apply like they do for local media; the "skip the recycle bin" option is
-    // not shown, there being no bin to skip
-    private fun checkSmbDeleteConfirmation() {
-        when {
-            config.isDeletePasswordProtectionOn -> activity.handleDeletePasswordProtection { deleteSmbFiles() }
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteSmbFiles()
-            else -> {
-                val itemsCnt = selectedKeys.size
-                val items = if (itemsCnt == 1) {
-                    "\"${getFirstSelectedItemPath()?.getFilenameFromPath()}\""
-                } else {
-                    resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, itemsCnt, itemsCnt)
-                }
-
-                val question = activity.getString(R.string.smb_delete_confirmation, items)
-                DeleteWithRememberDialog(activity, question, false) { remember, _ ->
-                    config.tempSkipDeleteConfirmation = remember
-                    deleteSmbFiles()
-                }
-            }
-        }
-    }
-
-    // The media leave the grid right away and the delete follows; the list is read again once
-    // it is through, which brings back anything the share would not part with. The folder is
-    // not closed when it ends up empty, the way a local one is: the write may still be on its
-    // way, the same as for pCloud
-    private fun deleteSmbFiles() {
-        val selectedItems = getSelectedItems()
-        if (selectedItems.isEmpty()) {
-            return
-        }
-
-        val paths = selectedItems.map { it.path }
-        val positions = getSelectedItemPositions()
-        media.removeAll(selectedItems)
-        listener?.updateMediaGridDecoration(media)
-        removeSelectedItems(positions)
-        currentMediaHash = media.hashCode()
-
-        activity.toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
-        activity.writeToShare({ this.deleteFiles(paths) }) {
-            activity.runOnUiThread {
-                listener?.refreshItems()
-            }
-        }
-    }
-
-    private fun deleteFiles(skipRecycleBin: Boolean) {
-        if (selectedKeys.isEmpty()) {
-            return
-        }
-
-        val selectedItems = getSelectedItems()
-        val selectedPaths = selectedItems.map { it.path } as ArrayList<String>
-        val SAFPath = selectedPaths.firstOrNull { activity.needsStupidWritePermissions(it) } ?: getFirstSelectedItemPath() ?: return
-        activity.handleSAFDialog(SAFPath) {
-            if (!it) {
-                return@handleSAFDialog
-            }
-
-            val sdk30SAFPath = selectedPaths.firstOrNull { activity.isAccessibleWithSAFSdk30(it) } ?: getFirstSelectedItemPath() ?: return@handleSAFDialog
-            activity.checkManageMediaOrHandleSAFDialogSdk30(sdk30SAFPath) {
-                if (!it) {
-                    return@checkManageMediaOrHandleSAFDialogSdk30
-                }
-
-                val fileDirItems = ArrayList<FileDirItem>(selectedKeys.size)
-                val removeMedia = ArrayList<Medium>(selectedKeys.size)
-                val positions = getSelectedItemPositions()
-
-                selectedItems.forEach { medium ->
-                    fileDirItems.add(medium.toFileDirItem())
-                    removeMedia.add(medium)
-                }
-
-                media.removeAll(removeMedia)
-                listener?.tryDeleteFiles(fileDirItems, skipRecycleBin)
-                listener?.updateMediaGridDecoration(media)
-                removeSelectedItems(positions)
-                currentMediaHash = media.hashCode()
-            }
+        val fileDirItems = selectedItems.map { it.toFileDirItem() } as ArrayList<FileDirItem>
+        storage.onceMayDeleteMedia(activity, fileDirItems) {
+            val positions = getSelectedItemPositions()
+            media.removeAll(selectedItems)
+            listener?.tryDeleteFiles(fileDirItems, skipRecycleBin)
+            listener?.updateMediaGridDecoration(media)
+            removeSelectedItems(positions)
+            currentMediaHash = media.hashCode()
         }
     }
 

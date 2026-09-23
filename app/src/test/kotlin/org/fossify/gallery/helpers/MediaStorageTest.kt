@@ -116,6 +116,20 @@ class MediaStorageTest {
         assertFalse(pCloud.canTransferTo(smb))
     }
 
+    // where a delete goes: through the app's bin on the device and on pCloud, for good on the
+    // share (#28, until #112). What is in a bin already is deleted for good from there; the
+    // device's bin is a path under the app's files, which the context here cannot answer for
+    @Test
+    fun `the share is the one storage with no recycle bin`() {
+        assertTrue(device.hasRecycleBin)
+        assertTrue(pCloud.hasRecycleBin)
+        assertFalse(smb.hasRecycleBin)
+
+        assertTrue(pCloud.isInRecycleBin("pcloud:/.gallery-recycle-bin/Camera/IMG_0001.jpg"))
+        assertFalse(pCloud.isInRecycleBin("pcloud:/Camera/IMG_0001.jpg"))
+        assertFalse(smb.isInRecycleBin("smb:/Screens/a.jpg"))
+    }
+
     @Test
     fun `only the share streams its videos`() {
         assertTrue(smb.streamsVideos)

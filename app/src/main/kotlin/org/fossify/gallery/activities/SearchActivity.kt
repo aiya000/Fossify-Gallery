@@ -19,6 +19,7 @@ import org.fossify.gallery.databinding.ActivitySearchBinding
 import org.fossify.gallery.extensions.*
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.VIDEO_PLAYER_APP
@@ -26,7 +27,6 @@ import org.fossify.gallery.helpers.VIDEO_PLAYER_SYSTEM
 import org.fossify.gallery.interfaces.MediaOperationsListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
-import java.io.File
 
 class SearchActivity : SimpleActivity(), MediaOperationsListener {
     override var isSearchBarEnabled = true
@@ -269,47 +269,27 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
         super.onActivityResult(requestCode, resultCode, resultData)
     }
 
+    // the storage does the deleting and takes the rows with it, see MediaStorage.deleteMedia();
+    // a medium of a remote storage is a search result like any other, and goes the same way.
+    // A refused delete has the results read again, which brings the item back
     override fun tryDeleteFiles(fileDirItems: ArrayList<FileDirItem>, skipRecycleBin: Boolean) {
-        val filtered = fileDirItems.filter { File(it.path).isFile && it.path.isMediaFile() } as ArrayList
+        val filtered = fileDirItems.filter { !getIsPathDirectory(it.path) && it.path.isMediaFile() } as ArrayList
         if (filtered.isEmpty()) {
             return
         }
 
-        if (config.useRecycleBin && !skipRecycleBin && !filtered.first().path.startsWith(recycleBinPath)) {
-            val movingItems = resources.getQuantityString(org.fossify.commons.R.plurals.moving_items_into_bin, filtered.size, filtered.size)
-            toast(movingItems)
+        val storage = MediaStorage.ofAll(this, filtered.map { it.path }) ?: return
+        val toBin = storage.hasRecycleBin && config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
+        val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
+        toast(resources.getQuantityString(progress, filtered.size, filtered.size))
 
-            movePathsInRecycleBin(filtered.map { it.path } as ArrayList<String>) {
-                if (it) {
-                    deleteFilteredFiles(filtered)
-                } else {
-                    toast(org.fossify.commons.R.string.unknown_error_occurred)
-                }
-            }
-        } else {
-            val deletingItems = resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, filtered.size, filtered.size)
-            toast(deletingItems)
-            deleteFilteredFiles(filtered)
-        }
-    }
-
-    private fun deleteFilteredFiles(filtered: ArrayList<FileDirItem>) {
-        deleteFiles(filtered) {
-            if (!it) {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
-                return@deleteFiles
+        storage.deleteMedia(this, filtered, skipRecycleBin) { deleted ->
+            if (!deleted) {
+                refreshItems()
+                return@deleteMedia
             }
 
             mAllMedia.removeAll { filtered.map { it.path }.contains((it as? Medium)?.path) }
-
-            ensureBackgroundThread {
-                val useRecycleBin = config.useRecycleBin
-                filtered.forEach {
-                    if (it.path.startsWith(recycleBinPath) || !useRecycleBin) {
-                        deleteDBPath(it.path)
-                    }
-                }
-            }
         }
     }
 

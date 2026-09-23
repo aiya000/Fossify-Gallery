@@ -47,7 +47,6 @@ import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.convertToBitmap
-import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getColoredDrawableWithColor
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getDataColumn
@@ -98,7 +97,6 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
-import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
@@ -108,7 +106,6 @@ import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getFavoritePaths
 import org.fossify.gallery.extensions.getShortcutImage
-import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
@@ -118,7 +115,6 @@ import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
-import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openPath
 import org.fossify.gallery.extensions.pCloudItemsDB
@@ -1465,229 +1461,29 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         withLocalMediaFile(getCurrentPath()) { showFileOnMap(it) }
     }
 
+    // the storage asks, in its own words and with the bin where it has one, see
+    // MediaStorage.confirmDeleteMedia()
     private fun checkDeleteConfirmation() {
         val currentMedium = getCurrentMedium() ?: return
-        if (currentMedium.path.isPCloudPath()) {
-            checkPCloudDeleteConfirmation(currentMedium)
-            return
-        }
-
-        if (currentMedium.path.isSmbPath()) {
-            checkSmbDeleteConfirmation(currentMedium)
-            return
-        }
-
-        handleMediaManagementPrompt {
-            if (config.isDeletePasswordProtectionOn) {
-                handleDeletePasswordProtection {
-                    deleteConfirmed(config.tempSkipRecycleBin)
-                }
-            } else if (config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation) {
-                deleteConfirmed(config.tempSkipRecycleBin)
-            } else {
-                askConfirmDelete()
-            }
+        val storage = MediaStorage.of(this, currentMedium.path)
+        storage.confirmDeleteMedia(this, listOf(currentMedium)) { skipRecycleBin ->
+            deleteConfirmed(storage, skipRecycleBin)
         }
     }
 
-    private fun askConfirmDelete() {
-        val fileDirItem = getCurrentMedium()?.toFileDirItem() ?: return
-        val size = fileDirItem.getProperSize(this, countHidden = true).formatSize()
-        val filename = "\"${getCurrentPath().getFilenameFromPath()}\""
-        val filenameAndSize = "$filename ($size)"
-        val isInRecycleBin = getCurrentMedium()!!.getIsInRecycleBin()
-
-        val baseString = if (config.useRecycleBin && !config.tempSkipRecycleBin && !isInRecycleBin) {
-            org.fossify.commons.R.string.move_to_recycle_bin_confirmation
-        } else {
-            org.fossify.commons.R.string.deletion_confirmation
-        }
-
-        val message = String.format(resources.getString(baseString), filenameAndSize)
-        val showSkipRecycleBinOption = config.useRecycleBin && !isInRecycleBin
-
-        DeleteWithRememberDialog(this, message, showSkipRecycleBinOption) { remember, skipRecycleBin ->
-            config.tempSkipDeleteConfirmation = remember
-
-            if (remember) {
-                config.tempSkipRecycleBin = skipRecycleBin
-            }
-
-            deleteConfirmed(skipRecycleBin)
-        }
-    }
-
-    private fun deleteConfirmed(skipRecycleBin: Boolean) {
+    // the page goes as soon as the storage may delete, the delete follows, and the viewer
+    // closes when it was the last page. A refused delete brings the page back
+    private fun deleteConfirmed(storage: MediaStorage, skipRecycleBin: Boolean) {
         val currentMedium = getCurrentMedium()
         val path = currentMedium?.path ?: return
         if (getIsPathDirectory(path) || !path.isMediaFile()) {
             return
         }
 
-        val fileDirItem = currentMedium.toFileDirItem()
-        if (config.useRecycleBin && !skipRecycleBin && !getCurrentMedium()!!.getIsInRecycleBin()) {
-            checkManageMediaOrHandleSAFDialogSdk30(fileDirItem.path) {
-                if (!it) {
-                    return@checkManageMediaOrHandleSAFDialogSdk30
-                }
-
-                mIgnoredPaths.add(fileDirItem.path)
-                dropFromSelection(fileDirItem.path)
-                val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
-                if (media.isNotEmpty()) {
-                    runOnUiThread {
-                        refreshUI(media, false)
-                    }
-                }
-
-                if (media.size == 1) {
-                    onPageSelected(0)
-                }
-
-                movePathsInRecycleBin(arrayListOf(path)) {
-                    if (it) {
-                        tryDeleteFileDirItem(fileDirItem, false, false) {
-                            mIgnoredPaths.remove(fileDirItem.path)
-                            if (media.isEmpty()) {
-                                deleteDirectoryIfEmpty()
-                                finish()
-                            }
-                        }
-                    } else {
-                        toast(org.fossify.commons.R.string.unknown_error_occurred)
-                    }
-                }
-            }
-        } else {
-            handleDeletion(fileDirItem)
-        }
-    }
-
-    // A pCloud medium goes to the app's recycle bin on pCloud, with the same "skip the bin"
-    // option a local file gets, or for good when the bin is off, skipped, or the medium is
-    // in it already. The delete password and the "skip confirmation" setting apply like for
-    // a local file. No media management prompt, there is no MediaStore entry to touch
-    private fun checkPCloudDeleteConfirmation(medium: Medium) {
-        val isInBin = medium.getIsInRecycleBin()
-        val useBin = config.useRecycleBin && !isInBin
-        when {
-            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection { deletePCloudMedium(medium, config.tempSkipRecycleBin) }
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deletePCloudMedium(medium, config.tempSkipRecycleBin)
-            else -> {
-                val name = "\"${medium.name}\""
-                val message = if (useBin && !config.tempSkipRecycleBin) {
-                    getString(R.string.pcloud_move_to_recycle_bin_confirmation, name)
-                } else {
-                    getString(R.string.pcloud_delete_confirmation, name)
-                }
-
-                DeleteWithRememberDialog(this, message, useBin) { remember, skipRecycleBin ->
-                    config.tempSkipDeleteConfirmation = remember
-                    if (remember) {
-                        config.tempSkipRecycleBin = skipRecycleBin
-                    }
-
-                    deletePCloudMedium(medium, skipRecycleBin)
-                }
-            }
-        }
-    }
-
-    // the same as handleDeletion(): the page goes right away, the write follows, and the view
-    // closes when it was the last one. A refused write brings the page back
-    private fun deletePCloudMedium(medium: Medium, skipRecycleBin: Boolean) {
-        val path = medium.path
-        val isInBin = medium.getIsInRecycleBin()
-        val toBin = config.useRecycleBin && !skipRecycleBin && !isInBin
-        mIgnoredPaths.add(path)
-        dropFromSelection(path)
-        val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
-        if (media.isNotEmpty()) {
-            runOnUiThread {
-                refreshUI(media, false)
-            }
-        }
-
-        if (media.size == 1) {
-            onPageSelected(0)
-        }
-
-        val foldersToRescan = if (isInBin) emptyList() else listOf(path.getParentPath())
-        val write: PCloudWriter.() -> Unit = {
-            when {
-                toBin -> moveToRecycleBin(listOf(path))
-                isInBin -> deleteFromRecycleBin(listOf(path))
-                else -> deleteFiles(listOf(path))
-            }
-        }
-
-        writeToPCloud(foldersToRescan, write) { success ->
-            mIgnoredPaths.remove(path)
-            runOnUiThread {
-                if (!success) {
-                    refreshViewPager(refetchPosition = true)
-                } else if (media.isEmpty()) {
-                    finish()
-                }
-            }
-        }
-    }
-
-    // A medium of the share is deleted from the share and from nowhere else: there is no
-    // recycle bin on it and none is made (#28), so there is no "skip the bin" option to show
-    // and the message says the delete cannot be taken back. The delete password and the
-    // "do not ask again" setting apply like they do for a local medium
-    private fun checkSmbDeleteConfirmation(medium: Medium) {
-        when {
-            config.isDeletePasswordProtectionOn -> handleDeletePasswordProtection { deleteSmbMedium(medium) }
-            config.tempSkipDeleteConfirmation || config.skipDeleteConfirmation -> deleteSmbMedium(medium)
-            else -> {
-                val message = getString(R.string.smb_delete_confirmation, "\"${medium.name}\"")
-                DeleteWithRememberDialog(this, message, false) { remember, _ ->
-                    config.tempSkipDeleteConfirmation = remember
-                    deleteSmbMedium(medium)
-                }
-            }
-        }
-    }
-
-    // the same as deletePCloudMedium(): the page goes right away, the write follows, and the
-    // viewer closes when it was the last one. A refused delete brings the page back
-    private fun deleteSmbMedium(medium: Medium) {
-        val path = medium.path
-        mIgnoredPaths.add(path)
-        dropFromSelection(path)
-        val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
-        if (media.isNotEmpty()) {
-            runOnUiThread {
-                refreshUI(media, false)
-            }
-        }
-
-        if (media.size == 1) {
-            onPageSelected(0)
-        }
-
-        writeToShare({ deleteFiles(listOf(path)) }) { success ->
-            mIgnoredPaths.remove(path)
-            runOnUiThread {
-                if (!success) {
-                    refreshViewPager(refetchPosition = true)
-                } else if (media.isEmpty()) {
-                    finish()
-                }
-            }
-        }
-    }
-
-    private fun handleDeletion(fileDirItem: FileDirItem) {
-        checkManageMediaOrHandleSAFDialogSdk30(fileDirItem.path) {
-            if (!it) {
-                return@checkManageMediaOrHandleSAFDialogSdk30
-            }
-
-            mIgnoredPaths.add(fileDirItem.path)
-            dropFromSelection(fileDirItem.path)
+        val fileDirItems = arrayListOf(currentMedium.toFileDirItem())
+        storage.onceMayDeleteMedia(this, fileDirItems) {
+            mIgnoredPaths.add(path)
+            dropFromSelection(path)
             val media = mMediaFiles.filter { !mIgnoredPaths.contains(it.path) } as ArrayList<Medium>
             if (media.isNotEmpty()) {
                 runOnUiThread {
@@ -1699,9 +1495,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 onPageSelected(0)
             }
 
-            tryDeleteFileDirItem(fileDirItem, false, true) {
-                mIgnoredPaths.remove(fileDirItem.path)
-                if (media.isEmpty()) {
+            storage.deleteMedia(this, fileDirItems, skipRecycleBin) { deleted ->
+                mIgnoredPaths.remove(path)
+                if (!deleted) {
+                    refreshViewPager(refetchPosition = true)
+                } else if (media.isEmpty()) {
                     deleteDirectoryIfEmpty()
                     finish()
                 }
