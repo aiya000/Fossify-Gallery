@@ -318,6 +318,23 @@ object SmbClient {
         }
     }
 
+    // The folder alone, and only when nothing is left in it; answers whether it went. For the
+    // folders the recycle bin's layout leaves behind once what was in them is restored or gone
+    // for good: a folder with something still in it is not an error here, it is the answer
+    fun deleteFolderIfEmpty(context: Context, path: String): Boolean {
+        val share = connectedShare(context)
+        return try {
+            share.rmdir(toSharePath(context, path), false)
+            true
+        } catch (e: SMBApiException) {
+            if (e.status == NtStatus.STATUS_DIRECTORY_NOT_EMPTY || e.isAlreadyGone()) {
+                false
+            } else {
+                throw e
+            }
+        }
+    }
+
     // what the server answers for a name that is not there, and for one whose folder is not
     // there either -- the second is what deleting a file under a folder already removed gets
     private fun SMBApiException.isAlreadyGone() =

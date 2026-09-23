@@ -38,10 +38,14 @@ class MediaFetcher(val context: Context) {
         }
 
         val curMedia = ArrayList<Medium>()
-        if (curPath == PCLOUD_RECYCLE_BIN) {
-            // the deleted pCloud rows, wherever they were deleted from
-            curMedia.addAll(filterRemoteMedia(context.mediaDB.getPCloudDeletedMedia(), isPickImage, isPickVideo, filterMedia, favoritePaths))
-        } else if (curPath.isRemotePath()) {
+        if (curPath == RECYCLE_BIN) {
+            // The one bin's media: the remote storages' come as their rows say, since their
+            // files are on the storage each came from; the device's are read off the files in
+            // the app's own directory below, the way any folder of the device is
+            curMedia.addAll(filterRemoteMedia(context.mediaDB.getRemoteDeletedMedia(), isPickImage, isPickVideo, filterMedia, favoritePaths))
+        }
+
+        if (curPath.isRemotePath()) {
             // the cache is the only source there is, the network is touched by a rescan alone
             curMedia.addAll(getRemoteMedia(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths))
         } else if (context.isPathOnOTG(curPath)) {
@@ -61,7 +65,7 @@ class MediaFetcher(val context: Context) {
                 }
             }
 
-            if (curMedia.isEmpty()) {
+            if (curMedia.isEmpty() || curPath == RECYCLE_BIN) {
                 val newMedia = getMediaInFolder(
                     curPath, isPickImage, isPickVideo, filterMedia, getProperDateTaken, getProperLastModified, getProperFileSize,
                     favoritePaths, getVideoDurations, lastModifieds.clone() as HashMap<String, Long>, dateTakens.clone() as HashMap<String, Long>
@@ -638,7 +642,7 @@ class MediaFetcher(val context: Context) {
 
         if (config.isSmbConfigured && (filter == STORAGE_FILTER_SMB || filter == STORAGE_FILTER_ALL)) {
             folders.addAll(
-                context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { showHidden || !context.isSmbFolderHidden(it) }
+                context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { it != SMB_RECYCLE_BIN && (showHidden || !context.isSmbFolderHidden(it)) }
             )
         }
 

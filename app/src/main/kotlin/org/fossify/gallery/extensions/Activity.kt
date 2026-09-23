@@ -49,6 +49,7 @@ import org.fossify.gallery.dialogs.AllFilesPermissionDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
+import org.fossify.gallery.dialogs.RestoreFromBinDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -551,16 +552,17 @@ fun BaseSimpleActivity.movePathsInRecycleBin(paths: ArrayList<String>, callback:
     }
 }
 
-fun BaseSimpleActivity.restoreRecycleBinPath(path: String, callback: () -> Unit) {
-    restoreRecycleBinPaths(arrayListOf(path), callback)
-}
-
-fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, callback: () -> Unit) {
+// The device's half of a restore, see MediaStorage.Device.restoreFromBin(): each file is copied
+// back out of the app's directory into the folder it was deleted from, or into
+// [destinationFolder] when one was picked, and the row follows it. A folder the system will not
+// let the app write into is swapped for Pictures, and the user is told once
+fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, destinationFolder: String? = null, callback: () -> Unit) {
     ensureBackgroundThread {
         val newPaths = ArrayList<String>()
         var shownRestoringToPictures = false
         for (source in paths) {
-            var destination = source.removePrefix(recycleBinPath)
+            val originalPath = source.removePrefix(recycleBinPath)
+            var destination = if (destinationFolder == null) originalPath else "$destinationFolder/${originalPath.getFilenameFromPath()}"
 
             val destinationParent = destination.getParentPath()
             if (isRestrictedWithSAFSdk30(destinationParent) && !isInDownloadDir(destinationParent)) {
@@ -608,7 +610,10 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, callback
                 out?.flush()
 
                 if (File(source).length() == copiedSize) {
-                    mediaDB.updateDeleted(destination.removePrefix(recycleBinPath), 0, "$RECYCLE_BIN${source.removePrefix(recycleBinPath)}")
+                    // the row moves to where the file landed, which may be another folder or
+                    // another name than the one it was deleted under
+                    mediaDB.restoreDeleted("$RECYCLE_BIN$originalPath", destination, destination.getParentPath(), destination.getFilenameFromPath())
+                    File(source).delete()
                 }
                 newPaths.add(destination)
 
@@ -633,16 +638,61 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, callback
     }
 }
 
+// The one recycle bin emptied: each storage deletes for good what is in its own bin, one after
+// the other, and the bin's tile goes once all three are through. A storage that could not
+// empty its bin has said so; the tile stays for what it still holds, and [callback] runs only
+// when everything went
 fun BaseSimpleActivity.emptyTheRecycleBin(callback: (() -> Unit)? = null) {
+    val storages = listOf(MediaStorage.Device(this), MediaStorage.PCloud(this), MediaStorage.Smb(this))
+    fun emptyFrom(index: Int) {
+        if (index == storages.size) {
+            ensureBackgroundThread {
+                directoryDB.deleteRecycleBin()
+                toast(org.fossify.commons.R.string.recycle_bin_emptied)
+                callback?.invoke()
+            }
+            return
+        }
+
+        storages[index].emptyBin(this) { emptied ->
+            if (emptied) {
+                emptyFrom(index + 1)
+            }
+        }
+    }
+
+    emptyFrom(0)
+}
+
+// Brings media back out of the recycle bin, whichever storage each is on. One dialog asks
+// first, naming where the first of them goes back to, and can send the lot into another folder
+// of the same storage when the selection is all on one; a selection across storages goes back
+// to where each came from. [onDone] runs on the main thread once the storages are through
+fun BaseSimpleActivity.restoreFromRecycleBin(paths: List<String>, onDone: () -> Unit) {
+    if (paths.isEmpty()) {
+        return
+    }
+
+    val storage = MediaStorage.ofAll(this, paths)
     ensureBackgroundThread {
-        try {
-            recycleBin.deleteRecursively()
-            mediaDB.clearRecycleBin()
-            directoryDB.deleteRecycleBin()
-            toast(org.fossify.commons.R.string.recycle_bin_emptied)
-            callback?.invoke()
-        } catch (e: Exception) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+        val (folder, exists) = MediaStorage.of(this, paths.first()).restoreDestinationOf(paths.first())
+        runOnUiThread {
+            RestoreFromBinDialog(this, storage, paths.size, folder, !exists) { destination ->
+                val byStorage = paths.groupBy { MediaStorage.of(this, it).javaClass }.values.toList()
+                fun restoreFrom(index: Int) {
+                    if (index == byStorage.size) {
+                        onDone()
+                        return
+                    }
+
+                    val group = byStorage[index]
+                    MediaStorage.of(this, group.first()).restoreFromBin(this, group, destination) {
+                        restoreFrom(index + 1)
+                    }
+                }
+
+                restoreFrom(0)
+            }
         }
     }
 }
@@ -663,17 +713,6 @@ fun BaseSimpleActivity.showRecycleBinEmptyingDialog(callback: () -> Unit) {
         org.fossify.commons.R.string.empty_recycle_bin_confirmation,
         org.fossify.commons.R.string.yes,
         org.fossify.commons.R.string.no
-    ) {
-        callback()
-    }
-}
-
-fun BaseSimpleActivity.showRestoreConfirmationDialog(count: Int, callback: () -> Unit) {
-    ConfirmationDialog(
-        activity = this,
-        message = resources.getQuantityString(R.plurals.restore_confirmation, count, count),
-        positive = org.fossify.commons.R.string.yes,
-        negative = org.fossify.commons.R.string.no
     ) {
         callback()
     }

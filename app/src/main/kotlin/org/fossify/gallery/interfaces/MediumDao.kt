@@ -17,23 +17,41 @@ interface MediumDao {
     @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts = 0 AND is_favorite = 1")
     fun getFavoritesCount(): Long
 
-    // The device's recycle bin: the deleted rows whose file lies in the app's own files
-    // directory. The pCloud ones, with a "pcloud:" path, belong to the pCloud bin below
-    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
+    // The recycle bin: every deleted row, whichever storage its file stayed on (#112). The
+    // device's rows name a file in the app's own files directory under a "recycle_bin" prefix,
+    // the remote ones a path in the storage's own bin folder, see PCLOUD_RECYCLE_BIN and
+    // SMB_RECYCLE_BIN; what tells them apart is the scheme, and the queries below pick one
+    // storage's out for the operations that go through that storage
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0")
     fun getDeletedMedia(): List<Medium>
 
-    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
+    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0")
     fun getDeletedMediaCount(): Long
 
-    // the app's recycle bin on pCloud, see PCLOUD_RECYCLE_BIN
+    // the device's, whose paths are rewritten to the files themselves by getUpdatedDeletedMedia()
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%' AND full_path NOT LIKE '$SMB_PATH_SCHEME%'")
+    fun getDeviceDeletedMedia(): List<Medium>
+
+    // the two remote storages', listed as they are: their rows are the writers', not a listing's
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND (full_path LIKE '$PCLOUD_PATH_SCHEME%' OR full_path LIKE '$SMB_PATH_SCHEME%')")
+    fun getRemoteDeletedMedia(): List<Medium>
+
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getPCloudDeletedMedia(): List<Medium>
 
-    @Query("SELECT COUNT(filename) FROM media WHERE deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
-    fun getPCloudDeletedMediaCount(): Long
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0 AND full_path LIKE '$SMB_PATH_SCHEME%'")
+    fun getSmbDeletedMedia(): List<Medium>
+
+    // what the daily sweep deletes for good, one storage at a time: the rows deleted before
+    // the timestamp
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestamp AND deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%' AND full_path NOT LIKE '$SMB_PATH_SCHEME%'")
+    fun getOldDeviceRecycleBinItems(timestamp: Long): List<Medium>
 
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestamp AND deleted_ts != 0 AND full_path LIKE '$PCLOUD_PATH_SCHEME%'")
     fun getOldPCloudRecycleBinItems(timestamp: Long): List<Medium>
+
+    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestamp AND deleted_ts != 0 AND full_path LIKE '$SMB_PATH_SCHEME%'")
+    fun getOldSmbRecycleBinItems(timestamp: Long): List<Medium>
 
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE full_path = :path COLLATE NOCASE")
     fun getMediumByPath(path: String): Medium?
@@ -48,9 +66,6 @@ interface MediumDao {
     // modification time, and only a row knows the last two
     @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE full_path LIKE :prefix || '%'")
     fun getMediaWithPrefix(prefix: String): List<Medium>
-
-    @Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts < :timestmap AND deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
-    fun getOldRecycleBinItems(timestmap: Long): List<Medium>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insert(medium: Medium)
@@ -70,7 +85,7 @@ interface MediumDao {
     @Query("UPDATE OR REPLACE media SET full_path = :newPath, deleted_ts = :deletedTS WHERE full_path = :oldPath COLLATE NOCASE")
     fun updateDeleted(newPath: String, deletedTS: Long, oldPath: String)
 
-    // a pCloud medium back out of the bin, to a folder that may not be the one it came from
+    // a medium back out of the bin, to a folder that may not be the one it came from
     @Query("UPDATE OR REPLACE media SET full_path = :newPath, parent_path = :newParentPath, filename = :newFilename, deleted_ts = 0 WHERE full_path = :oldPath COLLATE NOCASE")
     fun restoreDeleted(oldPath: String, newPath: String, newParentPath: String, newFilename: String)
 
@@ -113,7 +128,7 @@ interface MediumDao {
     @Query("SELECT full_path FROM media WHERE deleted_ts = 0 AND parent_path = :path COLLATE NOCASE AND type = $TYPE_VIDEOS AND video_duration = 0 AND full_path LIKE '$SMB_PATH_SCHEME%'")
     fun getVideoPathsWithoutDuration(path: String): List<String>
 
-    // the device's bin only, the pCloud one is emptied through PCloudWriter
-    @Query("DELETE FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%'")
-    fun clearRecycleBin()
+    // the device's bin only: a remote one is emptied through its writer, a file at a time
+    @Query("DELETE FROM media WHERE deleted_ts != 0 AND full_path NOT LIKE '$PCLOUD_PATH_SCHEME%' AND full_path NOT LIKE '$SMB_PATH_SCHEME%'")
+    fun clearDeviceRecycleBin()
 }

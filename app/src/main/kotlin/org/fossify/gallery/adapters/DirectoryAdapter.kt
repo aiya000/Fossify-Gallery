@@ -91,7 +91,6 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.removeNoMedia
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
-import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_BRACKETS
 import org.fossify.gallery.helpers.FOLDER_MEDIA_CNT_LINE
@@ -104,7 +103,6 @@ import org.fossify.gallery.helpers.LOCATION_SMB
 import org.fossify.gallery.helpers.LOCATION_SD
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
-import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -202,13 +200,12 @@ class DirectoryAdapter(
         // cover image are settings and stay. A selection of real folders mixing storages is no
         // storage, and is offered none of it; groups are counted separately, below
         val storage = MediaStorage.ofAll(activity, realPaths)
-        val isPCloudBinSelected = selectedPaths.contains(PCLOUD_RECYCLE_BIN)
         menu.apply {
             findItem(R.id.cab_move_to_top).isVisible = isDragAndDropping
             findItem(R.id.cab_move_to_bottom).isVisible = isDragAndDropping
 
             // virtual groups can be renamed one at a time only
-            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !isPCloudBinSelected &&
+            findItem(R.id.cab_rename).isVisible = !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) &&
                 (!isAnyGroupSelected || isOneItemSelected) &&
                 (areOnlyGroupsSelected || (storage != null && (storage.canRenameSeveralFolders || isOneItemSelected)))
             findItem(R.id.cab_change_cover_image).isVisible = isOneItemSelected && !isAnyGroupSelected
@@ -216,8 +213,7 @@ class DirectoryAdapter(
             findItem(R.id.cab_lock).isVisible = selectedPaths.any { !config.isFolderProtected(it) }
             findItem(R.id.cab_unlock).isVisible = selectedPaths.any { config.isFolderProtected(it) }
 
-            // the pCloud bin can be emptied like the device's one; disabling is the device bin's setting
-            findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && (selectedPaths.first() == RECYCLE_BIN || selectedPaths.first() == PCLOUD_RECYCLE_BIN)
+            findItem(R.id.cab_empty_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
             findItem(R.id.cab_empty_disable_recycle_bin).isVisible = isOneItemSelected && selectedPaths.first() == RECYCLE_BIN
 
             findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected && !isAnyGroupSelected && storage?.canCreateShortcut == true
@@ -225,14 +221,13 @@ class DirectoryAdapter(
             // filesystem operations make no sense for virtual groups
             findItem(R.id.cab_properties).isVisible = storage?.canShowFolderProperties == true
             // the media of a folder of the share are copied off it by SmbTransferService
-            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && storage != null && !isPCloudBinSelected
+            findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && storage != null
             // a selection mixing this device and the share is still offered "move to", as it
             // always was, while one with pCloud in it is not. Whether it should be is #107's
             findItem(R.id.cab_move_to).isVisible =
-                (realPaths.none { MediaStorage.of(activity, it) is MediaStorage.PCloud } || storage is MediaStorage.PCloud) && !isPCloudBinSelected
+                realPaths.none { MediaStorage.of(activity, it) is MediaStorage.PCloud } || storage is MediaStorage.PCloud
             findItem(R.id.cab_exclude).isVisible = storage?.canExcludeFolders == true
-            // a folder of the share is deleted from the share, with everything under it and
-            // with no bin to take it back out of
+            // a folder is deleted with everything under it, its media into the storage's bin
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && storage != null
             findItem(R.id.cab_ungroup).isVisible = areOnlyGroupsSelected
             // putting things in a group costs nothing but a setting, so it is offered for every
@@ -241,13 +236,13 @@ class DirectoryAdapter(
             // reached from the selection instead of from the picker -- which is what that picker
             // is mostly opened for
             findItem(R.id.cab_group_selection).isVisible =
-                !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN) && !isPCloudBinSelected
+                !selectedPaths.contains(FAVORITES) && !selectedPaths.contains(RECYCLE_BIN)
             // offered wherever a share is set up, on folders and on groups alike. A selection
             // holding none of the share's videos answers with "nothing to download" rather than
             // going missing, so nobody has to work out why it is not there
             findItem(R.id.cab_smb_download_videos).isVisible = config.isSmbConfigured
 
-            checkHideBtnVisibility(this, ArrayList(realPaths.filter { it != PCLOUD_RECYCLE_BIN }))
+            checkHideBtnVisibility(this, ArrayList(realPaths))
             checkPinBtnVisibility(this, selectedPaths)
         }
     }
@@ -613,26 +608,13 @@ class DirectoryAdapter(
         }
     }
 
+    // the one bin, emptied on all three storages, see emptyTheRecycleBin()
     private fun emptyRecycleBin() {
-        if (getSelectedRealPaths().firstOrNull() == PCLOUD_RECYCLE_BIN) {
-            emptyPCloudRecycleBin()
-            return
-        }
-
         activity.handleLockedFolderOpening(RECYCLE_BIN) { success ->
             if (success) {
                 activity.emptyTheRecycleBin {
                     listener?.refreshItems()
                 }
-            }
-        }
-    }
-
-    private fun emptyPCloudRecycleBin() {
-        activity.writeToPCloud(emptyList(), { this.emptyRecycleBin() }) {
-            activity.runOnUiThread {
-                finishActMode()
-                listener?.refreshItems()
             }
         }
     }
@@ -804,7 +786,7 @@ class DirectoryAdapter(
         activity.handleDeletePasswordProtection {
             handleLockedFolderOpeningForFolders(getSelectedPaths()) { paths ->
                 val groupIds = paths.mapNotNull { it.toFolderGroupId() }
-                val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN && it != PCLOUD_RECYCLE_BIN }
+                val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN }
                 if (groupIds.isEmpty() && folderPaths.isEmpty()) {
                     return@handleLockedFolderOpeningForFolders
                 }
@@ -862,7 +844,7 @@ class DirectoryAdapter(
     private fun askGroupSelection() {
         handleLockedFolderOpeningForFolders(getSelectedPaths()) { paths ->
             val groupIds = paths.mapNotNull { it.toFolderGroupId() }
-            val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN && it != PCLOUD_RECYCLE_BIN }
+            val folderPaths = paths.filter { !it.isFolderGroupPath() && it != FAVORITES && it != RECYCLE_BIN }
             if (groupIds.isEmpty() && folderPaths.isEmpty()) {
                 return@handleLockedFolderOpeningForFolders
             }
@@ -973,16 +955,10 @@ class DirectoryAdapter(
         }
     }
 
-    // The storage asks, in its own words and with the bin where it has one, see
-    // MediaStorage.confirmDeleteFolders(). The two bins' own tiles are emptied rather than
-    // deleted: pCloud's is asked about here, the device's by its storage, in the emptying words
+    // The storage asks, in its own words, see MediaStorage.confirmDeleteFolders(). The bin's
+    // own tile is emptied rather than deleted, and asked about in the emptying words
     private fun askConfirmDelete() {
         val realPaths = getSelectedRealPaths()
-        if (isOneItemSelected() && realPaths.firstOrNull() == PCLOUD_RECYCLE_BIN) {
-            tryEmptyRecycleBin(true)
-            return
-        }
-
         val storage = MediaStorage.ofAll(activity, realPaths) ?: return
         storage.confirmDeleteFolders(activity, getSelectedPaths()) { toRecycleBin ->
             deleteFolders(storage, toRecycleBin)

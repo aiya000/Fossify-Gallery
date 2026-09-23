@@ -95,7 +95,6 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
-import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
 import org.fossify.gallery.extensions.config
@@ -107,13 +106,12 @@ import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
-import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.openEditor
+import org.fossify.gallery.extensions.restoreFromRecycleBin
 import org.fossify.gallery.extensions.openPath
-import org.fossify.gallery.extensions.restoreRecycleBinPath
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
 import org.fossify.gallery.extensions.shareMediumPath
@@ -126,7 +124,6 @@ import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withEditableMediaFile
 import org.fossify.gallery.extensions.withLocalMediaFile
-import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
@@ -159,8 +156,6 @@ import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.QUEUE_PATHS
 import org.fossify.gallery.helpers.PORTRAIT_PATH
-import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
-import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROTATE_BY_ASPECT_RATIO
 import org.fossify.gallery.helpers.ROTATE_BY_DEVICE_ROTATION
@@ -325,10 +320,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         // local medium. What stays hidden is what its storage says it cannot do, see
         // MediaStorage: hiding by renaming the file with a leading dot, and pinning a shortcut
         val storage = MediaStorage.of(this, currentMedium.path)
-        // a medium in the pCloud bin is restored or deleted for good, nothing else; copying it
-        // would go by a remote path the bin does not keep
-        val isInPCloudBin = currentMedium.path.isPCloudRecycleBinPath()
-        val hasFile = !isInPCloudBin
+        // a medium in a remote storage's bin is restored or deleted for good, nothing else:
+        // copying or sharing it would go by a path the bin does not keep
+        val isInRemoteBin = storage.isRemote && storage.isInRecycleBin(currentMedium.path)
+        val hasFile = !isInRemoteBin
 
         runOnUiThread {
             val rotationDegrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
@@ -337,14 +332,14 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
                 findItem(R.id.menu_properties).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
                 findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
-                findItem(R.id.menu_share).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
+                findItem(R.id.menu_share).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
                 findItem(R.id.menu_edit).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
                 findItem(R.id.menu_rename).isVisible = visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
                 findItem(R.id.menu_rotate).isVisible = hasFile && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
                 findItem(R.id.menu_set_as).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = hasFile && currentMedium.isImage()
-                findItem(R.id.menu_copy_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
-                findItem(R.id.menu_move_to).isVisible = !isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
+                findItem(R.id.menu_copy_to).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
+                findItem(R.id.menu_move_to).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
                 findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
@@ -364,7 +359,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_remove_from_favorites).isVisible =
                     currentMedium.isFavorite && visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE == 0 && !currentMedium.getIsInRecycleBin()
 
-                findItem(R.id.menu_restore_file).isVisible = currentMedium.path.startsWith(recycleBinPath) || isInPCloudBin
+                findItem(R.id.menu_restore_file).isVisible = storage.isInRecycleBin(currentMedium.path)
                 findItem(R.id.menu_create_shortcut).isVisible = storage.canCreateShortcut
                 findItem(R.id.menu_change_orientation).isVisible = rotationDegrees == 0 && visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION == 0
                 findItem(R.id.menu_rotate).setShowAsAction(
@@ -613,9 +608,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val isShowingRecycleBin = intent.getBooleanExtra(SHOW_RECYCLE_BIN, false)
         mDirectory = when {
             isShowingFavorites -> FAVORITES
-            isShowingRecycleBin -> RECYCLE_BIN
-            // a medium in the pCloud bin is listed with the bin, not with the folder its pseudo path names
-            mPath.isPCloudRecycleBinPath() -> PCLOUD_RECYCLE_BIN
+            // a medium in a bin is listed with the one bin, not with the folder its path names
+            isShowingRecycleBin || MediaStorage.of(this, mPath).isInRecycleBin(mPath) -> RECYCLE_BIN
             else -> mPath.getParentPath()
         }
         binding.mediumViewerToolbar.title = mPath.getFilenameFromPath()
@@ -1098,8 +1092,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val visibleBottomActions = if (config.bottomActions) config.visibleBottomActions else 0
         // the same gating as refreshMenuItems(): no file, no file operations
         val storage = currentMedium?.let { MediaStorage.of(this, it.path) }
-        val isInPCloudBin = currentMedium?.path?.isPCloudRecycleBinPath() == true
-        val hasFile = !isInPCloudBin
+        val isInRemoteBin = storage?.let { it.isRemote && it.isInRecycleBin(currentMedium.path) } == true
+        val hasFile = !isInRemoteBin
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
         binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
@@ -1112,7 +1106,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             editCurrentMedium()
         }
 
-        binding.bottomActions.bottomShare.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
+        binding.bottomActions.bottomShare.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
         binding.bottomActions.bottomShare.setOnLongClickListener { toast(org.fossify.commons.R.string.share); true }
         binding.bottomActions.bottomShare.setOnClickListener {
             shareMediumPath(getCurrentPath())
@@ -1187,13 +1181,13 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             setCurrentAs()
         }
 
-        binding.bottomActions.bottomCopy.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
+        binding.bottomActions.bottomCopy.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
         binding.bottomActions.bottomCopy.setOnLongClickListener { toast(org.fossify.commons.R.string.copy); true }
         binding.bottomActions.bottomCopy.setOnClickListener {
             checkMediaManagementAndCopy(true)
         }
 
-        binding.bottomActions.bottomMove.beVisibleIf(!isInPCloudBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
+        binding.bottomActions.bottomMove.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
         binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()
@@ -1219,7 +1213,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             if (medium.isHidden()) org.fossify.commons.R.drawable.ic_unhide_vector else org.fossify.commons.R.drawable.ic_hide_vector
         binding.bottomActions.bottomToggleFileVisibility.setImageResource(hideIcon)
 
-        val hasFile = !medium.path.isPCloudRecycleBinPath()
+        val hasFile = !MediaStorage.of(this, medium.path).let { it.isRemote && it.isInRecycleBin(medium.path) }
         binding.bottomActions.bottomRotate.beVisibleIf(hasFile && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
         binding.bottomActions.bottomChangeOrientation.setImageResource(getChangeOrientationIcon())
     }
@@ -1297,29 +1291,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
+    // back to where it came from through its storage, or somewhere else on the same one; the
+    // dialog says which, see restoreFromRecycleBin()
     private fun restoreFile() {
-        val path = getCurrentPath()
-        if (path.isPCloudRecycleBinPath()) {
-            restorePCloudFile(path)
-            return
-        }
-
-        restoreRecycleBinPath(path) {
-            refreshViewPager()
-        }
-    }
-
-    // the dialog names where the file goes back to, and can send it somewhere else
-    private fun restorePCloudFile(path: String) {
-        ensureBackgroundThread {
-            val (folder, exists) = PCloudWriter(this).restoreDestinationOf(path)
-            runOnUiThread {
-                PCloudRestoreDialog(this, 1, folder, !exists) { destination ->
-                    writeToPCloud(emptyList(), { restoreFromRecycleBin(listOf(path), destination) }) {
-                        runOnUiThread { refreshViewPager(refetchPosition = true) }
-                    }
-                }
-            }
+        restoreFromRecycleBin(listOf(getCurrentPath())) {
+            refreshViewPager(refetchPosition = true)
         }
     }
 

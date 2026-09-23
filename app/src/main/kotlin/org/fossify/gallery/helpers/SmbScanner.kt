@@ -17,6 +17,7 @@ import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.favoritesDB
 import org.fossify.gallery.extensions.getFavoritePaths
 import org.fossify.gallery.extensions.getNoMediaFoldersSync
+import org.fossify.gallery.extensions.isSmbRecycleBinPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
@@ -125,10 +126,16 @@ class SmbScanner(private val context: Context) {
     // rarely and a stale list of folders is worse there than a moment's wait
     fun listFolders(path: String): List<String> {
         return listWithOneRetry(path)
-            .filter { it.isFolder }
+            .filter { it.isFolder && !isRecycleBinFolder(path, it) }
             .map { childPathOf(path, it.name) }
             .sorted()
     }
+
+    // The app's recycle bin, a folder in the root, is left out of every listing and every walk:
+    // its rows are SmbWriter's, not a listing's, and a medium in it is deleted, not in a folder
+    // called ".gallery-recycle-bin". See SMB_RECYCLE_BIN
+    private fun isRecycleBinFolder(parentPath: String, entry: SmbClient.Entry) =
+        parentPath == SMB_PATH_SCHEME && entry.isFolder && entry.name == RECYCLE_BIN_FOLDER_NAME
 
     // Lists a folder, and asks a second time over a fresh connection when the first ask was cut
     // short by the connection going away. A share that has been walked for a while loses one
@@ -214,7 +221,7 @@ class SmbScanner(private val context: Context) {
                 return
             }
 
-            entries.filter { it.isFolder }.forEach { collect(childPathOf(path, it.name), depth + 1) }
+            entries.filter { it.isFolder && !isRecycleBinFolder(path, it) }.forEach { collect(childPathOf(path, it.name), depth + 1) }
         }
 
         // the media of one folder, without walking into anything
@@ -270,12 +277,13 @@ class SmbScanner(private val context: Context) {
 
     // replaces the SMB rows in one transaction, so a folder list read in between never sees half
     // of a scan. Rows the share no longer has are dropped one by one: a NOT IN over thousands of
-    // paths would trip SQLite's argument limit
+    // paths would trip SQLite's argument limit. The rows of the recycle bin are not a listing's
+    // to drop, the walk never holds them
     private fun store(media: List<Medium>, directories: List<Directory>, skippedPaths: Set<String>) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val keptMediaPaths = media.map { it.path }.toHashSet()
             context.mediaDB.getPathsWithPrefix(SMB_PATH_SCHEME)
-                .filter { it !in keptMediaPaths && !isUnderSkipped(it, skippedPaths) }
+                .filter { it !in keptMediaPaths && !it.isSmbRecycleBinPath() && !isUnderSkipped(it, skippedPaths) }
                 .forEach { path ->
                     context.mediaDB.deleteMediumPath(path)
                     context.favoritesDB.deleteFavoritePath(path)

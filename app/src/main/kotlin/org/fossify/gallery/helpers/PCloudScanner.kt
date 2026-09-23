@@ -366,7 +366,7 @@ class PCloudScanner(private val context: Context) {
 
     // the app's recycle bin, a folder in the root, is left out of every listing
     private fun isRecycleBinFolder(parentPath: String, entry: Entry) =
-        parentPath == PCLOUD_PATH_SCHEME && entry.isFolder && entry.name == PCLOUD_RECYCLE_BIN_FOLDER_NAME
+        parentPath == PCLOUD_PATH_SCHEME && entry.isFolder && entry.name == RECYCLE_BIN_FOLDER_NAME
 
     // one recursive listing, or, should pCloud refuse that for this folder too, a flat one
     // with every folder in it fetched the same way
@@ -570,7 +570,9 @@ class PCloudScanner(private val context: Context) {
             }
 
             val keptDirectoryPaths = directories.map { it.path }.toHashSet()
-            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptDirectoryPaths && it != PCLOUD_RECYCLE_BIN }.forEach { path ->
+            // a "pCloud recycle bin" folder row, from before the three bins were one (#112),
+            // is dropped here like any other folder pCloud does not list
+            context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).filter { it !in keptDirectoryPaths }.forEach { path ->
                 context.directoryDB.deleteDirPath(path)
             }
 

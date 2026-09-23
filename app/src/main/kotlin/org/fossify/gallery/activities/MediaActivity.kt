@@ -76,6 +76,7 @@ import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.rescanSmbFolders
+import org.fossify.gallery.extensions.restoreFromRecycleBin
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.writeToPCloud
@@ -88,21 +89,16 @@ import org.fossify.gallery.extensions.launchGesturePlayer
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.openPath
 import org.fossify.gallery.extensions.openRecycleBin
-import org.fossify.gallery.extensions.restoreRecycleBinPaths
 import org.fossify.gallery.extensions.showRecycleBinEmptyingDialog
-import org.fossify.gallery.extensions.showRestoreConfirmationDialog
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateWidgets
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.SmbSyncPolicy
-import org.fossify.gallery.helpers.PCloudWriter
-import org.fossify.gallery.dialogs.PCloudRestoreDialog
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
 import org.fossify.gallery.helpers.IS_IN_RECYCLE_BIN
@@ -391,19 +387,18 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         binding.mediaMenu.requireToolbar().menu.apply {
             findItem(R.id.group).isVisible = !config.scrollHorizontally
 
-            // the pCloud bin has the same two actions, minus disabling: that is the device bin's setting
-            findItem(R.id.empty_recycle_bin).isVisible = mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN
+            findItem(R.id.empty_recycle_bin).isVisible = mPath == RECYCLE_BIN
             findItem(R.id.empty_disable_recycle_bin).isVisible = mPath == RECYCLE_BIN
-            findItem(R.id.restore_all_files).isVisible = mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN
+            findItem(R.id.restore_all_files).isVisible = mPath == RECYCLE_BIN
 
             findItem(R.id.folder_view).isVisible = mShowAll
             findItem(R.id.open_camera).isVisible = mShowAll
             findItem(R.id.about).isVisible = mShowAll
             findItem(R.id.create_new_folder).isVisible =
-                !mShowAll && mPath != RECYCLE_BIN && mPath != PCLOUD_RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
+                !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
                     // creating a folder on the share is not in yet, that is the write step
                     && !mPath.isSmbPath()
-            findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn
+            findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
             findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
             // offered on every folder, not only on one of the share: a folder does not always
             // say which storage it is on, and an item that comes and goes for a reason nobody
@@ -533,7 +528,6 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             val dirName = when (mPath) {
                 FAVORITES -> getString(org.fossify.commons.R.string.favorites)
                 RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
-                PCLOUD_RECYCLE_BIN -> getString(R.string.pcloud_recycle_bin)
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
                 PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
                 SMB_PATH_SCHEME -> getString(R.string.smb)
@@ -656,16 +650,11 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // the one bin, emptied on all three storages, see emptyTheRecycleBin()
     private fun emptyRecycleBin() {
         showRecycleBinEmptyingDialog {
-            if (mPath == PCLOUD_RECYCLE_BIN) {
-                writeToPCloud(emptyList(), { this.emptyRecycleBin() }) {
-                    runOnUiThread { finish() }
-                }
-            } else {
-                emptyTheRecycleBin {
-                    finish()
-                }
+            emptyTheRecycleBin {
+                finish()
             }
         }
     }
@@ -678,38 +667,18 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // everything in the bin goes back to where it came from, each through its own storage; the
+    // dialog can send the lot somewhere else when it is all on one, see restoreFromRecycleBin()
     private fun restoreAllFiles() {
-        val paths = mMedia.filter { it is Medium }.map { (it as Medium).path } as ArrayList<String>
-        if (mPath == PCLOUD_RECYCLE_BIN) {
-            restoreAllPCloudFiles(paths)
-            return
-        }
-
-        showRestoreConfirmationDialog(paths.size) {
-            restoreRecycleBinPaths(paths) {
-                ensureBackgroundThread {
+        val paths = mMedia.filter { it is Medium }.map { (it as Medium).path }
+        restoreFromRecycleBin(paths) {
+            ensureBackgroundThread {
+                if (mediaDB.getDeletedMediaCount() == 0L) {
                     directoryDB.deleteDirPath(RECYCLE_BIN)
                 }
-                finish()
             }
-        }
-    }
 
-    // the dialog names where the first one goes back to, and can send the lot somewhere else
-    private fun restoreAllPCloudFiles(paths: ArrayList<String>) {
-        if (paths.isEmpty()) {
-            return
-        }
-
-        ensureBackgroundThread {
-            val (folder, exists) = PCloudWriter(this).restoreDestinationOf(paths.first())
-            runOnUiThread {
-                PCloudRestoreDialog(this, paths.size, folder, !exists) { destination ->
-                    writeToPCloud(emptyList(), { restoreFromRecycleBin(paths, destination) }) {
-                        runOnUiThread { finish() }
-                    }
-                }
-            }
+            finish()
         }
     }
 
@@ -789,7 +758,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // read from either way
     private fun refreshMedia() {
         when {
-            mPath.isPCloudPath() && mPath != PCLOUD_RECYCLE_BIN && config.isPCloudLoggedIn ->
+            mPath.isPCloudPath() && config.isPCloudLoggedIn ->
                 rescanPCloudFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
 
             mPath.isSmbPath() && config.isSmbConfigured ->
@@ -809,7 +778,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // waiting. The folder is refreshed from pCloud when the setting asks for it and the
     // folder's own throttle allows it; only this folder, not its subfolders
     private fun rescanPCloudFolderIfDue() {
-        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || mPath == PCLOUD_RECYCLE_BIN || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
+        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
             return
         }
 
@@ -910,7 +879,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 }
             }
 
-            if (mPath == RECYCLE_BIN || mPath == PCLOUD_RECYCLE_BIN) {
+            if (mPath == RECYCLE_BIN) {
                 binding.mediaEmptyTextPlaceholder.setText(org.fossify.commons.R.string.no_items_found)
                 binding.mediaEmptyTextPlaceholder.beVisible()
                 binding.mediaEmptyTextPlaceholder2.beGone()
@@ -1261,7 +1230,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
 
         val storage = MediaStorage.ofAll(this, filtered.map { it.path }) ?: return
-        val toBin = storage.hasRecycleBin && config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
+        val toBin = config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
         val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
         toast(resources.getQuantityString(progress, filtered.size, filtered.size))
 
