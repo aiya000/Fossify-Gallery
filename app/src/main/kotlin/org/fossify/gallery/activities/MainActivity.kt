@@ -32,7 +32,6 @@ import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkWhatsNew
-import org.fossify.commons.extensions.deleteFiles
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getFileCount
 import org.fossify.commons.extensions.getFilePublicUri
@@ -54,14 +53,9 @@ import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.extensions.hideKeyboard
 import org.fossify.commons.extensions.internalStoragePath
 import org.fossify.commons.extensions.isExternalStorageManager
-import org.fossify.commons.extensions.isGif
 import org.fossify.commons.extensions.isGone
-import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isMediaFile
 import org.fossify.commons.extensions.isPathOnOTG
-import org.fossify.commons.extensions.isRawFast
-import org.fossify.commons.extensions.isSvg
-import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
@@ -81,7 +75,6 @@ import org.fossify.commons.helpers.VIEW_TYPE_GRID
 import org.fossify.commons.helpers.VIEW_TYPE_LIST
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
-import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.Release
 import org.fossify.commons.views.MyGridLayoutManager
@@ -114,7 +107,6 @@ import org.fossify.gallery.extensions.getOTGFolderChildrenNames
 import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
-import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.storageLabel
@@ -130,7 +122,6 @@ import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
-import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.movePinnedDirectoriesToFront
 import org.fossify.gallery.extensions.openRecycleBin
 import org.fossify.gallery.extensions.pruneFolderGroupMembers
@@ -153,6 +144,7 @@ import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PICKED_PATHS
@@ -170,11 +162,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.SmbVideoCache
-import org.fossify.gallery.helpers.TYPE_GIFS
-import org.fossify.gallery.helpers.TYPE_IMAGES
-import org.fossify.gallery.helpers.TYPE_RAWS
 import org.fossify.gallery.helpers.TYPE_SVGS
-import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.fossify.gallery.helpers.getDefaultFileFilter
 import org.fossify.gallery.helpers.getPermissionToRequest
 import org.fossify.gallery.helpers.getPermissionsToRequest
@@ -1294,101 +1282,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         refreshMenuItems()
     }
 
-    override fun deleteFolders(folders: ArrayList<File>) {
-        val fileDirItems = folders
-            .asSequence()
-            .filter { it.isDirectory }
-            .map { FileDirItem(it.absolutePath, it.name, true) }
-            .toMutableList() as ArrayList<FileDirItem>
-
-        when {
-            fileDirItems.isEmpty() -> return
-            fileDirItems.size == 1 -> {
-                try {
-                    toast(
-                        String.format(
-                            getString(org.fossify.commons.R.string.deleting_folder),
-                            fileDirItems.first().name
-                        )
-                    )
-                } catch (e: Exception) {
-                    showErrorToast(e)
-                }
-            }
-
-            else -> {
-                val baseString = if (config.useRecycleBin && !config.tempSkipRecycleBin) {
-                    org.fossify.commons.R.plurals.moving_items_into_bin
-                } else {
-                    org.fossify.commons.R.plurals.delete_items
-                }
-
-                toast(
-                    msg = resources.getQuantityString(
-                        baseString, fileDirItems.size, fileDirItems.size
-                    )
-                )
-            }
-        }
-
-        val itemsToDelete = ArrayList<FileDirItem>()
-        val filter = config.filterMedia
-        val showHidden = config.shouldShowHidden
-        fileDirItems.filter { it.isDirectory }.forEach {
-            val files = File(it.path).listFiles()
-            files?.filter {
-                it.absolutePath.isMediaFile()
-                        && (showHidden || !it.name.startsWith('.'))
-                        && ((it.isImageFast() && filter and TYPE_IMAGES != 0)
-                        || (it.isVideoFast() && filter and TYPE_VIDEOS != 0)
-                        || (it.isGif() && filter and TYPE_GIFS != 0)
-                        || (it.isRawFast() && filter and TYPE_RAWS != 0)
-                        || (it.isSvg() && filter and TYPE_SVGS != 0))
-            }?.mapTo(itemsToDelete) { it.toFileDirItem(applicationContext) }
-        }
-
-        if (config.useRecycleBin && !config.tempSkipRecycleBin) {
-            val pathsToDelete = ArrayList<String>()
-            itemsToDelete.mapTo(pathsToDelete) { it.path }
-
-            movePathsInRecycleBin(pathsToDelete) {
-                if (it) {
-                    deleteFilteredFileDirItems(itemsToDelete, folders)
-                } else {
-                    toast(org.fossify.commons.R.string.unknown_error_occurred)
-                }
-            }
-        } else {
-            deleteFilteredFileDirItems(itemsToDelete, folders)
-        }
-    }
-
-    private fun deleteFilteredFileDirItems(
-        fileDirItems: ArrayList<FileDirItem>,
-        folders: ArrayList<File>
-    ) {
-        val OTGPath = config.OTGPath
-        deleteFiles(fileDirItems) {
-            runOnUiThread {
-                refreshItems()
-            }
-
-            ensureBackgroundThread {
-                folders.filter { !getDoesFilePathExist(it.absolutePath, OTGPath) }.forEach {
-                    directoryDB.deleteDirPath(it.absolutePath)
-                }
-
-                if (config.deleteEmptyFolders) {
-                    folders.filter {
-                        !it.absolutePath.isDownloadsFolder()
-                                && it.isDirectory
-                                && it.toFileDirItem(this).getProperFileCount(this, true) == 0
-                    }
-                        .forEach {
-                            tryDeleteFileDirItem(it.toFileDirItem(this), true, true)
-                        }
-                }
-            }
+    // the storage does the deleting and says on screen what it is doing, see
+    // MediaStorage.deleteFolders(); the list is read again once it is through
+    override fun deleteFolders(paths: ArrayList<String>, toRecycleBin: Boolean) {
+        val storage = MediaStorage.ofAll(this, paths) ?: return
+        storage.deleteFolders(this, paths, toRecycleBin) {
+            getRecyclerAdapter()?.finishActMode()
+            refreshItems()
         }
     }
 

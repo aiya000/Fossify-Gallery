@@ -102,6 +102,14 @@ at afterwards.
   only looks at what was asked for — and the confirmation saying that there is no undo, with no
   "skip the recycle bin" option on it, there being no bin on a share to skip. It brings its own
   file and its own folder, because nothing the counts in `manifest.env` are about may be deleted
+- **`56-delete-on-the-device.sh`** — #106: the same two deletes on this device, which go through
+  the app's recycle bin. The device's delete is the one the app was born with and it had no
+  script until deleting moved onto `MediaStorage`; a move with no witness is a move nobody can
+  vouch for. The file leaving `/sdcard` is read with `adb shell`, and its turning up in the bin
+  with `run-as`, the bin being the app's own files directory with the file kept under its full
+  original path -- a delete that skipped the bin would pass the first check and fail the second.
+  It also pins the confirmation the other way round from `55`: it says "recycle bin", and the
+  "skip the recycle bin" checkbox is on it
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
