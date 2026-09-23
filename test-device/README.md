@@ -90,6 +90,15 @@ at afterwards.
   What the dialog is recognised by is the **id of its rows**, not the word "Properties": the
   viewer's toolbar carries an icon with that same content description, and matching on the word
   passed on the build that still had the bug
+- **`47-hand-out-a-medium-of-the-share.sh`** — #71: a photo of the share handed to another app
+  ("Open with"), offered as a wallpaper ("Set as"), asked for its place on the map, printed, and
+  resized -- everything the fullscreen viewer offers that wants a real file to read. Each of
+  these used to end in a toast saying the file could not be fetched from the network share. What
+  says the file was handed over is somebody else's window coming in front: the system's chooser,
+  the print spooler's preview, and the map opened on the place the script wrote into the photo's
+  EXIF, which is only asked for after that EXIF was read. The resize is the one with a witness on the share: the
+  photo is written back over itself half as wide, read with `ffprobe` off `fixture/share`, with
+  the same stash and neighbour checks `85` makes. It brings its own file and takes it away again
 - **`50-copy-off-share.sh`** — #28: a medium of the share copied onto the device, and the file
   actually arriving, whole and with the share's modification time. It also checks what must *not*
   be there: "Move to" is kept out of the selection's menu, moving between a share and anywhere
