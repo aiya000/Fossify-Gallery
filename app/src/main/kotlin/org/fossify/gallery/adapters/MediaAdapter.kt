@@ -67,7 +67,6 @@ import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
-import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
@@ -647,8 +646,8 @@ class MediaAdapter(
     private fun rotateSelection(degrees: Int) {
         val paths = getSelectedPaths().filter { it.isImageFast() }
 
-        // a pCloud medium has no file on the device that could want the permission
-        val needsPermission = paths.firstOrNull { !it.isPCloudPath() && activity.needsStupidWritePermissions(it) }
+        // a remote medium has no file on the device that could want the permission
+        val needsPermission = paths.firstOrNull { !MediaStorage.of(activity, it).isRemote && activity.needsStupidWritePermissions(it) }
         if (needsPermission != null) {
             activity.handleSAFDialog(needsPermission) {
                 if (it) {

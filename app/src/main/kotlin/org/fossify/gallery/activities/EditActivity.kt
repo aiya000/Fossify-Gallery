@@ -61,7 +61,6 @@ import org.fossify.gallery.dialogs.OtherAspectRatioDialog
 import org.fossify.gallery.dialogs.ResizeDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.ensureWritablePath
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getCompressionFormatFromUri
 import org.fossify.gallery.extensions.openEditor
@@ -71,6 +70,7 @@ import org.fossify.gallery.extensions.resolveUriScheme
 import org.fossify.gallery.extensions.showContentDescriptionOnLongClick
 import org.fossify.gallery.extensions.writeBitmapToCache
 import org.fossify.gallery.extensions.writeExif
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_EDIT_DIR
 import org.fossify.gallery.helpers.SMB_EDIT_DIR
 import org.fossify.gallery.helpers.ASPECT_RATIO_FOUR_THREE
@@ -885,7 +885,7 @@ class EditActivity : BaseCropActivity() {
             resolveUriScheme(
                 uri = saveUri,
                 onPath = { path ->
-                    ensureWritablePath(targetPath = path, confirmOverwrite = false) {
+                    MediaStorage.of(this, path).ensureWritable(this, path, confirmOverwrite = false, onCancel = null) {
                         saveBitmapToPath(bitmap, it, showSavingToast)
                     }
                 },

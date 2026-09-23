@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -10,6 +11,7 @@ import org.fossify.commons.dialogs.RenameItemsDialog
 import org.fossify.commons.extensions.deleteFiles
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getDoesFilePathExist
+import org.fossify.commons.extensions.getFileUrisFromFileDirItems
 import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.handleDeletePasswordProtection
@@ -41,6 +43,7 @@ import org.fossify.gallery.dialogs.RemoteNameDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.directoryDB
+import org.fossify.gallery.extensions.fetchPCloudMediumForEditing
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.isDownloadsFolder
 import org.fossify.gallery.extensions.isPCloudPath
@@ -48,6 +51,9 @@ import org.fossify.gallery.extensions.isPCloudRecycleBinPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.movePathsInRecycleBin
+import org.fossify.gallery.extensions.pCloudItemsDB
+import org.fossify.gallery.extensions.rescanSmbFolders
+import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.writeToPCloud
@@ -56,6 +62,7 @@ import org.fossify.gallery.jobs.PCloudTransferService
 import org.fossify.gallery.jobs.SmbTransferService
 import org.fossify.gallery.models.Medium
 import java.io.File
+import java.util.concurrent.CountDownLatch
 
 // The three places a medium can be: this device, pCloud, and the network share. The set is
 // closed, so a `when` over it is exhaustive, and a fourth storage would fail to compile rather
@@ -65,8 +72,8 @@ import java.io.File
 // know -- a menu that was not told is exactly how #71 and #72 happened. A difference that is
 // data ("is a name renamed one at a time", "is there a file to hand to another app") is a
 // property; a difference that is steps is an override. The operations come over one family at
-// a time (#106); renaming, copying or moving, and deleting are here, the rest still lives
-// where it always has.
+// a time (#106); renaming, copying or moving, deleting and writing are here, fetching still
+// lives where it always has.
 //
 // It holds a Context because the operations need one (the database, the notifications, the
 // services), so it is a holder of behaviour rather than a value: two of them are not equal,
@@ -418,6 +425,81 @@ sealed class MediaStorage(protected val context: Context) {
         activity.resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, paths.size, paths.size)
     }
 
+    // --- writing: a file of this device put onto this storage, over a medium of it or under a
+    // name of its own. The editor, the rotation, "Save as" and the resize all end here. On the
+    // device the result is written straight where it goes; a remote storage takes a finished
+    // file, so the result is written into a staging file of the device first and then sent,
+    // and a write that breaks off leaves nothing behind on it
+
+    // whether something is at [path] already. Asked of the storage itself, which for the share
+    // is a request over the network, so this belongs off the main thread
+    abstract fun isNameTaken(path: String): Boolean
+
+    // Runs [then] with [path] once it may be written to: whatever is there already has been
+    // agreed to be written over, when [confirmOverwrite] asks for that, and the device's own
+    // grants are in. [onCancel] runs when the user says no, or the storage could not be asked.
+    // Neither remote storage has a recycle bin an overwritten medium could come back out of,
+    // so the question is asked for real there too (#28)
+    open fun ensureWritable(activity: BaseSimpleActivity, path: String, confirmOverwrite: Boolean, onCancel: (() -> Unit)?, then: (String) -> Unit) {
+        ensureBackgroundThread {
+            val taken = try {
+                isNameTaken(path)
+            } catch (e: Exception) {
+                activity.runOnUiThread {
+                    activity.showErrorToast(e)
+                    onCancel?.invoke()
+                }
+                return@ensureBackgroundThread
+            }
+
+            activity.runOnUiThread {
+                if (!taken || !confirmOverwrite) {
+                    then(path)
+                    return@runOnUiThread
+                }
+
+                val title = String.format(activity.getString(org.fossify.commons.R.string.file_already_exists_overwrite), path.getFilenameFromPath())
+                ConfirmationDialog(activity, title) { then(path) }
+            }
+        }
+    }
+
+    // Writes the file at [localPath] over the medium at [path], which is on this storage, and
+    // carries the rows and the cached copies along. [onDone] runs on the main thread with
+    // whether the storage took it; the local file is left where it is either way, it is the
+    // only place the edit exists until the storage has it. A medium of the device is edited
+    // where it lies, so there is nothing to write back there
+    abstract fun overwriteMedium(activity: BaseSimpleActivity, path: String, localPath: String, onDone: (written: Boolean) -> Unit)
+
+    // Hands [write] a file of the device to write into, and once [write] says it is through,
+    // has what was written onto this storage at [path]: on the device that file is [path]
+    // itself, once its folder may be written to; on a remote storage it is a staging file,
+    // which then goes over what is at [path] or up under that name. [onDone] runs on the
+    // main thread with whether it all went; nothing is said on screen about a write that did
+    // not, the storage has said it already
+    abstract fun writeInto(activity: BaseSimpleActivity, path: String, write: (localTarget: String, wrote: (Boolean) -> Unit) -> Unit, onDone: (written: Boolean) -> Unit)
+
+    // Turns the image at [path] by [degrees] where it is, and blocks until it is through, so
+    // that a selection of them goes one at a time rather than all at once. Off the main thread.
+    // Offered where canRotate says so
+    abstract fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int)
+
+    // what is said while an edit goes back, and when the editor turned out to have saved
+    // somewhere else; the words name the storage
+    abstract fun writingBackMessage(activity: BaseSimpleActivity): String
+    abstract fun editNotWrittenMessage(activity: BaseSimpleActivity): String
+
+    // the staging file a remote storage's writeInto() hands out, under the name the result is
+    // to have there: what is uploaded carries the name of the file it is given. One at a time
+    protected fun stagingFileFor(path: String): File {
+        val stagingDir = File(context.cacheDir, REMOTE_SAVE_DIR).apply {
+            deleteRecursively()
+            mkdirs()
+        }
+
+        return File(stagingDir, path.getFilenameFromPath())
+    }
+
     class Device(context: Context) : MediaStorage(context) {
         override fun holds(path: String) = !path.isRemotePath()
         override val isRemote = false
@@ -722,6 +804,72 @@ sealed class MediaStorage(protected val context: Context) {
                 deleteTheFiles()
             }
         }
+
+        override fun isNameTaken(path: String) = context.getDoesFilePathExist(path)
+
+        // the question is asked of the file system on the spot, and then the grants the system
+        // wants: the uris of a file the app did not make from Android 11, and SAF's say
+        override fun ensureWritable(activity: BaseSimpleActivity, path: String, confirmOverwrite: Boolean, onCancel: (() -> Unit)?, then: (String) -> Unit) {
+            fun proceedAfterGrants() {
+                activity.handleSAFDialogSdk30(path) { granted ->
+                    if (!granted) {
+                        onCancel?.invoke()
+                        return@handleSAFDialogSdk30
+                    }
+
+                    then(path)
+                }
+            }
+
+            fun requestGrantsThenProceed() {
+                if (isRPlus() && !isExternalStorageManager()) {
+                    val fileDirItem = arrayListOf(File(path).toFileDirItem(context))
+                    val fileUris = activity.getFileUrisFromFileDirItems(fileDirItem)
+                    activity.updateSDK30Uris(fileUris) { success ->
+                        if (success) proceedAfterGrants() else onCancel?.invoke()
+                    }
+                } else {
+                    proceedAfterGrants()
+                }
+            }
+
+            if (confirmOverwrite && isNameTaken(path)) {
+                val title = String.format(activity.getString(org.fossify.commons.R.string.file_already_exists_overwrite), path.getFilenameFromPath())
+                ConfirmationDialog(activity, title) {
+                    requestGrantsThenProceed()
+                }
+            } else {
+                requestGrantsThenProceed()
+            }
+        }
+
+        override fun overwriteMedium(activity: BaseSimpleActivity, path: String, localPath: String, onDone: (written: Boolean) -> Unit) {
+            throw UnsupportedOperationException("a medium of the device is edited where it lies; there is nothing to write back")
+        }
+
+        // the file itself, once SAF has had its say about the folder
+        override fun writeInto(activity: BaseSimpleActivity, path: String, write: (localTarget: String, wrote: (Boolean) -> Unit) -> Unit, onDone: (written: Boolean) -> Unit) {
+            activity.handleSAFDialog(path) { granted ->
+                if (!granted) {
+                    return@handleSAFDialog
+                }
+
+                write(path) { wrote ->
+                    activity.runOnUiThread { onDone(wrote) }
+                }
+            }
+        }
+
+        // turned where it lies; a JPEG only gets its Orientation tag turned
+        override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
+            activity.saveRotatedImageToFile(path, path, degrees, true) {}
+        }
+
+        override fun writingBackMessage(activity: BaseSimpleActivity): String =
+            throw UnsupportedOperationException("nothing is written back to the device")
+
+        override fun editNotWrittenMessage(activity: BaseSimpleActivity): String =
+            throw UnsupportedOperationException("nothing is written back to the device")
     }
 
     class PCloud(context: Context) : MediaStorage(context) {
@@ -839,6 +987,74 @@ sealed class MediaStorage(protected val context: Context) {
                 activity.runOnUiThread { onDone() }
             }
         }
+
+        // what the cache knows of the account; a name pCloud has that the cache does not is
+        // numbered by pCloud on upload, see the writer
+        override fun isNameTaken(path: String) = context.pCloudItemsDB.getItem(path) != null
+
+        // through the replace that keeps the medium whole the whole way; the folder is then
+        // read again from pCloud, if the settings ask for that after a write
+        override fun overwriteMedium(activity: BaseSimpleActivity, path: String, localPath: String, onDone: (written: Boolean) -> Unit) {
+            context.writeToPCloud(listOf(path.getParentPath()), { overwriteFile(path, localPath) }) { written ->
+                activity.runOnUiThread { onDone(written) }
+            }
+        }
+
+        // a name that is free is an upload, and one the user has agreed to write over goes
+        // through the replace; the folder is read again afterwards either way
+        override fun writeInto(activity: BaseSimpleActivity, path: String, write: (localTarget: String, wrote: (Boolean) -> Unit) -> Unit, onDone: (written: Boolean) -> Unit) {
+            ensureBackgroundThread {
+                val staged = stagingFileFor(path)
+                write(staged.absolutePath) { wrote ->
+                    if (!wrote) {
+                        activity.runOnUiThread { onDone(false) }
+                        return@write
+                    }
+
+                    val folder = path.getParentPath()
+                    val isTaken = isNameTaken(path)
+                    context.writeToPCloud(listOf(folder), {
+                        if (isTaken) {
+                            overwriteFile(path, staged.absolutePath)
+                        } else {
+                            uploadFile(staged.absolutePath, folder)
+                        }
+                    }) { written ->
+                        activity.runOnUiThread { onDone(written) }
+                    }
+                }
+            }
+        }
+
+        // fetched into a copy of its own, turned there, and written back over itself: there
+        // is no folder on the device to save it beside, and "save a copy somewhere else" is
+        // what copying to this device is for. A JPEG only gets its Orientation tag turned,
+        // which pCloud's own web and app honour
+        override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
+            val localPath = try {
+                activity.fetchPCloudMediumForEditing(path)
+            } catch (e: Exception) {
+                Log.w("PCloudTransfer", "Could not fetch $path to rotate it", e)
+                activity.toast("${activity.getString(R.string.pcloud_fetch_failed)}: ${e.message ?: e.javaClass.simpleName}")
+                return
+            }
+
+            val latch = CountDownLatch(1)
+            activity.saveRotatedImageToFile(localPath, localPath, degrees, true) {
+                overwriteMedium(activity, path, localPath) { written ->
+                    if (!written) {
+                        activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                    }
+
+                    latch.countDown()
+                }
+            }
+
+            latch.await()
+        }
+
+        override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_writing_back)
+        override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_edit_not_written)
     }
 
     class Smb(context: Context) : MediaStorage(context) {
@@ -939,6 +1155,77 @@ sealed class MediaStorage(protected val context: Context) {
                 activity.runOnUiThread { onDone() }
             }
         }
+
+        // asked of the share itself rather than of the cache: a share holds files this app
+        // never scanned
+        override fun isNameTaken(path: String) = SmbClient.fileExists(context, path)
+
+        // through the stash and replace of SmbWriter.overwriteFile(), so what is on the share
+        // afterwards is either the old medium or the new one. Nothing is rescanned, the writer
+        // carries the rows and the cached copies along
+        override fun overwriteMedium(activity: BaseSimpleActivity, path: String, localPath: String, onDone: (written: Boolean) -> Unit) {
+            context.writeToShare({ overwriteFile(path, localPath) }) { written ->
+                activity.runOnUiThread { onDone(written) }
+            }
+        }
+
+        // A name that is free is a new file, streamed out with its modification time put back
+        // on afterwards, and one the user has agreed to write over goes through the stash and
+        // replace (#28). Which of the two it is, is asked of the share -- the same question
+        // ensureWritable() asked a moment ago. A new file has the folder walked again
+        // afterwards, which is the only way the cache learns of it; an overwrite carries its
+        // own rows, so nothing is walked for it
+        override fun writeInto(activity: BaseSimpleActivity, path: String, write: (localTarget: String, wrote: (Boolean) -> Unit) -> Unit, onDone: (written: Boolean) -> Unit) {
+            ensureBackgroundThread {
+                val staged = stagingFileFor(path)
+                write(staged.absolutePath) { wrote ->
+                    if (!wrote) {
+                        activity.runOnUiThread { onDone(false) }
+                        return@write
+                    }
+
+                    val taken = try {
+                        isNameTaken(path)
+                    } catch (e: Exception) {
+                        Log.w("SmbWrite", "Could not ask the share whether it already has $path", e)
+                        activity.runOnUiThread {
+                            activity.showErrorToast(e)
+                            onDone(false)
+                        }
+                        return@write
+                    }
+
+                    if (taken) {
+                        overwriteMedium(activity, path, staged.absolutePath, onDone)
+                        return@write
+                    }
+
+                    try {
+                        SmbClient.create(context, path) { output -> staged.inputStream().use { it.copyTo(output) } }
+                        SmbClient.setModified(context, path, staged.lastModified())
+                    } catch (e: Exception) {
+                        Log.w("SmbWrite", "Could not save $path onto the share", e)
+                        activity.runOnUiThread {
+                            activity.showErrorToast(e)
+                            onDone(false)
+                        }
+                        return@write
+                    }
+
+                    context.rescanSmbFolders(listOf(path.getParentPath()), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
+                        activity.runOnUiThread { onDone(true) }
+                    }
+                }
+            }
+        }
+
+        // not offered: a medium of the share is not fetched for this yet, see #71 and canRotate
+        override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
+            throw UnsupportedOperationException("a medium of the share is not rotated in place, see canRotate")
+        }
+
+        override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_writing_back)
+        override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_edit_not_written)
     }
 
     companion object {
