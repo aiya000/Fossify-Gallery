@@ -10,9 +10,8 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogResizeImageWithPathBinding
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.extensions.isPCloudPath
-import org.fossify.gallery.extensions.pCloudItemsDB
-import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.extensions.humanizeAnyPath
+import org.fossify.gallery.helpers.MediaStorage
 
 // The destination is picked with the gallery's own folder picker rather than commons', so that
 // a pCloud folder can be picked: a resized pCloud image belongs back on pCloud, and the commons
@@ -115,16 +114,20 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
             }
     }
 
-    // Whether the name is taken is a database lookup on pCloud and a look at the filesystem on
-    // the device, so the pCloud one goes off the main thread and comes back to ask
+    // Whether the name is taken is the destination's storage's to say -- a look at the
+    // filesystem on the device, a database lookup on pCloud, a question to the share -- so it
+    // goes off the main thread and comes back to ask. An overwritten medium does not pass
+    // through the recycle bin on any storage, so the question is asked for real
     private fun confirmOverwriteAndFinish(newSize: Point, newPath: String, newFilename: String, alertDialog: AlertDialog) {
-        if (!newPath.isPCloudPath()) {
-            finish(newSize, newPath, newFilename, activity.getDoesFilePathExist(newPath), alertDialog)
-            return
-        }
-
+        val storage = MediaStorage.of(activity, newPath)
         ensureBackgroundThread {
-            val exists = activity.pCloudItemsDB.getItem(newPath) != null
+            val exists = try {
+                storage.isNameTaken(newPath)
+            } catch (e: Exception) {
+                activity.showErrorToast(e)
+                return@ensureBackgroundThread
+            }
+
             activity.runOnUiThread {
                 finish(newSize, newPath, newFilename, exists, alertDialog)
             }
@@ -145,13 +148,9 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
         }
     }
 
-    // the pseudo path the gallery uses inside itself is "pcloud:/Photos"; what belongs in front
-    // of the user is where it is, said the way the folder list says it
-    private fun displayPath(path: String) = if (path.isPCloudPath()) {
-        "${activity.getString(R.string.pcloud)}${path.removePrefix(PCLOUD_PATH_SCHEME)}"
-    } else {
-        activity.humanizePath(path)
-    }
+    // the pseudo path the gallery uses inside itself is "pcloud:/Photos" or "smb:/Photos"; what
+    // belongs in front of the user is where it is, said the way the folder list says it
+    private fun displayPath(path: String) = activity.humanizeAnyPath(path)
 
     private fun getViewValue(view: EditText): Int {
         val textValue = view.value
