@@ -128,6 +128,7 @@ class SettingsActivity : SimpleActivity() {
         setupIncludeSortingInExport()
         setupExportSettings()
         setupImportSettings()
+        setupBuildLabel()
 
         arrayOf(
             binding.settingsColorCustomizationSectionLabel,
@@ -1337,6 +1338,12 @@ class SettingsActivity : SimpleActivity() {
                 toast(org.fossify.commons.R.string.no_entries_for_importing)
             }
         }
+    }
+
+    // which build this is, worked out by gradle from git when the app was built: the release
+    // tag alone on a tagged commit, otherwise the nearest tag, the branch and the build time
+    private fun setupBuildLabel() {
+        binding.settingsBuildLabel.text = BuildConfig.BUILD_LABEL
     }
 
     private fun setupExportSettings() {

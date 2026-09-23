@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.konan.properties.Properties
 import java.io.FileInputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 plugins {
     alias(libs.plugins.android)
@@ -20,6 +22,33 @@ val localPropertiesFile: File = rootProject.file("local.properties")
 val localProperties = Properties()
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
+}
+
+// one line of git's answer, or null when git had none: outside a checkout, or a describe with
+// nothing to match. Asked through a provider so the configuration cache, should it ever be
+// turned on, knows to ask again
+fun git(vararg args: String): String? = try {
+    providers.exec {
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().takeIf { it.isNotEmpty() }
+} catch (e: Exception) {
+    null
+}
+
+// What the foot of the settings screen says, so that the build on a device can be told apart
+// from the one in the tree: the release tag alone when this commit is exactly one (the tags
+// are the fork's own v0.x.0), otherwise the nearest tag with the commits since it and the sha
+// (and "-dirty" for uncommitted changes), the branch, and when it was built. Read off git at
+// configuration time; a build outside a checkout says so. The time changes every build, which
+// regenerates BuildConfig and recompiles the one screen that reads it, and that is the point
+fun buildLabel(): String {
+    git("describe", "--tags", "--exact-match", "--match", "v*", "HEAD")?.let { return it }
+    // no commit-ish here: --dirty describes the working tree, and refuses to be given one
+    val describe = git("describe", "--tags", "--dirty", "--match", "v*") ?: "no tag"
+    val branch = git("rev-parse", "--abbrev-ref", "HEAD") ?: "no branch"
+    val builtAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+    return "$describe · $branch · $builtAt"
 }
 
 fun hasSigningVars(): Boolean {
@@ -46,6 +75,7 @@ android {
 
         val pCloudClientId = localProperties.getProperty("PCLOUD_CLIENT_ID") ?: ""
         buildConfigField("String", "PCLOUD_CLIENT_ID", "\"$pCloudClientId\"")
+        buildConfigField("String", "BUILD_LABEL", "\"${buildLabel().replace("\"", "'")}\"")
     }
 
     signingConfigs {
