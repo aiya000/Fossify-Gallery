@@ -166,8 +166,9 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
             return
         }
 
-        // a pCloud video is streamed inside the app only, the other players want a file
-        if (path.isPCloudPath()) {
+        // a remote video is streamed inside the app only, the other players want a file; the
+        // same as the grid does it
+        if (MediaStorage.of(this, path).isRemote) {
             openInViewPager(path)
             return
         }

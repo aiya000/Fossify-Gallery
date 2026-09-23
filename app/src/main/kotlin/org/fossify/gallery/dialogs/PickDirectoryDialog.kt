@@ -53,6 +53,7 @@ import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
+import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
@@ -512,12 +513,16 @@ class PickDirectoryDialog(
 
         if (isPickingCopyMoveDestination) {
             val lastCopyPath = config.lastCopyPath
+            // a last destination on a remote storage is gone back to only while that storage
+            // is set up and may be offered; one on the device is what the default below knows
             val lastCopyPathOnPCloud = lastCopyPath.isPCloudPath() && config.isPCloudLoggedIn && !localDestinationOnly
+            val lastCopyPathOnSmb = lastCopyPath.isSmbPath() && config.isSmbConfigured && !localDestinationOnly
             // the picker opens on the storage the chips are showing, at the last destination there
             val startPath = when {
                 showStorageChips && storageFilter == STORAGE_FILTER_PCLOUD -> if (lastCopyPathOnPCloud) lastCopyPath else PCLOUD_PATH_SCHEME
+                showStorageChips && storageFilter == STORAGE_FILTER_SMB -> if (lastCopyPathOnSmb) lastCopyPath else SMB_PATH_SCHEME
                 showStorageChips && storageFilter == STORAGE_FILTER_LOCAL -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
-                lastCopyPathOnPCloud -> lastCopyPath
+                lastCopyPathOnPCloud || lastCopyPathOnSmb -> lastCopyPath
                 else -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
             }
 
