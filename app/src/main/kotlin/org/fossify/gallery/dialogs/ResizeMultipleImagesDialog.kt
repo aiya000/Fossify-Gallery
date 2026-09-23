@@ -9,7 +9,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogResizeMultipleImagesBinding
 import org.fossify.gallery.extensions.ensureWriteAccess
 import org.fossify.gallery.extensions.rescanPathsAndUpdateLastModified
-import org.fossify.gallery.extensions.resizeImage
+import org.fossify.gallery.helpers.MediaStorage
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -74,10 +74,19 @@ class ResizeMultipleImagesDialog(
             }
 
             val parentPath = imagePaths.first().getParentPath()
+            // a folder of pCloud or of the share has no grants to ask for; each image is
+            // shrunk where it lives by its storage, see MediaStorage.resizeMediumAndWait()
+            val storage = MediaStorage.of(activity, parentPath)
+            val onceWritable: (() -> Unit) -> Unit = if (storage.isRemote) { { it() } } else { { ensureWriteAccess(parentPath, it) } }
             val pathsToRescan = arrayListOf<String>()
             val pathLastModifiedMap = mutableMapOf<String, Long>()
+            var resizedCount = 0
 
-            ensureWriteAccess(parentPath) {
+            onceWritable {
+                if (storage.isRemote) {
+                    toast(storage.writingBackMessage(activity))
+                }
+
                 ensureBackgroundThread {
                     for (i in imagePaths.indices) {
                         val path = imagePaths[i]
@@ -85,13 +94,16 @@ class ResizeMultipleImagesDialog(
                         val lastModified = File(path).lastModified()
 
                         try {
-                            resizeImage(path, path, size) {
-                                if (it) {
+                            if (MediaStorage.of(activity, path).resizeMediumAndWait(activity, path, size)) {
+                                resizedCount++
+                                // a remote storage carried its own rows along with the write
+                                if (!storage.isRemote) {
                                     pathsToRescan.add(path)
                                     pathLastModifiedMap[path] = lastModified
-                                    runOnUiThread {
-                                        progressView.progress = i + 1
-                                    }
+                                }
+
+                                runOnUiThread {
+                                    progressView.progress = i + 1
                                 }
                             }
                         } catch (e: OutOfMemoryError) {
@@ -101,7 +113,7 @@ class ResizeMultipleImagesDialog(
                         }
                     }
 
-                    val failureCount = imagePaths.size - pathsToRescan.size
+                    val failureCount = imagePaths.size - resizedCount
                     if (failureCount > 0) {
                         toast(resources.getQuantityString(R.plurals.failed_to_resize_images, failureCount, failureCount))
                     } else {
