@@ -213,6 +213,11 @@ const val SMB_RECYCLE_BIN = "$SMB_PATH_PREFIX$RECYCLE_BIN_FOLDER_NAME"
 // a real file. See SmbFileCache
 const val SMB_CACHE_DIR = "smb"
 
+// under the cache directory: the media of the share handed to the rest of the app as real
+// files, each a link to its cached copy under the name the medium has on the share. The same
+// idea as PCLOUD_WORK_DIR
+const val SMB_WORK_DIR = "smb-work"
+
 // under the cache directory: the copy an action that writes is working on, the rotation above
 // all. A copy rather than the cached original, so that a half-written result cannot reach the
 // cache and be served from there; see PCLOUD_EDIT_DIR, which is the same idea for pCloud

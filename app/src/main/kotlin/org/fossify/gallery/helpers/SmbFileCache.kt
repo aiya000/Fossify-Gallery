@@ -71,6 +71,13 @@ class SmbFileCache(private val context: Context) {
     // the copy that is already there, or null without touching the network
     fun peek(path: String): File? = targetOf(path)?.takeIf { it.isFile && it.length() > 0 }
 
+    // whether a copy of this name -- "<hash>-<size>-<modified>", whatever its extension -- is
+    // still here. A hard link made from a copy keeps its bytes alive after the cache has let
+    // go of it, so the links are cleared out by asking this; the same as PCloudFileCache
+    fun holds(name: String): Boolean {
+        return dir.listFiles()?.any { it.isFile && it.nameWithoutExtension == name } == true
+    }
+
     // Carries the copy of a renamed medium over to its new name.
     //
     // The copy is named after the path, so a rename on the share would otherwise leave it behind

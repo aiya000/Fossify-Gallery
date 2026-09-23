@@ -317,8 +317,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
         // a remote medium has no file on the device, but it is fetched into one before
         // anything that needs a file, so those actions are offered for it like they are for a
-        // local medium. What stays hidden is what its storage says it cannot do, see
-        // MediaStorage: hiding by renaming the file with a leading dot, and pinning a shortcut
+        // local medium -- where its storage says it can, the same as the grid's selection
+        // reads them, see MediaStorage. What stays hidden is what its storage says it cannot
+        // do: hiding by renaming the file with a leading dot, and pinning a shortcut
         val storage = MediaStorage.of(this, currentMedium.path)
         // a medium in a remote storage's bin is restored or deleted for good, nothing else:
         // copying or sharing it would go by a path the bin does not keep
@@ -332,18 +333,18 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_slideshow).isVisible = visibleBottomActions and BOTTOM_ACTION_SLIDESHOW == 0
                 findItem(R.id.menu_properties).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_PROPERTIES == 0
                 findItem(R.id.menu_delete).isVisible = visibleBottomActions and BOTTOM_ACTION_DELETE == 0
-                findItem(R.id.menu_share).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
+                findItem(R.id.menu_share).isVisible = hasFile && storage.canShare && visibleBottomActions and BOTTOM_ACTION_SHARE == 0
                 findItem(R.id.menu_edit).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT == 0 && !currentMedium.isSVG()
                 findItem(R.id.menu_rename).isVisible = visibleBottomActions and BOTTOM_ACTION_RENAME == 0 && !currentMedium.getIsInRecycleBin()
                 findItem(R.id.menu_rotate).isVisible = hasFile && currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
-                findItem(R.id.menu_set_as).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
+                findItem(R.id.menu_set_as).isVisible = hasFile && storage.canSetAs && visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = hasFile && currentMedium.isImage()
                 findItem(R.id.menu_copy_to).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_COPY == 0
                 findItem(R.id.menu_move_to).isVisible = !isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
                 findItem(R.id.menu_print).isVisible = hasFile && (currentMedium.isImage() || currentMedium.isRaw())
-                findItem(R.id.menu_resize).isVisible = hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
-                findItem(R.id.menu_open_with).isVisible = hasFile
+                findItem(R.id.menu_resize).isVisible = hasFile && storage.canResize && visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 && currentMedium.isImage()
+                findItem(R.id.menu_open_with).isVisible = hasFile && storage.canOpenWith
                 // a video that is read as it plays can be had in hand first. It stays offered
                 // for one already downloaded, which then says so
                 findItem(R.id.menu_smb_download_video).isVisible = storage.streamsVideos && currentMedium.isVideo()
@@ -1106,7 +1107,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             editCurrentMedium()
         }
 
-        binding.bottomActions.bottomShare.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
+        binding.bottomActions.bottomShare.beVisibleIf(hasFile && storage?.canShare != false && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
         binding.bottomActions.bottomShare.setOnLongClickListener { toast(org.fossify.commons.R.string.share); true }
         binding.bottomActions.bottomShare.setOnClickListener {
             shareMediumPath(getCurrentPath())
@@ -1175,7 +1176,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             checkMediaManagementAndRename()
         }
 
-        binding.bottomActions.bottomSetAs.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_SET_AS != 0)
+        binding.bottomActions.bottomSetAs.beVisibleIf(hasFile && storage?.canSetAs != false && visibleBottomActions and BOTTOM_ACTION_SET_AS != 0)
         binding.bottomActions.bottomSetAs.setOnLongClickListener { toast(org.fossify.commons.R.string.set_as); true }
         binding.bottomActions.bottomSetAs.setOnClickListener {
             setCurrentAs()
@@ -1193,7 +1194,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             moveFileTo()
         }
 
-        binding.bottomActions.bottomResize.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_RESIZE != 0 && currentMedium?.isImage() == true)
+        binding.bottomActions.bottomResize.beVisibleIf(hasFile && storage?.canResize != false && visibleBottomActions and BOTTOM_ACTION_RESIZE != 0 && currentMedium?.isImage() == true)
         binding.bottomActions.bottomResize.setOnLongClickListener { toast(org.fossify.commons.R.string.resize); true }
         binding.bottomActions.bottomResize.setOnClickListener {
             resizeImage()

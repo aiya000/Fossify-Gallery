@@ -23,6 +23,7 @@
 | エディタは写真を保存したのに、共有には何も書き戻らない。例外も出ない | `ACTION_EDIT` に `FLAG_ACTIVITY_NEW_TASK` が付いている。「Edit with」の一覧が立つと、編集する前に `RESULT_CANCELED` が返る。自前のエディタを名指しで開くようにした | [agents/editor/a-result-that-never-came-back.md](./agents/editor/a-result-that-never-came-back.md) |
 | 台本でタップしたいメニューの文言が、アプリの `strings.xml` に無い | commons の AAR が持っている。ビルド成果物のマージ済みリソースをキー名で引いた | [agents/tests/the-menu-text-lives-in-the-commons-aar.md](./agents/tests/the-menu-text-lives-in-the-commons-aar.md) |
 | 共有のスキャンが、固定データより十数ファイル多く数える。台本は何も足していない | samba の `recycle` モジュールが消したファイルを `.deleted/` にためていた。compose で外して、フォルダを消した | [agents/tests/the-fixture-samba-kept-every-deleted-file.md](./agents/tests/the-fixture-samba-kept-every-deleted-file.md) |
+| 台本でトーストが出るのを待ったのに、アプリは出しているのに dump に一度も入らない | 2 秒のトーストは dump の 1 周より短い。他アプリの窓が前に出ることを `mCurrentFocus` で待つ形にした。chooser はタイトルではなく中身で見る | [agents/tests/a-toast-is-gone-before-the-dump.md](./agents/tests/a-toast-is-gone-before-the-dump.md) |
 
 ### この索引に足すこと
 

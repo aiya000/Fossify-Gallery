@@ -87,22 +87,24 @@ class MediaStorageTest {
         assertTrue(device.canExcludeFolders)
     }
 
-    // what a pCloud medium is fetched into a file for, and a medium of the share is not yet (#71)
+    // what a remote medium is fetched into a file for, on every storage (#71)
     @Test
-    fun `what the device and pCloud can do, and the share cannot yet`() {
-        for (storage in listOf(device, pCloud)) {
+    fun `every storage hands a medium out as a file`() {
+        for (storage in listOf(device, pCloud, smb)) {
             assertTrue(storage.canOpenWith)
             assertTrue(storage.canSetAs)
             assertTrue(storage.canShare)
-            assertTrue(storage.canRotate)
             assertTrue(storage.canResize)
         }
+    }
 
-        assertFalse(smb.canOpenWith)
-        assertFalse(smb.canSetAs)
-        assertFalse(smb.canShare)
+    // rotating in place writes the medium back over itself, which the share does not do yet;
+    // its fullscreen rotation is a Save as instead
+    @Test
+    fun `the share alone does not rotate a medium in place`() {
+        assertTrue(device.canRotate)
+        assertTrue(pCloud.canRotate)
         assertFalse(smb.canRotate)
-        assertFalse(smb.canResize)
     }
 
     // where media can be copied or moved to: anywhere, but for pCloud straight onto the share,

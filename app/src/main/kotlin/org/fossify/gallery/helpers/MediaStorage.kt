@@ -106,7 +106,7 @@ sealed class MediaStorage(protected val context: Context) {
     abstract val canFixDateTaken: Boolean
 
     // handed to another app, set as wallpaper, shared, rotated and resized as a file, fetched
-    // first where there is none. The share is not fetched for these yet, see #71
+    // first where there is none, see fetchForReading()
     abstract val canOpenWith: Boolean
     abstract val canSetAs: Boolean
     abstract val canShare: Boolean
@@ -1268,11 +1268,14 @@ sealed class MediaStorage(protected val context: Context) {
 
         override val canRenameSeveral = false
         override val canFixDateTaken = false
-        override val canOpenWith = false
-        override val canSetAs = false
-        override val canShare = false
+        override val canOpenWith = true
+        override val canSetAs = true
+        override val canShare = true
+        // rotating in place writes the medium back over itself, which is not built for the
+        // share yet, see rotateMediumAndWait(). The fullscreen view's rotation is a Save as
+        // instead, and goes through writeInto()
         override val canRotate = false
-        override val canResize = false
+        override val canResize = true
         override val canResizeSeveral = false
         override val canCreateShortcut = false
         override val canHide = false
@@ -1475,7 +1478,7 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // not offered: a medium of the share is not fetched for this yet, see #71 and canRotate
+        // not offered, see canRotate
         override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
             throw UnsupportedOperationException("a medium of the share is not rotated in place, see canRotate")
         }
@@ -1487,10 +1490,12 @@ sealed class MediaStorage(protected val context: Context) {
         // is usually a file copy rather than a download
         override fun fetchedCopy(path: String): File = SmbFileCache(context).fetch(path)
 
-        // not offered: a medium of the share is not fetched for reading yet, see #71 and
-        // canOpenWith, canShare, canSetAs, canResize
+        // the cache names a copy by the path's hash, the size and the modification time the
+        // scan saw, which is what the link directory is named after too, so a link's directory
+        // says whether its copy is still there
         override fun fetchForReading(path: String): String {
-            throw UnsupportedOperationException("a medium of the share is not fetched for reading yet, see #71")
+            val cache = SmbFileCache(context)
+            return linkUnderOwnName(cache.fetch(path), path, File(context.cacheDir, SMB_WORK_DIR)) { cache.holds(it) }
         }
 
         override fun fetchForEditing(path: String) = copyForEditing(SmbFileCache(context).fetch(path), path, File(context.cacheDir, SMB_EDIT_DIR))
