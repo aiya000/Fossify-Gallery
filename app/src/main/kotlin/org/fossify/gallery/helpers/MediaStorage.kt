@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.graphics.Point
 import android.system.Os
 import android.util.Log
 import android.widget.Toast
@@ -61,6 +62,7 @@ import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.extensions.recycleBin
 import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.restoreRecycleBinPaths
+import org.fossify.gallery.extensions.resizeImage
 import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.toPCloudRemotePath
 import org.fossify.gallery.extensions.toSmbRemotePath
@@ -114,7 +116,7 @@ sealed class MediaStorage(protected val context: Context) {
     abstract val canRotate: Boolean
     abstract val canResize: Boolean
 
-    // resizing a selection writes each one back over itself, which pCloud does not have yet
+    // resizing a selection writes each one back over itself, see resizeMediumAndWait()
     abstract val canResizeSeveral: Boolean
 
     // a shortcut pins a path of the device's own file system
@@ -525,6 +527,43 @@ sealed class MediaStorage(protected val context: Context) {
     // that a selection of them goes one at a time rather than all at once. Off the main thread.
     // Offered where canRotate says so
     abstract fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int)
+
+    // The same for shrinking the image at [path] to [size] where it is; answers whether it
+    // was. Offered for a selection where canResizeSeveral says so; a single image goes through
+    // the dialog that asks where to put it instead, see writeInto()
+    abstract fun resizeMediumAndWait(activity: BaseSimpleActivity, path: String, size: Point): Boolean
+
+    // a remote medium shrunk through a copy of its own and written back over itself, the
+    // same road rotateMediumAndWait() takes on pCloud and on the share
+    protected fun resizeThroughACopy(activity: BaseSimpleActivity, path: String, size: Point, tag: String): Boolean {
+        val localPath = try {
+            fetchForEditing(path)
+        } catch (e: Exception) {
+            Log.w(tag, "Could not fetch $path to resize it", e)
+            activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+            return false
+        }
+
+        var resized = false
+        activity.resizeImage(localPath, localPath, size) { resized = it }
+        if (!resized) {
+            return false
+        }
+
+        val latch = CountDownLatch(1)
+        var written = false
+        overwriteMedium(activity, path, localPath) {
+            written = it
+            if (!it) {
+                activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+            }
+
+            latch.countDown()
+        }
+
+        latch.await()
+        return written
+    }
 
     // what is said while an edit goes back, and when the editor turned out to have saved
     // somewhere else; the words name the storage
@@ -1014,6 +1053,13 @@ sealed class MediaStorage(protected val context: Context) {
             activity.saveRotatedImageToFile(path, path, degrees, true) {}
         }
 
+        // where it lies; the callback comes back on this thread, once the file is written
+        override fun resizeMediumAndWait(activity: BaseSimpleActivity, path: String, size: Point): Boolean {
+            var resized = false
+            activity.resizeImage(path, path, size) { resized = it }
+            return resized
+        }
+
         override fun writingBackMessage(activity: BaseSimpleActivity): String =
             throw UnsupportedOperationException("nothing is written back to the device")
 
@@ -1047,7 +1093,7 @@ sealed class MediaStorage(protected val context: Context) {
         override val canShare = true
         override val canRotate = true
         override val canResize = true
-        override val canResizeSeveral = false
+        override val canResizeSeveral = true
         override val canCreateShortcut = false
         override val canHide = false
         override val streamsVideos = false
@@ -1263,6 +1309,8 @@ sealed class MediaStorage(protected val context: Context) {
             latch.await()
         }
 
+        override fun resizeMediumAndWait(activity: BaseSimpleActivity, path: String, size: Point) = resizeThroughACopy(activity, path, size, "PCloudTransfer")
+
         override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_writing_back)
         override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.pcloud_edit_not_written)
 
@@ -1296,12 +1344,9 @@ sealed class MediaStorage(protected val context: Context) {
         override val canOpenWith = true
         override val canSetAs = true
         override val canShare = true
-        // rotating in place writes the medium back over itself, which is not built for the
-        // share yet, see rotateMediumAndWait(). The fullscreen view's rotation is a Save as
-        // instead, and goes through writeInto()
-        override val canRotate = false
+        override val canRotate = true
         override val canResize = true
-        override val canResizeSeveral = false
+        override val canResizeSeveral = true
         override val canCreateShortcut = false
         override val canHide = false
         override val streamsVideos = true
@@ -1514,10 +1559,32 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // not offered, see canRotate
+        // fetched into a copy of its own, turned there, and written back through the stash and
+        // replace an overwrite uses; the same road as pCloud's
         override fun rotateMediumAndWait(activity: BaseSimpleActivity, path: String, degrees: Int) {
-            throw UnsupportedOperationException("a medium of the share is not rotated in place, see canRotate")
+            val localPath = try {
+                fetchForEditing(path)
+            } catch (e: Exception) {
+                Log.w("SmbWrite", "Could not fetch $path to rotate it", e)
+                activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+                return
+            }
+
+            val latch = CountDownLatch(1)
+            activity.saveRotatedImageToFile(localPath, localPath, degrees, true) {
+                overwriteMedium(activity, path, localPath) { written ->
+                    if (!written) {
+                        activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                    }
+
+                    latch.countDown()
+                }
+            }
+
+            latch.await()
         }
+
+        override fun resizeMediumAndWait(activity: BaseSimpleActivity, path: String, size: Point) = resizeThroughACopy(activity, path, size, "SmbWrite")
 
         override fun writingBackMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_writing_back)
         override fun editNotWrittenMessage(activity: BaseSimpleActivity): String = activity.getString(R.string.smb_edit_not_written)

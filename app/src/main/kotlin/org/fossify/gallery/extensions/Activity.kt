@@ -994,12 +994,23 @@ fun BaseSimpleActivity.ensureWriteAccess(path: String, callback: () -> Unit) {
     }
 }
 
+// The sizes are read off the files; a remote image is read off its cached copy, fetched now if
+// the viewer has not drawn it yet -- it is about to be fetched to be shrunk in any case. One
+// that cannot be fetched is left out, and the dialog says how many it could not resize
 fun BaseSimpleActivity.launchResizeMultipleImagesDialog(paths: List<String>, callback: (() -> Unit)? = null) {
     ensureBackgroundThread {
         val imagePaths = mutableListOf<String>()
         val imageSizes = mutableListOf<Point>()
         for (path in paths) {
-            val size = path.getImageResolution(this)
+            val storage = MediaStorage.of(this, path)
+            val localPath = try {
+                if (storage.isRemote) storage.fetchedCopy(path).absolutePath else path
+            } catch (e: Exception) {
+                Log.w("RemoteFetch", "Could not fetch $path to read its size", e)
+                continue
+            }
+
+            val size = localPath.getImageResolution(this)
             if (size != null) {
                 imagePaths.add(path)
                 imageSizes.add(size)

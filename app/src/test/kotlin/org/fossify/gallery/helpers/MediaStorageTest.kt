@@ -69,7 +69,6 @@ class MediaStorageTest {
         for (storage in listOf(pCloud, smb)) {
             assertFalse(storage.canRenameSeveral)
             assertFalse(storage.canFixDateTaken)
-            assertFalse(storage.canResizeSeveral)
             assertFalse(storage.canCreateShortcut)
             assertFalse(storage.canHide)
             assertFalse(storage.canRenameSeveralFolders)
@@ -79,7 +78,6 @@ class MediaStorageTest {
 
         assertTrue(device.canRenameSeveral)
         assertTrue(device.canFixDateTaken)
-        assertTrue(device.canResizeSeveral)
         assertTrue(device.canCreateShortcut)
         assertTrue(device.canHide)
         assertTrue(device.canRenameSeveralFolders)
@@ -87,24 +85,18 @@ class MediaStorageTest {
         assertTrue(device.canExcludeFolders)
     }
 
-    // what a remote medium is fetched into a file for, on every storage (#71)
+    // what a remote medium is fetched into a file for (#71), and written back over itself
+    // for (#107): the same on every storage
     @Test
-    fun `every storage hands a medium out as a file`() {
+    fun `every storage hands a medium out as a file, and takes it back over itself`() {
         for (storage in listOf(device, pCloud, smb)) {
             assertTrue(storage.canOpenWith)
             assertTrue(storage.canSetAs)
             assertTrue(storage.canShare)
             assertTrue(storage.canResize)
+            assertTrue(storage.canRotate)
+            assertTrue(storage.canResizeSeveral)
         }
-    }
-
-    // rotating in place writes the medium back over itself, which the share does not do yet;
-    // its fullscreen rotation is a Save as instead
-    @Test
-    fun `the share alone does not rotate a medium in place`() {
-        assertTrue(device.canRotate)
-        assertTrue(pCloud.canRotate)
-        assertFalse(smb.canRotate)
     }
 
     // where media can be copied or moved to: anywhere, but for pCloud straight onto the share,
