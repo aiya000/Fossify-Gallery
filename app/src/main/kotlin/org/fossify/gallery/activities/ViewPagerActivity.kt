@@ -104,7 +104,6 @@ import org.fossify.gallery.extensions.getFavoritePaths
 import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.hideSystemUI
 import org.fossify.gallery.extensions.isDownloadsFolder
-import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchSettings
@@ -1503,8 +1502,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     @SuppressLint("SourceLockedOrientationActivity")
     private fun checkOrientation() {
-        // a pCloud medium has no file to read the aspect ratio from
-        if (getCurrentPath().isPCloudPath()) {
+        // a remote medium has no file on the device to read the aspect ratio from at this
+        // point; the file APIs below would be handed its pseudo path
+        if (MediaStorage.of(this, getCurrentPath()).isRemote) {
             return
         }
 

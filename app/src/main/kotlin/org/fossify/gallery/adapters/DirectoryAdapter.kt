@@ -222,10 +222,11 @@ class DirectoryAdapter(
             findItem(R.id.cab_properties).isVisible = storage?.canShowFolderProperties == true
             // the media of a folder of the share are copied off it by SmbTransferService
             findItem(R.id.cab_copy_to).isVisible = !isAnyGroupSelected && storage != null
-            // a selection mixing this device and the share is still offered "move to", as it
-            // always was, while one with pCloud in it is not. Whether it should be is #107's
-            findItem(R.id.cab_move_to).isVisible =
-                realPaths.none { MediaStorage.of(activity, it) is MediaStorage.PCloud } || storage is MediaStorage.PCloud
+            // a selection of real folders mixing storages is offered no "move to", like every
+            // other action that goes through a storage: the move would go through the first
+            // folder's storage for all of them. A selection of groups alone is no storage
+            // either, and moves into another group
+            findItem(R.id.cab_move_to).isVisible = areOnlyGroupsSelected || storage != null
             findItem(R.id.cab_exclude).isVisible = storage?.canExcludeFolders == true
             // a folder is deleted with everything under it, its media into the storage's bin
             findItem(R.id.cab_delete).isVisible = !isAnyGroupSelected && storage != null

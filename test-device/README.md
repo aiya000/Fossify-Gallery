@@ -162,6 +162,12 @@ at afterwards.
   menu has to lead with "All storages", above the device. Where the list is gets read off the mark
   in the storage menu, not off the folders on screen — with nothing scanned, both storages draw
   the same empty grid, and a check that cannot tell them apart passes whatever the app does
+- **`83-a-search-and-a-mixed-selection.sh`** — #107: two places the share was left out of a rule
+  the other storages had. A video of the share tapped in the search results opens in the app's
+  own player rather than being handed to the system player as a pseudo path, which is what the
+  video player setting's default after the first run would do; and a selection of folders mixing
+  this device and the share is offered no "Move to" (nor "Copy to"), like every other action that
+  goes through a storage, with the share's folder on its own still offered it as the control
 - **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
   for both events that can ask and for both storages alike. Each case runs twice, once with its
   setting off and once on, because the "off" half would pass on an app that fetches nothing ever.
