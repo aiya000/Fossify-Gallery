@@ -40,7 +40,6 @@ import com.bumptech.glide.request.RequestOptions
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.appbar.AppBarLayout
 import org.fossify.commons.dialogs.ConfirmationDialog
-import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
@@ -97,7 +96,6 @@ import org.fossify.gallery.adapters.MyPagerAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivityMediumBinding
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
-import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.dialogs.SaveAsDialog
 import org.fossify.gallery.dialogs.SlideshowDialog
 import org.fossify.gallery.extensions.config
@@ -1081,15 +1079,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     private fun getCurrentFragment() = (binding.viewPager.adapter as? MyPagerAdapter)?.getCurrentFragment(binding.viewPager.currentItem)
 
+    // the storage reads them off its file or its row, see MediaStorage.showProperties()
     private fun showProperties() {
         val medium = getCurrentMedium() ?: return
-        // a medium of a remote storage has no file on the device for commons' dialog to read,
-        // and what that dialog says when it cannot read one is "the source file does not exist"
-        if (medium.path.isRemotePath()) {
-            RemotePropertiesDialog(this, listOf(medium))
-        } else {
-            PropertiesDialog(this, medium.path, false)
-        }
+        MediaStorage.of(this, medium.path).showProperties(this, listOf(medium))
     }
 
     private fun initBottomActionsLayout() {

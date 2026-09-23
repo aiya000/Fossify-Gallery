@@ -21,7 +21,6 @@ import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
-import org.fossify.commons.dialogs.PropertiesDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
@@ -63,13 +62,10 @@ import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.PCloudRestoreDialog
-import org.fossify.gallery.dialogs.RemotePropertiesDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.isPCloudRecycleBinPath
-import org.fossify.gallery.extensions.isRemotePath
-import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.launchResizeImageDialog
 import org.fossify.gallery.extensions.launchResizeMultipleImagesDialog
 import org.fossify.gallery.extensions.loadImage
@@ -448,21 +444,11 @@ class MediaAdapter(
         listener?.selectedPaths(getSelectedPaths())
     }
 
+    // the storage reads them off its files or its rows, see MediaStorage.showProperties()
     private fun showProperties() {
         val selectedItems = getSelectedItems()
-        // a medium of a remote storage has no file on the device for commons' dialog to read
-        if (selectedItems.any { it.path.isRemotePath() }) {
-            RemotePropertiesDialog(activity, selectedItems)
-            return
-        }
-
-        if (selectedKeys.size <= 1) {
-            val path = getFirstSelectedItemPath() ?: return
-            PropertiesDialog(activity, path, config.shouldShowHidden)
-        } else {
-            val paths = getSelectedPaths()
-            PropertiesDialog(activity, paths, config.shouldShowHidden)
-        }
+        val storage = MediaStorage.ofAll(activity, selectedItems.map { it.path }) ?: return
+        storage.showProperties(activity, selectedItems)
     }
 
     // the storage asks for the name and carries its rows along, see MediaStorage; the list is
@@ -774,7 +760,7 @@ class MediaAdapter(
     // matters, and it is the order they were tapped in -- selectedKeys is a LinkedHashSet, so
     // the selection keeps it, and picking one again moves it to the end
     private fun downloadSelectedSmbVideos() {
-        val videos = getSelectedItems().filter { it.path.isSmbPath() && it.isVideo() }
+        val videos = getSelectedItems().filter { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
         if (videos.isEmpty()) {
             activity.toast(R.string.smb_download_videos_no_videos)
             return
