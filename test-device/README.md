@@ -174,6 +174,15 @@ at afterwards.
   `fixture/share`; what says the app knows about it is the temporary tile in the folder list,
   since an empty folder has no row; and leaving the app has to leave the folder there, the app
   deleting no folder on a remote storage on its own
+- **`86-rotate-and-resize-in-place-on-the-share.sh`** — #107: the last two things the grid's
+  selection could do to a photo of this device and not of the share. One photo is turned where
+  it lies, then both are shrunk at once, each fetched into a copy, changed there and written back
+  over itself through the same stash and replace an overwrite uses. The witness is the share,
+  read off `fixture/share`: a turned JPEG is one whose EXIF orientation tag reads 6, read with
+  Pillow, since the app turns a JPEG by its tag and not its pixels, the same as on the device; a
+  shrunk one is three quarters as wide in pixels, read with `ffprobe`; nothing is left under the
+  stash name, and the photo beside them is untouched. It brings its own two files and takes them
+  away again
 - **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
   for both events that can ask and for both storages alike. Each case runs twice, once with its
   setting off and once on, because the "off" half would pass on an app that fetches nothing ever.
