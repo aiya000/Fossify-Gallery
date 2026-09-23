@@ -168,6 +168,12 @@ at afterwards.
   video player setting's default after the first run would do; and a selection of folders mixing
   this device and the share is offered no "Move to" (nor "Copy to"), like every other action that
   goes through a storage, with the share's folder on its own still offered it as the control
+- **`84-a-new-folder-on-the-share.sh`** — #107: a folder made on the share from inside a folder
+  of it, through the grid's "Create new folder", which was kept off the menu for the share after
+  the write step it was waiting for had landed. What says the folder exists is the share, read off
+  `fixture/share`; what says the app knows about it is the temporary tile in the folder list,
+  since an empty folder has no row; and leaving the app has to leave the folder there, the app
+  deleting no folder on a remote storage on its own
 - **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
   for both events that can ask and for both storages alike. Each case runs twice, once with its
   setting off and once on, because the "off" half would pass on an app that fetches nothing ever.
