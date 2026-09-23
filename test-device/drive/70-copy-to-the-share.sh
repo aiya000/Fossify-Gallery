@@ -214,12 +214,25 @@ open_overflow_menu
 sleep 1
 ui_tap_text "Copy to" "70-tap-copy-again"
 sleep 2
-ui_tap_text "Network share" "70-pick-share-again"
+# This time through "Other folder", the app's own folder picker: the share's chip, then the
+# folder, then OK. A destination picked this way is the one the picker remembers as the last
+# copy's, which the step after this one is about; a row tapped in the list above is not
+ui_tap_text "Other folder" "70-other-folder-again" || finish
+sleep 3
+ui_tap_exact_text "Network share" "70-picker-share-chip" || finish
+sleep 3
+if ! ui_wait_exact_text "$FIXTURE_SHARE_DESTINATION_FOLDER" 30 "70-picker-share-root"; then
+    fail "$FIXTURE_SHARE_DESTINATION_FOLDER is not in the folder picker's listing of the share"
+    screenshot "70-no-destination-in-picker"
+    finish
+fi
+
+ui_tap_exact_text "$FIXTURE_SHARE_DESTINATION_FOLDER" "70-picker-destination"
 sleep 2
 # the first copy's line is still in the buffer, and waiting for a line that is already there is no
 # wait at all -- it would read the second copy as finished before it had started
 logcat_reset
-ui_tap_text "$FIXTURE_SHARE_DESTINATION_FOLDER" "70-copy-destination-again"
+ui_tap_exact_text "OK" "70-picker-ok"
 
 if ! wait_for_log "Copied 1 of 1 onto the share" 300 "70-copy-again"; then
     fail "the second copy never finished"
@@ -247,6 +260,50 @@ if "${ADB[@]}" shell "[ -f '$device_source' ] && echo yes" 2> /dev/null | tr -d 
 else
     fail "the file on the device is gone; a copy may not delete its source"
 fi
+
+# The last destination is gone back to (#107): "Other folder" opens the picker where the last
+# copy went, which for a folder of the share it used to do only for one of pCloud. The picker
+# names the folder in its breadcrumbs, and a picker opened on this device's default has no
+# "Screens" anywhere in it
+step "the next Copy to opens its picker where the last copy went"
+if ! ui_wait_text "$FIXTURE_DEVICE_SOURCE_FILE" 60 "70-grid-third"; then
+    fail "the grid did not come back after the second copy"
+    screenshot "70-no-grid-third"
+    finish
+fi
+
+if ! in_selection_mode "70-still-selected-third"; then
+    if ! select_row "$FIXTURE_DEVICE_SOURCE_FILE" "70-select-fourth"; then
+        screenshot "70-not-selected-fourth"
+        finish
+    fi
+fi
+
+open_overflow_menu
+sleep 1
+ui_tap_text "Copy to" "70-tap-copy-third"
+sleep 2
+# the destination dialog opens on the storage the folder list is on, and its "Other folder"
+# opens the picker on that storage: at the last destination there when there is one, at the
+# storage's root when there is not. So the share's chip first, then the button -- a picker
+# opened on the share's root has the share in its breadcrumbs and nothing after it
+ui_tap_exact_text "Network share" "70-destination-share-chip" || finish
+sleep 2
+ui_tap_text "Other folder" "70-other-folder" || finish
+sleep 3
+picker="$(ui_dump "70-picker-last")"
+screenshot "70-picker-last"
+if python3 "$DRIVE_DIR/ui.py" "$picker" --text "$FIXTURE_SHARE_DESTINATION_FOLDER" --exact > /dev/null; then
+    pass "the picker opened on $FIXTURE_SHARE_DESTINATION_FOLDER of the share, where the last copy went"
+else
+    fail "the picker did not open on $FIXTURE_SHARE_DESTINATION_FOLDER of the share (view tree in $picker)"
+    python3 "$DRIVE_DIR/ui.py" "$picker" --list | sed 's/^/     /'
+fi
+
+"${ADB[@]}" shell input keyevent KEYCODE_BACK
+sleep 1
+"${ADB[@]}" shell input keyevent KEYCODE_BACK
+sleep 1
 
 screenshot "70-done"
 finish
