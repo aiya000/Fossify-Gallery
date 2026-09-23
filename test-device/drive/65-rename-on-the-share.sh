@@ -13,8 +13,8 @@
 #   the container's own directory rather than anything the app believes
 # - the file next to it does not, and neither does its content. A rename that landed on the
 #   neighbour, or over it, would pass every check that only looks at the name that was asked for
-# - a name the share already has is refused rather than written over. There is no recycle bin on
-#   the share to take the overwritten file back out of, so this is the check that matters most
+# - a name the share already has is refused rather than written over. A file written over does
+#   not pass through the recycle bin on any storage, so this is the check that matters most
 # - the folder, and the media under it, travel together
 #
 # Nothing in the fixture's counts may be renamed -- 10-scan-whole-share.sh asserts on them -- so

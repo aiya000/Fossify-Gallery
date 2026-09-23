@@ -95,21 +95,26 @@ at afterwards.
   be there: "Move to" is kept out of the selection's menu, moving between a share and anywhere
   else not being built. Copying the same file twice pins the numbering that `AvailableNameTest`
   covers in the small, through the whole path
-- **`55-delete-on-the-share.sh`** — #28, the first thing the app takes *away* from the share: a
-  medium of it deleted, and then a whole folder of it. Both are read off `fixture/share`, because
-  the app's own cache cannot be a witness to a delete. What it checks besides the two files going
+- **`55-delete-on-the-share.sh`** — #112: a medium of the share, and then a whole folder of it,
+  deleted into the app's recycle bin *on the share* (`.gallery-recycle-bin` in its root, the same
+  folder the app makes on pCloud), then one of them restored out of it and the rest emptied for
+  good. Everything is read off `fixture/share`, because the app's own cache cannot be a witness
+  to a move. What it checks besides the files turning up in the bin under their original layout
   is the file next to them staying — a delete that reached too far would pass every check that
-  only looks at what was asked for — and the confirmation saying that there is no undo, with no
-  "skip the recycle bin" option on it, there being no bin on a share to skip. It brings its own
-  file and its own folder, because nothing the counts in `manifest.env` are about may be deleted
+  only looks at what was asked for — the confirmation offering the bin with the "skip the recycle
+  bin" checkbox on it, a rescan of the share counting the fixture's files and not the bin's, the
+  one recycle bin tile being in the folder list on the share's own storage filter, and the
+  restored file being byte for byte what it was. It brings its own file and its own folder,
+  because nothing the counts in `manifest.env` are about may be deleted, and takes the bin away
+  with them on its way out
 - **`56-delete-on-the-device.sh`** — #106: the same two deletes on this device, which go through
   the app's recycle bin. The device's delete is the one the app was born with and it had no
   script until deleting moved onto `MediaStorage`; a move with no witness is a move nobody can
   vouch for. The file leaving `/sdcard` is read with `adb shell`, and its turning up in the bin
   with `run-as`, the bin being the app's own files directory with the file kept under its full
   original path -- a delete that skipped the bin would pass the first check and fail the second.
-  It also pins the confirmation the other way round from `55`: it says "recycle bin", and the
-  "skip the recycle bin" checkbox is on it
+  It pins the same confirmation `55` does: it says "recycle bin", and the "skip the recycle bin"
+  checkbox is on it
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
@@ -119,7 +124,7 @@ at afterwards.
   another name. Read off `fixture/share` for the same reason the delete is. The check it is really
   written for is the one in the middle: a rename to a name the share already has must be **refused**
   rather than written over, and the file that name belonged to is compared byte for byte
-  afterwards — there is no recycle bin on a share to take an overwritten file back out of. The
+  afterwards — an overwritten file does not pass through the recycle bin, on any storage. The
   folder half checks that the medium under it travelled with it, since a rename that made an empty
   folder under the new name would pass everything else. Like `55`, it brings its own file and its
   own folder. None of the names it types holds a space, `adb shell input text` not being able to

@@ -19,6 +19,12 @@
 # STATUS_ACCESS_DENIED from Create, which reads exactly like an app that asked for the wrong
 # access. `-g` appends to the global section, and the last setting of a parameter is the one samba
 # keeps, so these override the image's.
+#
+# The "vfs objects" line is the image's own list minus `recycle`. With it, every delete over SMB
+# is a move into a hidden `.deleted/` folder in the share, one copy per delete, and the scanner
+# walks that folder like any other: the file count crept up by one with every script that deleted
+# something, and a scan count that was right for months was suddenly sixteen files over. What the
+# app deletes from the fixture is meant to be gone; the app has a recycle bin of its own (#112).
 
 services:
   fixture-share:
@@ -34,6 +40,7 @@ services:
       -s "${FIXTURE_SHARE_NAME:-gallery};/share;yes;no;no;${FIXTURE_SMB_USER:-gallery}"
       -g "force user = ${FIXTURE_SMB_USER:-gallery}"
       -g "force group = ${FIXTURE_SMB_USER:-gallery}"
+      -g "vfs objects = catia fruit streams_xattr"
     volumes:
       # seed-share.sh builds this. It is generated, so it is not checked in -- see .gitignore
       - "${FIXTURE_SHARE_DIR:-./share}:/share:rw"
