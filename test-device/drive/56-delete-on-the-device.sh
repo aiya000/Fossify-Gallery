@@ -18,6 +18,9 @@
 # - the confirmation offers the bin: it says "recycle bin", and the "skip the recycle bin"
 #   checkbox is on it -- the one the share's confirmation must not have (55)
 # - a whole folder goes the same way, its medium into the bin, and the folder above it stays
+# - the way back out (#112): the one recycle bin opened, the medium restored through the same
+#   dialog every storage gets, landing where it was with its bytes, and the copy in the bin going
+#   with it; then "Empty the recycle bin" takes the rest away and the tile with it
 #
 # It brings its own file and its own folder, and takes them away on the way in and on the way
 # out. The bin needs no cleaning: seed-app.sh wipes the app's data, and the bin lives in it.
@@ -246,6 +249,118 @@ if ui_wait_exact_text "Recycle bin" 30 "56-bin-tile"; then
 else
     fail "the folder list has no recycle bin tile, though two media went into it"
     screenshot "56-no-bin-tile"
+    finish
+fi
+
+# The way back out (#112): the same dialog every storage gets, naming the folder the medium was
+# deleted from. The device's restore is a copy back out of the app's directory and then the copy
+# in the bin going -- and the second half is what this pins, since the copy used to stay behind
+# until the bin was emptied. There is no log line for it either; the device is asked
+step "opening the recycle bin, and restoring $FIXTURE_DEVICE_DELETE_FILE"
+ui_tap_exact_text "Recycle bin" "56-open-bin"
+sleep 3
+
+# the filenames are still on: the toggle is one setting for every grid, and it was turned on in
+# the folder above. Pressing it here again would turn them off
+if ! ui_wait_text "$FIXTURE_DEVICE_DELETE_FILE" 60 "56-bin-grid"; then
+    fail "$FIXTURE_DEVICE_DELETE_FILE is not in the recycle bin's grid"
+    screenshot "56-not-in-bin"
+    finish
+fi
+
+if ui_wait_text "$FIXTURE_DEVICE_DELETE_FOLDER_FILE" 10 "56-bin-grid-folder-file"; then
+    pass "both media of the device are in the recycle bin's grid"
+else
+    fail "$FIXTURE_DEVICE_DELETE_FOLDER_FILE is not in the recycle bin's grid"
+fi
+
+if ! select_row "$FIXTURE_DEVICE_DELETE_FILE" "56-select-in-bin"; then
+    screenshot "56-not-selected-in-bin"
+    finish
+fi
+
+if ! tap_action "Restore selected files" "56-restore"; then
+    screenshot "56-no-restore"
+    finish
+fi
+
+sleep 2
+restore_dialog="$(ui_dump "56-restore-dialog")"
+screenshot "56-restore-dialog"
+# the folder as the user reads it, "Internal storage/Pictures/Outbox" or so; what is pinned is
+# the part no humanizing touches
+if python3 "$DRIVE_DIR/ui.py" "$restore_dialog" --text "Pictures/$FIXTURE_DEVICE_SOURCE_NAME" > /dev/null; then
+    pass "the dialog says it goes back to Pictures/$FIXTURE_DEVICE_SOURCE_NAME"
+else
+    fail "the dialog does not name Pictures/$FIXTURE_DEVICE_SOURCE_NAME as the destination (view tree in $restore_dialog)"
+    python3 "$DRIVE_DIR/ui.py" "$restore_dialog" --list | sed 's/^/     /'
+fi
+
+ui_tap_exact_text "Restore" "56-confirm-restore"
+
+# back on the device, and out of the bin: the inverse of wait_for_bin
+waited=0
+restored=""
+while [ "$waited" -lt 60 ]; do
+    if "${ADB[@]}" shell "test -f '$doomed_on_device'" && ! in_the_bin "$FIXTURE_DEVICE_DELETE_FILE"; then
+        restored=yes
+        break
+    fi
+    sleep 2
+    waited=$((waited + 2))
+done
+
+step "what the device has now"
+if [ -n "$restored" ]; then
+    pass "$FIXTURE_DEVICE_DELETE_FILE is back in $FIXTURE_DEVICE_SOURCE_NAME"
+    pass "and the copy in the recycle bin went with it"
+else
+    if "${ADB[@]}" shell "test -f '$doomed_on_device'"; then
+        fail "$FIXTURE_DEVICE_DELETE_FILE is back in $FIXTURE_DEVICE_SOURCE_NAME, but its copy is still in the bin"
+    else
+        fail "$FIXTURE_DEVICE_DELETE_FILE did not come back to $FIXTURE_DEVICE_SOURCE_NAME"
+    fi
+    screenshot "56-no-restore-done"
+    logcat_dump "56-restore" > /dev/null
+fi
+
+# the neighbour's hash is the seed image's, and so was this file's before it went into the bin
+restored_md5="$("${ADB[@]}" shell md5sum "$doomed_on_device" 2>/dev/null | tr -d '\r' | awk '{print $1}')"
+if [ -n "$restored_md5" ] && [ "$restored_md5" = "$neighbour_before" ]; then
+    pass "and its content is what it was"
+else
+    fail "$doomed_on_device differs from what was put on the device"
+fi
+
+step "emptying the recycle bin"
+if ! tap_action "Empty the recycle bin" "56-empty"; then
+    screenshot "56-no-empty"
+    finish
+fi
+
+sleep 2
+screenshot "56-empty-confirmation"
+ui_tap_text "Yes" "56-confirm-empty"
+sleep 4
+
+step "what the device has now"
+if in_the_bin "$FIXTURE_DEVICE_DELETE_FOLDER_FILE"; then
+    fail "$FIXTURE_DEVICE_DELETE_FOLDER_FILE is still in the recycle bin after emptying it"
+else
+    pass "nothing of $FIXTURE_DEVICE_DELETE_FOLDER is left in the recycle bin"
+fi
+
+if "${ADB[@]}" shell "test -f '$doomed_on_device'"; then
+    pass "and the restored $FIXTURE_DEVICE_DELETE_FILE was left alone"
+else
+    fail "emptying the bin took the restored $FIXTURE_DEVICE_DELETE_FILE with it"
+fi
+
+if ui_wait_exact_text "Recycle bin" 20 "56-bin-gone"; then
+    fail "the recycle bin is still in the folder list, though it is empty"
+    screenshot "56-bin-tile-stays"
+else
+    pass "and the recycle bin is out of the folder list"
 fi
 
 screenshot "56-done"
