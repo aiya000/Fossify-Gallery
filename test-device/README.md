@@ -210,6 +210,15 @@ at afterwards.
   the screen behind the editor not warning that the editor "saved elsewhere", which is what it
   used to say whenever the copy came back untouched. `97` keeps the other save, the one that
   writes back over the original
+- **`99-save-as-proposes-a-new-name-on-the-device.sh`** — #125: the editor's "Save as" opens on
+  `<name>_1` for a photo of this device, the same as for one of pCloud or of the share, so that
+  the OK that follows saves beside the original rather than asking about writing over it. It
+  was filed as a bug and turned out not to be one on Android 11 and up -- commons hands the
+  editor no output uri there, so the name comes off the photo's own path -- but the answer was
+  worth pinning, since the content-uri road that proposes the photo's own name is still there
+  for a photo handed in by another app. Nothing is saved: the dialog is read and cancelled. The
+  system's "Edit with" sheet, which a second editor on the device puts between the viewer and
+  the editor, is answered "Just once"
 
 ## pCloud, without a pCloud account
 

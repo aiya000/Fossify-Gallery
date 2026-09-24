@@ -78,6 +78,15 @@ def main():
             "which row of a radio dialog is the selected one rather than only which rows exist"
         ),
     )
+    parser.add_argument(
+        "--value",
+        action="store_true",
+        help=(
+            "print the text of the matched node instead of a point, which is how a script reads "
+            "what a text box opened with -- a check that only looked for the wanted text would "
+            "say nothing about what was there instead"
+        ),
+    )
     args = parser.parse_args()
 
     tree = ElementTree.parse(args.dump)
@@ -102,6 +111,13 @@ def main():
 
     if args.text is None and args.resource_id is None:
         parser.error("one of --text, --resource-id, --list or --checked is needed")
+
+    if args.value:
+        for node in tree.iter("node"):
+            if matches(node, args.text, args.resource_id, args.exact):
+                print(node.get("text", ""))
+                return 0
+        return 1
 
     read = box_of if args.bounds else centre_of
     found = None
