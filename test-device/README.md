@@ -73,6 +73,14 @@ at afterwards.
 
 - **`10-scan-whole-share.sh`** — a scan of the whole share, and the counts it reports. The fixture
   holds a known number of files, which the real share never could
+- **`12-find-new-folders.sh`** — #127: "Find new folders" puts the folders of the remote
+  storages that the app has no row for yet into the list, without the full rescan a share of a
+  thousand folders needs. After one walk of the share, a folder with a photo is put on the share
+  and the search has to find it -- one folder, one file, and the row in the list -- while a photo
+  put into a folder the app already knows must go unread, the search reporting nothing new. The
+  witnesses are the counts the service logs when a search is over, and the absence of
+  "Walked the share:" in between. pCloud is asked the same way through the stub: on an account
+  never listed every folder is new, and asked again straight after, nothing is
 - **`20-storage-switch.sh`** — rule 1 of #59: which scans a sideways swipe calls off. Three cases,
   each one a scan that has to be interrupted at the right moment, which is the check that costs the
   most by hand
