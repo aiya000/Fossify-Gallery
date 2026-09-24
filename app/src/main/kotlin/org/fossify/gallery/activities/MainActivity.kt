@@ -106,6 +106,7 @@ import org.fossify.gallery.extensions.handleExcludedFolderPasswordProtection
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.availableStorages
 import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
@@ -116,6 +117,7 @@ import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.rescanSmb
+import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -190,6 +192,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // what the recheck of the displayed folders reports a remote storage's losses under
         private const val TAG_REMOTE_FOLDERS = "RemoteFolders"
+
+        // what the recheck says about how much of the list it went through
+        private const val TAG_RECHECK = "FolderRecheck"
 
         // how often the recheck may build the folder list again while it runs. Long enough that
         // a thousand folders cost a handful of rebuilds rather than a thousand, short enough
@@ -809,7 +814,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    private fun getDirectories() {
+    // [recheckOnly] narrows the recheck of the folders to these paths, see gotDirectories()
+    private fun getDirectories(recheckOnly: Set<String>? = null) {
         if (mIsGettingDirs) {
             return
         }
@@ -820,7 +826,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val getVideos = mIsPickVideoIntent || mIsGetVideoContentIntent
 
         getCachedDirectories(getVideos && !getImages, getImages && !getVideos) {
-            gotDirectories(addTempFolderIfNeeded(it))
+            gotDirectories(addTempFolderIfNeeded(it), recheckOnly)
         }
     }
 
@@ -924,11 +930,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // which is the same reason rescanSmbManually() has never raised the spinner either.
     //
     // A storage the network alone holds back (ASK, see RescanVerdict) is asked about instead of
-    // being skipped without a word (#124): one dialog for whichever of the two it is, or both
-    private fun startRemoteScans(event: RemoteRefresh): Boolean {
+    // being skipped without a word (#124): one dialog for whichever of the two it is, or both.
+    //
+    // [groupFolders] is what a pull inside a group reaches: that group's folders, rather than the
+    // whole of each storage -- the gesture is about what is on screen. Null for the whole
+    private fun startRemoteScans(event: RemoteRefresh, groupFolders: List<String>? = null): Boolean {
+        val scans = RemoteScans(groupFolders, event.priority)
         val pCloudPolicy = PCloudSyncPolicy(this)
         val pCloud = when {
-            !isPCloudShown() -> RescanVerdict.SKIP
+            !isPCloudShown() || scans.pCloudFolders?.isEmpty() == true -> RescanVerdict.SKIP
             event == RemoteRefresh.PULL -> pCloudPolicy.rescanOnPullToRefresh
             pCloudPolicy.isFullScanDue() -> pCloudPolicy.rescanOnStorageSwitch
             else -> RescanVerdict.SKIP
@@ -936,22 +946,58 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         val smbPolicy = SmbSyncPolicy(this)
         val smb = when {
-            !isSmbShown() -> RescanVerdict.SKIP
+            !isSmbShown() || scans.smbFolders?.isEmpty() == true -> RescanVerdict.SKIP
             event == RemoteRefresh.PULL -> smbPolicy.rescanOnPullToRefresh
             smbPolicy.isFullScanDue() -> smbPolicy.rescanOnStorageSwitch
             else -> RescanVerdict.SKIP
         }
 
         if (smb == RescanVerdict.RUN) {
-            rescanSmb(reportCounts = false, priority = event.priority)
+            scans.startSmb()
         }
 
         if (pCloud == RescanVerdict.RUN) {
-            rescanPCloud(reportCounts = false, priority = event.priority) { runOnUiThread { getDirectories() } }
+            scans.startPCloud()
         }
 
-        val pCloudRanOnAnEarlierYes = askBeforeRescansOnMobileData(smb = smb == RescanVerdict.ASK, pCloud = pCloud == RescanVerdict.ASK, priority = event.priority)
+        val pCloudRanOnAnEarlierYes = askBeforeRescansOnMobileData(scans, smb = smb == RescanVerdict.ASK, pCloud = pCloud == RescanVerdict.ASK)
         return pCloud == RescanVerdict.RUN || pCloudRanOnAnEarlierYes
+    }
+
+    // The scans one event starts on the remote storages: of the whole of each, or of a group's
+    // folders on each. A group's rescan is its folders one by one, like a folder opened, and
+    // takes no notice of the throttle -- a gesture is asking, the same as for the whole
+    private inner class RemoteScans(val groupFolders: List<String>?, val priority: Int) {
+        val pCloudFolders = groupFolders?.filter { it.isPCloudPath() }
+        val smbFolders = groupFolders?.filter { it.isSmbPath() }
+        val scope = if (groupFolders == null) RescanScope.WHOLE else RescanScope.GROUP
+
+        // the share's result reaches the list through the service's listener, whichever it was
+        fun startSmb() {
+            if (smbFolders == null) {
+                rescanSmb(reportCounts = false, priority = priority)
+            } else {
+                rescanSmbFolders(smbFolders, reportCounts = false, priority = priority)
+            }
+        }
+
+        fun startPCloud() {
+            val onDone = { runOnUiThread { getDirectories(groupFolders?.toSet()) } }
+            if (pCloudFolders == null) {
+                rescanPCloud(reportCounts = false, priority = priority) { onDone() }
+            } else {
+                rescanPCloudFolders(pCloudFolders, reportCounts = false, priority = priority) { onDone() }
+            }
+        }
+
+        fun question(smb: Boolean, pCloud: Boolean): String = when {
+            scope == RescanScope.WHOLE && smb && pCloud -> getString(R.string.rescan_on_mobile_data_both)
+            scope == RescanScope.WHOLE && smb -> getString(R.string.rescan_on_mobile_data_smb)
+            scope == RescanScope.WHOLE -> getString(R.string.rescan_on_mobile_data_pcloud)
+            smb && pCloud -> getString(R.string.rescan_on_mobile_data_both_group, smbFolders!!.size, pCloudFolders!!.size)
+            smb -> getString(R.string.rescan_on_mobile_data_smb_group, smbFolders!!.size)
+            else -> getString(R.string.rescan_on_mobile_data_pcloud_group, pCloudFolders!!.size)
+        }
     }
 
     // The question of #124 for the folder list, for the storages on screen that the network
@@ -959,35 +1005,29 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // up with pCloud's, since the list is then waiting on it after all. Says whether pCloud's
     // scan was started right here, on a yes already given this run -- the spinner is then the
     // gesture's to raise, the same as for a scan that needed no question
-    private fun askBeforeRescansOnMobileData(smb: Boolean, pCloud: Boolean, priority: Int): Boolean {
+    private fun askBeforeRescansOnMobileData(scans: RemoteScans, smb: Boolean, pCloud: Boolean): Boolean {
         if (!smb && !pCloud) {
             return false
         }
 
-        val message = when {
-            smb && pCloud -> R.string.rescan_on_mobile_data_both
-            smb -> R.string.rescan_on_mobile_data_smb
-            else -> R.string.rescan_on_mobile_data_pcloud
-        }
-
         val asked = buildMap {
             if (smb) {
-                put(RemoteScanScheduler.Storage.SMB, RescanScope.WHOLE)
+                put(RemoteScanScheduler.Storage.SMB, scans.scope)
             }
 
             if (pCloud) {
-                put(RemoteScanScheduler.Storage.PCLOUD, RescanScope.WHOLE)
+                put(RemoteScanScheduler.Storage.PCLOUD, scans.scope)
             }
         }
 
-        val ranAtOnce = RescanOnMobileData.askThen(this, asked, getString(message)) {
+        val ranAtOnce = RescanOnMobileData.askThen(this, asked, scans.question(smb, pCloud)) {
             if (smb) {
-                rescanSmb(reportCounts = false, priority = priority)
+                scans.startSmb()
             }
 
             if (pCloud) {
                 binding.directoriesRefreshLayout.isRefreshing = true
-                rescanPCloud(reportCounts = false, priority = priority) { runOnUiThread { getDirectories() } }
+                scans.startPCloud()
             }
         }
 
@@ -1206,10 +1246,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // question: a pCloud sync ends by building the list again, so until then the spinner is
     // telling the truth and getDirectories() is left to that callback. Otherwise nothing is being
     // fetched -- the share's walk goes to its notification -- and the cache read stops the spinner
-    // as soon as it is done
+    // as soon as it is done.
+    //
+    // At the top of the list a pull is about every folder; inside a group, only about that
+    // group's folders, on every storage -- this device's rechecked, the remote ones rescanned
+    // if their settings say so. What is on screen is what the gesture is about
     private fun refreshDirectories() {
-        if (!startRemoteScans(RemoteRefresh.PULL)) {
-            getDirectories()
+        val groupFolders = if (mCurrentGroupId == null) null else foldersOfCurrentGroup()
+        if (!startRemoteScans(RemoteRefresh.PULL, groupFolders)) {
+            getDirectories(groupFolders?.toSet())
         }
     }
 
@@ -1662,7 +1707,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    private fun gotDirectories(newDirs: ArrayList<Directory>) {
+    // The cached folders go on screen at once, and are then rechecked one by one against what is
+    // on the device. With [recheckOnly], only those folders are: a pull inside a group is about
+    // that group's folders, so the rest are left as the cache has them, and the search for
+    // folders not cached yet is left to a load that is about the whole list
+    private fun gotDirectories(newDirs: ArrayList<Directory>, recheckOnly: Set<String>? = null) {
         mIsGettingDirs = false
         mShouldStopFetching = false
 
@@ -1750,10 +1799,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         )
         var lastRedrawAt = 0L
         var isRedrawPending = false
+        if (recheckOnly != null) {
+            Log.i(TAG_RECHECK, "Rechecking ${dirs.count { it.path in recheckOnly }} of ${dirs.size} folders, the ones of the group on screen")
+        }
+
         try {
             for (directory in dirs) {
                 if (mShouldStopFetching || isDestroyed || isFinishing) {
                     return
+                }
+
+                if (recheckOnly != null && directory.path !in recheckOnly) {
+                    continue
                 }
 
                 val sorting = config.getFolderSorting(directory.path)
@@ -1908,6 +1965,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         dirs.filterNot { it.path == RECYCLE_BIN || it.path == FAVORITES }.forEach {
             foldersToScan.remove(it.path)
+        }
+
+        if (recheckOnly != null) {
+            foldersToScan.clear()
         }
 
         // check the remaining folders which were not cached at all yet
