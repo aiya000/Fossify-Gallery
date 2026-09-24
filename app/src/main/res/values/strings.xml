@@ -75,7 +75,7 @@
     <string name="storage_filter">Storage</string>
     <string name="storage_local">This device</string>
     <string name="storage_local_and_pcloud">This device and pCloud</string>
-    <string name="pcloud_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only, never on a metered network</string>
+    <string name="pcloud_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder or a group, switching storage)</string>
     <string name="pcloud_rescan_on_launch">Rescan pCloud when the app starts (only what changed since the last scan)</string>
     <string name="use_for_this_storage_only">Apply to this storage only</string>
     <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
@@ -149,7 +149,7 @@
     <string name="smb_rescan_on_storage_switch">Rescan the network share when switching storage</string>
     <string name="smb_rescan_on_folder_open">Rescan a folder of the share when opening it</string>
     <string name="smb_rescan_on_pull_to_refresh">Rescan the whole share when pulling to refresh</string>
-    <string name="smb_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only, never on a metered network</string>
+    <string name="smb_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder, switching storage)</string>
     <string name="smb_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="smb_fetch_failed">Could not fetch the file from the network share</string>
     <string name="smb_fetching">Fetching from the network share…</string>
@@ -159,6 +159,13 @@
     <string name="smb_read_durations_group">Read the length of the videos in this group</string>
     <string name="smb_read_durations_confirmation">%1$d videos in this folder have no length yet.\nReading it means opening each one on the share. Continue?</string>
     <string name="smb_read_durations_confirmation_group">%1$d videos in this group have no length yet.\nReading it means opening each one on the share. Continue?</string>
+    <!-- #124: asked before a rescan a gesture started, while "unmetered only" is on and the network is metered. The scope is named, since it decides whether it is a few listings or a walk of a thousand folders -->
+    <string name="rescan_on_mobile_data_smb">You are on mobile data.\nRescan the whole network share anyway?</string>
+    <string name="rescan_on_mobile_data_smb_folder">You are on mobile data.\nRescan this folder of the network share anyway?</string>
+    <string name="rescan_on_mobile_data_pcloud">You are on mobile data.\nRescan pCloud anyway? (only what changed since the last scan)</string>
+    <string name="rescan_on_mobile_data_pcloud_folder">You are on mobile data.\nRescan this pCloud folder anyway?</string>
+    <string name="rescan_on_mobile_data_pcloud_group">You are on mobile data.\nRescan the %1$d pCloud folders of this group anyway?</string>
+    <string name="rescan_on_mobile_data_both">You are on mobile data.\nRescan the whole network share and pCloud anyway?</string>
     <string name="smb_read_durations_channel">Reading video lengths from the network share</string>
     <string name="smb_read_durations_progress">Video lengths: %1$d of %2$d</string>
     <string name="smb_read_durations_done">Read the length of %1$d videos.</string>
