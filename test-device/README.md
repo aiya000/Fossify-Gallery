@@ -159,7 +159,8 @@ at afterwards.
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage
-  menu has to lead with "All storages", above the device. Where the list is gets read off the mark
+  menu has to list All storages, pCloud, this device and the network share in that order (#128),
+  which the app is signed in to pCloud for, so that every row is there. Where the list is gets read off the mark
   in the storage menu, not off the folders on screen — with nothing scanned, both storages draw
   the same empty grid, and a check that cannot tell them apart passes whatever the app does
 - **`83-a-search-and-a-mixed-selection.sh`** — #107: two places the share was left out of a rule

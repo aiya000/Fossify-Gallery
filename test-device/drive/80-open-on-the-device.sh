@@ -7,14 +7,19 @@
 #
 # What is checked:
 #
-# - the storage menu leads with "All storages", above this device -- a swipe walks the menu's own
-#   order, so the row above is the one a rightward drag uncovers
+# - the storage menu lists All storages, pCloud, this device, the network share, in that order
+#   (#128) -- a swipe walks the menu's own order, so the row above is the one a rightward drag
+#   uncovers, and the pickers' chips stand in it too
 # - the folder list opens on this device whatever storage it was left on. The device is the one
 #   storage that never waits on the network, so it is the one that can be drawn at once
 #
 # The second is read off the mark in the storage menu rather than off the folders on screen: with
 # nothing scanned yet both storages look alike from the list, and a check that cannot tell them
 # apart passes whatever the app does.
+#
+# The app is signed in to pCloud for this, with the stub's token and nothing behind it: the order
+# is the thing under test, and a row that is missing because nothing is configured says nothing
+# about where it would stand. No scan is started by the settings, so nothing is asked of it
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,8 +28,10 @@ source "$here/lib.sh"
 
 require_emulator
 
-step "seeding"
-"$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
+step "seeding, signed in to pCloud so that every storage has a row"
+env FIXTURE_PCLOUD_ACCESS_TOKEN="$FIXTURE_PCLOUD_TOKEN" \
+    FIXTURE_PCLOUD_API_HOST="$FIXTURE_PCLOUD_STUB_API_HOST" \
+    "$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
 
 # this script is about where the list opens, so nothing drives it anywhere first
 FIXTURE_STORAGE_FILTER=1
@@ -34,7 +41,7 @@ sleep 5
 
 # ---------------------------------------------------------------- the order
 
-step "the storage menu leads with All storages, above this device"
+step "the storage menu lists All storages, pCloud, this device, the network share, in that order"
 if ! open_storage_menu "80-order"; then
     screenshot "80-no-chip"
     finish
@@ -43,13 +50,12 @@ fi
 order_dump="$(ui_dump "80-order-menu")"
 order="$(python3 "$DRIVE_DIR/ui.py" "$order_dump" --list \
     | rg -o '^(All storages|This device|pCloud|Network share)' \
-    | head -n 2 \
     | tr '\n' ',')"
 
-if [ "$order" = "All storages,This device," ]; then
-    pass "All storages comes first, with this device under it"
+if [ "$order" = "All storages,pCloud,This device,Network share," ]; then
+    pass "All storages, pCloud, this device, the network share"
 else
-    fail "the storage menu starts with '$order' rather than 'All storages,This device,' (view tree in $order_dump)"
+    fail "the storage menu reads '$order' rather than 'All storages,pCloud,This device,Network share,' (view tree in $order_dump)"
     screenshot "80-order"
 fi
 
