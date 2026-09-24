@@ -11,7 +11,6 @@ import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.isInDownloadDir
 import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.showKeyboard
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.databinding.DialogSaveAsBinding
@@ -91,7 +90,9 @@ class SaveAsDialog(
                     dialog = this,
                     titleId = org.fossify.commons.R.string.save_as
                 ) { alertDialog ->
-                    alertDialog.showKeyboard(binding.filenameValue)
+                    // the keyboard is left down (#132): up, it covers the extension box and the
+                    // buttons, and what is usually done here -- take the proposed name, or pick
+                    // another folder -- needs no typing. A tap on the name box brings it up
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         validateAndConfirmPath(alertDialog::dismiss)
                     }
