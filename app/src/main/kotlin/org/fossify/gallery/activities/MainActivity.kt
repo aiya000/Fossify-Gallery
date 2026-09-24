@@ -998,14 +998,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     // Turns the folder list like a page. Dragged sideways it follows the finger and uncovers
-    // a strip naming the storage it is heading for: to the left pCloud, to the right this
-    // device, the order of the storage menu. Let go past a fifth of the width, or with a
-    // fling that way, it goes there; short of that it slides back. Every other touch stays
-    // with the list: this takes over only once a drag is clearly sideways and the list is
-    // not scrolling, and never while the list scrolls horizontally (a sideways drag is the
-    // scroll then), while folders are selected (a drag reorder or a drag selection ends
-    // with a sideways move too), without a pCloud account, or on the side where nothing lies
-    // in that direction
+    // a strip naming the storage it is heading for: the next one to the left, the one before
+    // to the right, in the order of the storage menu (StorageOrder). Let go past a fifth of
+    // the width, or with a fling that way, it goes there; short of that it slides back. Every
+    // other touch stays with the list: this takes over only once a drag is clearly sideways
+    // and the list is not scrolling, and never while the list scrolls horizontally (a sideways
+    // drag is the scroll then), while folders are selected (a drag reorder or a drag selection
+    // ends with a sideways move too), with only the device set up, or on the side where nothing
+    // lies in that direction
     private inner class StorageSwipe : RecyclerView.OnItemTouchListener {
         private val touchSlop = ViewConfiguration.get(this@MainActivity).scaledTouchSlop
         private val minFlingVelocity = ViewConfiguration.get(this@MainActivity).scaledMinimumFlingVelocity * 4

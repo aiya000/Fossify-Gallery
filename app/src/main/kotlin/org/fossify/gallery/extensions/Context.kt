@@ -114,6 +114,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
+import org.fossify.gallery.helpers.StorageOrder
 import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.ThumbnailPolicy
@@ -723,26 +724,10 @@ fun Context.effectiveStorageFilter(): Int {
     }
 }
 
-// The storages there are to choose between, in the order a swipe walks them. "All" leads, to the
-// left of the device, so the widest view sits at one end and the storages narrow from there. The
-// device is always one; a remote storage is only there once it is set up, and "all" only makes
-// sense once there is more than one to be all of
-fun Context.availableStorages(): List<Int> {
-    val storages = arrayListOf(STORAGE_FILTER_LOCAL)
-    if (config.isPCloudLoggedIn) {
-        storages.add(STORAGE_FILTER_PCLOUD)
-    }
-
-    if (config.isSmbConfigured) {
-        storages.add(STORAGE_FILTER_SMB)
-    }
-
-    if (storages.size > 1) {
-        storages.add(0, STORAGE_FILTER_ALL)
-    }
-
-    return storages
-}
+// The storages there are to choose between, in the order the menu lists them, a swipe walks
+// them and the pickers' chips stand in -- all storages, pCloud, this device, the network share,
+// see StorageOrder. A remote storage is only there once it is set up
+fun Context.availableStorages(): List<Int> = StorageOrder.of(hasPCloud = config.isPCloudLoggedIn, hasSmb = config.isSmbConfigured)
 
 fun Context.storageLabel(storageFilter: Int) = getString(
     when (storageFilter) {
