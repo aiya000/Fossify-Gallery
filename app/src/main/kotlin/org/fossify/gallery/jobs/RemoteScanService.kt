@@ -271,6 +271,7 @@ class RemoteScanService : Service() {
                     mediaCount += result.mediaCount
                 }
 
+                Log.i(TAG, "Rescanned ${request.folders.size} folders of the share: $folderCount folders, $mediaCount files")
                 if (request.reportCounts) {
                     showResult(getString(R.string.smb_rescan_done, folderCount, mediaCount))
                 }

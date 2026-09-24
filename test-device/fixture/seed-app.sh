@@ -59,6 +59,11 @@ prefs="$RUN_DIR/Prefs.xml"
 # - app_run_count keeps the welcome and rating prompts out of the way
 #
 # &quot; because those values are JSON living inside XML.
+extra_member=""
+if [ -n "$FIXTURE_GROUP_EXTRA_MEMBER" ]; then
+    extra_member=",&quot;$FIXTURE_GROUP_EXTRA_MEMBER&quot;:$FIXTURE_GROUP_PARENT_ID"
+fi
+
 cat > "$prefs" <<XML
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
@@ -76,7 +81,7 @@ cat > "$prefs" <<XML
     <int name="smb_rescan_interval_minutes" value="0" />
     <boolean name="smb_rescan_on_unmetered_only" value="$FIXTURE_RESCAN_ON_UNMETERED_ONLY" />
     <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}]</string>
-    <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID}</string>
+    <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID$extra_member}</string>
     <int name="directory_sort_order" value="$FIXTURE_DIRECTORY_SORT" />
     <string name="pcloud_access_token">$FIXTURE_PCLOUD_ACCESS_TOKEN</string>
     <string name="pcloud_api_host">$FIXTURE_PCLOUD_API_HOST</string>

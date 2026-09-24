@@ -80,7 +80,7 @@
     <string name="use_for_this_storage_only">Apply to this storage only</string>
     <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
     <string name="pcloud_rescan_on_folder_open">Rescan a pCloud folder when opening it</string>
-    <string name="pcloud_rescan_on_pull_to_refresh">Rescan pCloud when pulling to refresh</string>
+    <string name="pcloud_rescan_on_pull_to_refresh">Rescan pCloud when pulling the folder list to refresh (inside a group, only its folders)</string>
     <string name="pcloud_rescan_on_group_open">Rescan the pCloud folders of a group when opening it</string>
     <string name="pcloud_rescan_folder">Rescan this folder</string>
     <string name="pcloud_fetch_failed">Could not fetch the file from pCloud</string>
@@ -159,7 +159,7 @@
     <string name="smb_rescan_on_launch">Rescan the network share when the app starts</string>
     <string name="smb_rescan_on_storage_switch">Rescan the network share when switching storage</string>
     <string name="smb_rescan_on_folder_open">Rescan a folder of the share when opening it</string>
-    <string name="smb_rescan_on_pull_to_refresh">Rescan the whole share when pulling to refresh</string>
+    <string name="smb_rescan_on_pull_to_refresh">Rescan the share when pulling the folder list to refresh (inside a group, only its folders)</string>
     <string name="smb_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder, switching storage)</string>
     <string name="smb_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="smb_fetch_failed">Could not fetch the file from the network share</string>
@@ -177,6 +177,8 @@
     <string name="rescan_on_mobile_data_pcloud_folder">You are on mobile data.\nRescan this pCloud folder anyway?</string>
     <string name="rescan_on_mobile_data_pcloud_group">You are on mobile data.\nRescan the %1$d pCloud folders of this group anyway?</string>
     <string name="rescan_on_mobile_data_both">You are on mobile data.\nRescan the whole network share and pCloud anyway?</string>
+    <string name="rescan_on_mobile_data_smb_group">You are on mobile data.\nRescan the %1$d network share folders of this group anyway?</string>
+    <string name="rescan_on_mobile_data_both_group">You are on mobile data.\nRescan the %1$d network share folders and %2$d pCloud folders of this group anyway?</string>
     <string name="smb_read_durations_channel">Reading video lengths from the network share</string>
     <string name="smb_read_durations_progress">Video lengths: %1$d of %2$d</string>
     <string name="smb_read_durations_done">Read the length of %1$d videos.</string>

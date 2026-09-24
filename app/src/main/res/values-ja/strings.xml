@@ -79,7 +79,7 @@
     <string name="use_for_this_storage_only">このストレージのみに適用する</string>
     <string name="pcloud_rescan_on_storage_switch">ストレージ切替時に pCloud を再スキャン</string>
     <string name="pcloud_rescan_on_folder_open">pCloud のフォルダを開いたときに再スキャン</string>
-    <string name="pcloud_rescan_on_pull_to_refresh">引っぱって更新したときに pCloud を再スキャン</string>
+    <string name="pcloud_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに pCloud を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
     <string name="pcloud_rescan_on_group_open">グループを開いたときに中の pCloud フォルダを再スキャン</string>
     <string name="pcloud_rescan_folder">このフォルダを再スキャン</string>
     <string name="pcloud_fetch_failed">pCloud からファイルを取得できませんでした</string>
@@ -160,7 +160,7 @@
     <string name="smb_rescan_on_launch">起動時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>
-    <string name="smb_rescan_on_pull_to_refresh">引っぱって更新したときに共有全体を再スキャン</string>
+    <string name="smb_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに共有を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
     <string name="smb_rescan_on_unmetered_only">自動再スキャンは Wi-Fi 接続時のみ。従量制の回線では、操作で始まる再スキャン（引っぱって更新、フォルダを開く、ストレージ切替）の前に確認する</string>
     <string name="smb_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="smb_fetch_failed">ネットワーク共有からファイルを取得できませんでした</string>
@@ -177,6 +177,8 @@
     <string name="rescan_on_mobile_data_pcloud_folder">モバイル回線に接続しています。\nそれでもこの pCloud フォルダを再スキャンしますか？</string>
     <string name="rescan_on_mobile_data_pcloud_group">モバイル回線に接続しています。\nそれでもこのグループの pCloud フォルダ %1$d 件を再スキャンしますか？</string>
     <string name="rescan_on_mobile_data_both">モバイル回線に接続しています。\nそれでもネットワーク共有全体と pCloud を再スキャンしますか？</string>
+    <string name="rescan_on_mobile_data_smb_group">モバイル回線に接続しています。\nそれでもこのグループの共有フォルダ %1$d 件を再スキャンしますか？</string>
+    <string name="rescan_on_mobile_data_both_group">モバイル回線に接続しています。\nそれでもこのグループの共有フォルダ %1$d 件と pCloud フォルダ %2$d 件を再スキャンしますか？</string>
     <string name="smb_read_durations_channel">ネットワーク共有の動画の長さの取得</string>
     <string name="smb_read_durations_progress">動画の長さを取得しています: %1$d / %2$d</string>
     <string name="smb_read_durations_done">%1$d 本の動画の長さを取得しました。</string>
