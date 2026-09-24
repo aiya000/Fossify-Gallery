@@ -268,6 +268,8 @@ const val WAS_SMB_HIDE_FOLDER_TOOLTIP_SHOWN = "was_smb_hide_folder_tooltip_shown
 // the default SMB port; 139 is the NetBIOS one, offered for an old server
 const val SMB_DEFAULT_PORT = 445
 const val STORAGE_FILTER = "storage_filter"
+// the order the storages stand in, see Config.storageOrder
+const val STORAGE_ORDER = "storage_order"
 // the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
 const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
 // in a sorting export only: which storages carry a sorting of their own, see Config.getSortingPreferences()

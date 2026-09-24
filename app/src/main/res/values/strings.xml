@@ -117,6 +117,8 @@
     <string name="pcloud_transfer_done">pCloud: %1$d files transferred</string>
     <string name="pcloud_transfer_done_with_failures">pCloud: %1$d files transferred, %2$d failed</string>
     <string name="storage_all">All storages</string>
+    <string name="storage_order">Storage order</string>
+    <string name="storage_order_drag">Reorder storages by dragging</string>
     <string name="smb">Network share</string>
     <string name="smb_share">Network share (SMB)</string>
     <string name="smb_not_configured">Not set up</string>

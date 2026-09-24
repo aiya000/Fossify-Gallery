@@ -725,9 +725,10 @@ fun Context.effectiveStorageFilter(): Int {
 }
 
 // The storages there are to choose between, in the order the menu lists them, a swipe walks
-// them and the pickers' chips stand in -- all storages, pCloud, this device, the network share,
-// see StorageOrder. A remote storage is only there once it is set up
-fun Context.availableStorages(): List<Int> = StorageOrder.of(hasPCloud = config.isPCloudLoggedIn, hasSmb = config.isSmbConfigured)
+// them and the pickers' chips stand in -- the order chosen in the settings, see StorageOrder.
+// A remote storage is only there once it is set up
+fun Context.availableStorages(): List<Int> =
+    StorageOrder.of(hasPCloud = config.isPCloudLoggedIn, hasSmb = config.isSmbConfigured, order = config.storageOrder)
 
 fun Context.storageLabel(storageFilter: Int) = getString(
     when (storageFilter) {

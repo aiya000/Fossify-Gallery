@@ -68,6 +68,7 @@ class SettingsActivity : SimpleActivity() {
         setupLanguage()
         setupChangeDateTimeFormat()
         setupFileLoadingPriority()
+        setupStorageOrder()
         setupManageIncludedFolders()
         setupManageExcludedFolders()
         setupManageHiddenFolders()
@@ -469,6 +470,18 @@ class SettingsActivity : SimpleActivity() {
             else -> R.string.avoid_showing_invalid_files
         }
     )
+
+    // the order the storages stand in, in the storage menu and under a sideways swipe (#128)
+    private fun setupStorageOrder() {
+        binding.settingsStorageOrder.text = getStorageOrderText()
+        binding.settingsStorageOrderHolder.setOnClickListener {
+            ChangeStorageOrderDialog(this) {
+                binding.settingsStorageOrder.text = getStorageOrderText()
+            }
+        }
+    }
+
+    private fun getStorageOrderText() = config.storageOrder.joinToString(", ") { storageLabel(it) }
 
     private fun setupManageIncludedFolders() {
         if (isRPlus() && !isExternalStorageManager()) {
@@ -1368,6 +1381,7 @@ class SettingsActivity : SimpleActivity() {
                 put(SMB_HIDDEN_FOLDERS, Gson().toJson(config.smbHiddenFolders.sorted()))
                 put(SHOW_HIDDEN_MEDIA, config.showHiddenMedia)
                 put(FILE_LOADING_PRIORITY, config.fileLoadingPriority)
+                put(STORAGE_ORDER, StorageOrder.serialize(config.storageOrder))
                 put(AUTOPLAY_VIDEOS, config.autoplayVideos)
                 put(REMEMBER_LAST_VIDEO_POSITION, config.rememberLastVideoPosition)
                 put(LOOP_VIDEOS, config.loopVideos)
@@ -1579,6 +1593,7 @@ class SettingsActivity : SimpleActivity() {
                 SMB_HIDDEN_FOLDERS -> config.addSmbHiddenFolders(parseExportedHiddenFolders(value.toString()))
                 SHOW_HIDDEN_MEDIA -> config.showHiddenMedia = value.toBoolean()
                 FILE_LOADING_PRIORITY -> config.fileLoadingPriority = value.toInt()
+                STORAGE_ORDER -> config.storageOrder = StorageOrder.parse(value.toString())
                 AUTOPLAY_VIDEOS -> config.autoplayVideos = value.toBoolean()
                 REMEMBER_LAST_VIDEO_POSITION -> config.rememberLastVideoPosition = value.toBoolean()
                 LOOP_VIDEOS -> config.loopVideos = value.toBoolean()
