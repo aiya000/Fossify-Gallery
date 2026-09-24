@@ -133,6 +133,37 @@ else
     fail "the folder box does not name $FIXTURE_LOCAL_DESTINATION_NAME (view tree in $dialog)"
 fi
 
+# #132: the keyboard stays down until the name box is tapped. Up, it covers the extension box
+# and the buttons, and what is usually done here -- take the proposed name, or pick a folder --
+# needs no typing. Waited over rather than read once, so that a keyboard still sliding in is
+# not taken for one that stayed down
+if wait_for_keyboard 4; then
+    fail "the on-screen keyboard came up with the dialog (see 99-dialog.png)"
+else
+    pass "and the on-screen keyboard stays down"
+fi
+
+step "the name box, tapped, still brings the keyboard up"
+if point="$(python3 "$DRIVE_DIR/ui.py" "$dialog" --resource-id "filename_value")"; then
+    # shellcheck disable=SC2086
+    "${ADB[@]}" shell input tap $point
+else
+    fail "the name box is not on screen to tap (view tree in $dialog)"
+fi
+
+if wait_for_keyboard 6; then
+    pass "a tap on the name box brings the keyboard up"
+else
+    fail "the name box was tapped and no keyboard came up"
+    screenshot "99-no-keyboard"
+fi
+
+# the keyboard up covers the buttons; the first back takes only the keyboard down
+if keyboard_is_shown; then
+    "${ADB[@]}" shell input keyevent KEYCODE_BACK
+    sleep 1
+fi
+
 ui_tap_exact_text "Cancel" "99-cancel" || true
 sleep 1
 

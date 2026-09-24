@@ -71,6 +71,33 @@ require_emulator() {
 
 app_stop() { "${ADB[@]}" shell am force-stop "$FIXTURE_PACKAGE"; }
 
+# Whether the on-screen keyboard is up. The keyboard is a window of its own, and a uiautomator
+# dump of the app does not see it. What is read is the window manager's inset for the keyboard,
+# the strip of screen it actually takes: `InsetsSource ... type=ime ... visible=true`.
+#
+# Not `mInputShown` of `dumpsys input_method`, which was the first try: on the Android 15
+# emulator it said false with the keyboard plainly on the screenshot, and a check of it went
+# green on the build that raises the keyboard (#132)
+keyboard_is_shown() {
+    local n="${KEYBOARD_PROBE_N:-0}"
+    KEYBOARD_PROBE_N=$((n + 1))
+    "${ADB[@]}" shell dumpsys window | tr -d '\r' > "$RUN_DIR/window-$n.txt"
+    rg -q -- 'InsetsSource id=\S+ type=ime .* visible=true' "$RUN_DIR/window-$n.txt"
+}
+
+# the same, waited for: the keyboard slides in, so a tap is not answered at once
+wait_for_keyboard() {
+    local seconds="${1:-6}" waited=0
+    while [ "$waited" -lt "$seconds" ]; do
+        if keyboard_is_shown; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 1
+}
+
 storage_label_of() {
     case "$1" in
         2) echo "pCloud" ;;
