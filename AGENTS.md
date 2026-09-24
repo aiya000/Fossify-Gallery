@@ -24,6 +24,7 @@
 | 台本でタップしたいメニューの文言が、アプリの `strings.xml` に無い | commons の AAR が持っている。ビルド成果物のマージ済みリソースをキー名で引いた | [agents/tests/the-menu-text-lives-in-the-commons-aar.md](./agents/tests/the-menu-text-lives-in-the-commons-aar.md) |
 | 共有のスキャンが、固定データより十数ファイル多く数える。台本は何も足していない | samba の `recycle` モジュールが消したファイルを `.deleted/` にためていた。compose で外して、フォルダを消した | [agents/tests/the-fixture-samba-kept-every-deleted-file.md](./agents/tests/the-fixture-samba-kept-every-deleted-file.md) |
 | 台本でトーストが出るのを待ったのに、アプリは出しているのに dump に一度も入らない | 2 秒のトーストは dump の 1 周より短い。他アプリの窓が前に出ることを `mCurrentFocus` で待つ形にした。chooser はタイトルではなく中身で見る | [agents/tests/a-toast-is-gone-before-the-dump.md](./agents/tests/a-toast-is-gone-before-the-dump.md) |
+| 台本で「従量制の回線（モバイル回線）にいるとき」の振る舞いを見たい | エミュレータの Wi-Fi を `svc wifi disable` で切ると携帯回線に落ちて従量制になる。ホストにはそのまま届く。出口で必ず戻す | [agents/tests/mobile-data-on-the-emulator.md](./agents/tests/mobile-data-on-the-emulator.md) |
 | ある機能が端末にはあって共有（や pCloud）に無い。忘れているのか、わざとなのか分からない | #107 で全部読み直して分けた。わざと違えてあるものは表にした。載っていなければ抜けなので、`MediaStorage` の capability に乗せて直す | [agents/storage/what-each-storage-does-differently-on-purpose.md](./agents/storage/what-each-storage-does-differently-on-purpose.md) |
 
 ### この索引に足すこと

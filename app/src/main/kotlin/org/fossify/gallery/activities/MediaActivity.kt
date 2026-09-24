@@ -95,6 +95,9 @@ import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.RescanOnMobileData
+import org.fossify.gallery.helpers.RescanScope
+import org.fossify.gallery.helpers.RescanVerdict
 import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
@@ -775,16 +778,39 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // Runs once per screen, after the cached media is up, so the scan never keeps the user
     // waiting. The folder is refreshed from pCloud when the setting asks for it and the
     // folder's own throttle allows it; only this folder, not its subfolders
+    //
+    // On mobile data with "unmetered only" on, the question of #124 is put first -- once the
+    // throttle has said the folder is due, so that it is not asked for nothing
     private fun rescanPCloudFolderIfDue() {
-        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn || !PCloudSyncPolicy(this).rescanOnFolderOpen) {
+        if (mDidRescanPCloudFolder || !mPath.isPCloudPath() || !config.isPCloudLoggedIn) {
+            return
+        }
+
+        val verdict = PCloudSyncPolicy(this).rescanOnFolderOpen
+        if (verdict == RescanVerdict.SKIP) {
             return
         }
 
         mDidRescanPCloudFolder = true
         ensureBackgroundThread {
             val due = getPCloudFoldersDueForRescan(listOf(mPath))
-            if (due.isNotEmpty()) {
-                rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } }
+            if (due.isEmpty()) {
+                return@ensureBackgroundThread
+            }
+
+            val rescan = { rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } } }
+            if (verdict == RescanVerdict.RUN) {
+                rescan()
+                return@ensureBackgroundThread
+            }
+
+            runOnUiThread {
+                RescanOnMobileData.askThen(
+                    this,
+                    mapOf(RemoteScanScheduler.Storage.PCLOUD to RescanScope.FOLDER),
+                    getString(R.string.rescan_on_mobile_data_pcloud_folder),
+                    rescan
+                )
             }
         }
     }
@@ -793,12 +819,30 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // one folder was last walked, and a single listing is one request, so it is not worth a
     // column of its own -- the whole-share interval is what holds the scans back
     private fun rescanSmbFolderIfDue() {
-        if (mDidRescanSmbFolder || !mPath.isSmbPath() || !config.isSmbConfigured || !SmbSyncPolicy(this).rescanOnFolderOpen) {
+        if (mDidRescanSmbFolder || !mPath.isSmbPath() || !config.isSmbConfigured) {
+            return
+        }
+
+        val verdict = SmbSyncPolicy(this).rescanOnFolderOpen
+        if (verdict == RescanVerdict.SKIP) {
             return
         }
 
         mDidRescanSmbFolder = true
-        rescanSmbFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } }
+        val rescan = { rescanSmbFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getMedia() } } }
+        if (verdict == RescanVerdict.RUN) {
+            rescan()
+            return
+        }
+
+        runOnUiThread {
+            RescanOnMobileData.askThen(
+                this,
+                mapOf(RemoteScanScheduler.Storage.SMB to RescanScope.FOLDER),
+                getString(R.string.rescan_on_mobile_data_smb_folder),
+                rescan
+            )
+        }
     }
 
     // Fills in the lengths of the videos in this folder, which the scan cannot know: it walks

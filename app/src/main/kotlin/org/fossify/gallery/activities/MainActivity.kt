@@ -142,6 +142,9 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.RescanOnMobileData
+import org.fossify.gallery.helpers.RescanScope
+import org.fossify.gallery.helpers.RescanVerdict
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.RemoteScanScheduler
@@ -269,6 +272,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             checkRecycleBinItems()
             startNewPhotoFetcher()
             mShouldRescanPCloudOnLaunch = true
+
+            // a yes to a rescan on mobile data lasts one run of the app: the next launch is a
+            // new trip, and asks again (#124)
+            RescanOnMobileData.forget()
         }
 
         mIsPickImageIntent = isPickImageIntent(intent)
@@ -508,9 +515,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // The pCloud folders assigned to the group, or to a group inside it, are refreshed one by
     // one when the setting asks for it, each under its own throttle. The cached folders are on
-    // screen before this runs
+    // screen before this runs.
+    //
+    // On mobile data with "unmetered only" on, the question of #124 is put first -- after the
+    // throttle has said which folders are due, so that it names how many, and is not asked at
+    // all when none is
     private fun rescanPCloudFoldersOfGroupIfDue(groupId: Long?) {
-        if (groupId == null || !isPCloudShown() || !PCloudSyncPolicy(this).rescanOnGroupOpen) {
+        if (groupId == null || !isPCloudShown()) {
+            return
+        }
+
+        val verdict = PCloudSyncPolicy(this).rescanOnGroupOpen
+        if (verdict == RescanVerdict.SKIP) {
             return
         }
 
@@ -522,8 +538,23 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 .toList()
 
             val due = getPCloudFoldersDueForRescan(members)
-            if (due.isNotEmpty()) {
-                rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getDirectories() } }
+            if (due.isEmpty()) {
+                return@ensureBackgroundThread
+            }
+
+            val rescan = { rescanPCloudFolders(due, reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO) { runOnUiThread { getDirectories() } } }
+            if (verdict == RescanVerdict.RUN) {
+                rescan()
+                return@ensureBackgroundThread
+            }
+
+            runOnUiThread {
+                RescanOnMobileData.askThen(
+                    this,
+                    mapOf(RemoteScanScheduler.Storage.PCLOUD to RescanScope.GROUP),
+                    getString(R.string.rescan_on_mobile_data_pcloud_group, due.size),
+                    rescan
+                )
             }
         }
     }
@@ -886,30 +917,77 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // Only pCloud's scan answers for it. A diff sync is seconds and ends by building the list
     // again, so it is a fetch this screen waits on; the share's walk is not, and never was. That
     // runs in a foreground service which outlives this screen and carries its own notification,
-    // which is the same reason rescanSmbManually() has never raised the spinner either
+    // which is the same reason rescanSmbManually() has never raised the spinner either.
+    //
+    // A storage the network alone holds back (ASK, see RescanVerdict) is asked about instead of
+    // being skipped without a word (#124): one dialog for whichever of the two it is, or both
     private fun startRemoteScans(event: RemoteRefresh): Boolean {
         val pCloudPolicy = PCloudSyncPolicy(this)
-        val pCloudAsked = when (event) {
-            RemoteRefresh.STORAGE_SWITCH -> pCloudPolicy.rescanOnStorageSwitch && pCloudPolicy.isFullScanDue()
-            RemoteRefresh.PULL -> pCloudPolicy.rescanOnPullToRefresh
+        val pCloud = when {
+            !isPCloudShown() -> RescanVerdict.SKIP
+            event == RemoteRefresh.PULL -> pCloudPolicy.rescanOnPullToRefresh
+            pCloudPolicy.isFullScanDue() -> pCloudPolicy.rescanOnStorageSwitch
+            else -> RescanVerdict.SKIP
         }
 
         val smbPolicy = SmbSyncPolicy(this)
-        val smbAsked = when (event) {
-            RemoteRefresh.STORAGE_SWITCH -> smbPolicy.rescanOnStorageSwitch && smbPolicy.isFullScanDue()
-            RemoteRefresh.PULL -> smbPolicy.rescanOnPullToRefresh
+        val smb = when {
+            !isSmbShown() -> RescanVerdict.SKIP
+            event == RemoteRefresh.PULL -> smbPolicy.rescanOnPullToRefresh
+            smbPolicy.isFullScanDue() -> smbPolicy.rescanOnStorageSwitch
+            else -> RescanVerdict.SKIP
         }
 
-        if (isSmbShown() && smbAsked) {
+        if (smb == RescanVerdict.RUN) {
             rescanSmb(reportCounts = false, priority = event.priority)
         }
 
-        if (!isPCloudShown() || !pCloudAsked) {
+        if (pCloud == RescanVerdict.RUN) {
+            rescanPCloud(reportCounts = false, priority = event.priority) { runOnUiThread { getDirectories() } }
+        }
+
+        val pCloudRanOnAnEarlierYes = askBeforeRescansOnMobileData(smb = smb == RescanVerdict.ASK, pCloud = pCloud == RescanVerdict.ASK, priority = event.priority)
+        return pCloud == RescanVerdict.RUN || pCloudRanOnAnEarlierYes
+    }
+
+    // The question of #124 for the folder list, for the storages on screen that the network
+    // alone is holding back. A yes runs their scans as the gesture would have, the spinner going
+    // up with pCloud's, since the list is then waiting on it after all. Says whether pCloud's
+    // scan was started right here, on a yes already given this run -- the spinner is then the
+    // gesture's to raise, the same as for a scan that needed no question
+    private fun askBeforeRescansOnMobileData(smb: Boolean, pCloud: Boolean, priority: Int): Boolean {
+        if (!smb && !pCloud) {
             return false
         }
 
-        rescanPCloud(reportCounts = false, priority = event.priority) { runOnUiThread { getDirectories() } }
-        return true
+        val message = when {
+            smb && pCloud -> R.string.rescan_on_mobile_data_both
+            smb -> R.string.rescan_on_mobile_data_smb
+            else -> R.string.rescan_on_mobile_data_pcloud
+        }
+
+        val asked = buildMap {
+            if (smb) {
+                put(RemoteScanScheduler.Storage.SMB, RescanScope.WHOLE)
+            }
+
+            if (pCloud) {
+                put(RemoteScanScheduler.Storage.PCLOUD, RescanScope.WHOLE)
+            }
+        }
+
+        val ranAtOnce = RescanOnMobileData.askThen(this, asked, getString(message)) {
+            if (smb) {
+                rescanSmb(reportCounts = false, priority = priority)
+            }
+
+            if (pCloud) {
+                binding.directoriesRefreshLayout.isRefreshing = true
+                rescanPCloud(reportCounts = false, priority = priority) { runOnUiThread { getDirectories() } }
+            }
+        }
+
+        return pCloud && ranAtOnce
     }
 
     private fun storageIconRes(storageFilter: Int) = when (storageFilter) {

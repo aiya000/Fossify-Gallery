@@ -190,6 +190,17 @@ at afterwards.
   pCloud was on screen, with no policy asked and so no setting to turn it off with. Whether the app
   fetched is read off the requests the stub was sent, which is pCloud's own answer rather than the
   app's
+- **`92-ask-before-a-rescan-on-mobile-data.sh`** — #124: on mobile data, with "unmetered only"
+  on, a rescan the user started with a gesture asks first instead of being skipped without a
+  word. The network is the emulator's own: with its Wi-Fi off, the emulated mobile network takes
+  over, which the system counts as metered, and the host is still reachable over it -- so a yes
+  has something to walk. The pull is driven against the share, since a walk of a thousand
+  folders is what the setting is there to keep off mobile data, and the scan starting is the
+  witness; the folder half is driven against the pCloud stub, because a folder to open needs a
+  list with rows in it, which is a second on the stub and a five-minute walk on the share. It
+  pins that No walks nothing, that Yes walks exactly what the question named (the whole share,
+  or this one folder), that a yes is remembered for the next pull on the same trip and a no is
+  not, and that on Wi-Fi nothing is asked at all. The Wi-Fi is put back on the way out
 - **`98-save-as-out-of-the-editor.sh`** — #105: the editor's "Save as" asks where and under what
   name on every storage, and sends the edit there. A photo of the share is edited twice, and each
   edit saved under a new name somewhere else: into another folder of the share, read off

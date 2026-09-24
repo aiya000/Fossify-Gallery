@@ -252,7 +252,8 @@ const val SMB_PASSWORD = "smb_password"
 const val SMB_DOMAIN = "smb_domain"
 
 // when the SMB cache is refreshed from the share, mirroring the pCloud rescan settings. A share
-// that is not reachable has to fail fast, so a scan is never started on a metered connection
+// that is not reachable has to fail fast, so an automatic scan is never started on a metered
+// connection, and one a gesture starts asks first (#124, see RescanVerdict)
 const val SMB_RESCAN_ON_LAUNCH = "smb_rescan_on_launch"
 const val SMB_RESCAN_ON_STORAGE_SWITCH = "smb_rescan_on_storage_switch"
 const val SMB_RESCAN_ON_FOLDER_OPEN = "smb_rescan_on_folder_open"
