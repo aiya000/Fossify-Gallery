@@ -847,6 +847,46 @@ fun Context.rescanSmb(reportCounts: Boolean, priority: Int) {
     )
 }
 
+// "Find new folders" (#127): the folders of a remote storage that this app has no row for yet,
+// found and put in the folder list without the full rescan a share of a thousand folders needs.
+// The share is walked listing every folder but reading only the new ones; pCloud is asked for
+// its diff. Queued like every scan, ranked with the menu's rescans, and like them never asked
+// of the network policy. The share's result reaches the screen through the service's
+// listeners, pCloud's through [onDone]
+fun Context.findNewSmbFolders(priority: Int) {
+    if (!config.isSmbConfigured) {
+        return
+    }
+
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.SMB,
+            priority = priority,
+            reportCounts = true,
+            newFoldersOnly = true
+        )
+    )
+}
+
+fun Context.findNewPCloudFolders(priority: Int, onDone: () -> Unit = {}) {
+    if (!config.isPCloudLoggedIn) {
+        onDone()
+        return
+    }
+
+    RemoteScanScheduler.submit(
+        this,
+        RemoteScanScheduler.Request(
+            storage = RemoteScanScheduler.Storage.PCLOUD,
+            priority = priority,
+            reportCounts = true,
+            newFoldersOnly = true,
+            onDone = onDone
+        )
+    )
+}
+
 // Refreshes the given folders of the share one by one, non-recursively; the counts toast sums
 // them up. Queued like every other scan, so it waits behind a walk of the whole share instead of
 // being dropped while one runs

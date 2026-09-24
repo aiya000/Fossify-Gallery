@@ -53,12 +53,17 @@ object RemoteScanScheduler {
     // a request that was preempted or failed does not call it, matching what the old
     // runPCloudScan() did. It is dropped as soon as the request leaves the queue, so an activity
     // captured in one is held no longer than the scan it was waiting for.
+    //
+    // [newFoldersOnly] is "Find new folders" (#127): the whole storage walked for the folders
+    // the cache has no row for, and only those read; a known folder is neither re-read nor
+    // dropped. It is a whole-storage request, but not the same work as a rescan
     class Request(
         val storage: Storage,
         val priority: Int,
         val reportCounts: Boolean = false,
         val folders: List<String> = emptyList(),
         val full: Boolean = false,
+        val newFoldersOnly: Boolean = false,
         val onDone: (() -> Unit)? = null,
     ) {
         val isWholeStorage get() = folders.isEmpty()
@@ -67,7 +72,7 @@ object RemoteScanScheduler {
         // is not worth queueing behind the first -- it only has to make sure the first is not
         // ranked below what the newcomer was asking for
         fun isSameWorkAs(other: Request) =
-            storage == other.storage && isWholeStorage && other.isWholeStorage && full == other.full
+            storage == other.storage && isWholeStorage && other.isWholeStorage && full == other.full && newFoldersOnly == other.newFoldersOnly
     }
 
     private val lock = Any()
@@ -102,7 +107,17 @@ object RemoteScanScheduler {
                 // so that a manual rescan is not left sitting behind at an automatic scan's place
                 if (request.priority > existing.priority) {
                     queue.remove(existing)
-                    insert(Request(existing.storage, request.priority, existing.reportCounts, existing.folders, existing.full, existing.onDone))
+                    insert(
+                        Request(
+                            storage = existing.storage,
+                            priority = request.priority,
+                            reportCounts = existing.reportCounts,
+                            folders = existing.folders,
+                            full = existing.full,
+                            newFoldersOnly = existing.newFoldersOnly,
+                            onDone = existing.onDone
+                        )
+                    )
                 }
             } else {
                 insert(request)
@@ -175,6 +190,10 @@ object RemoteScanScheduler {
     private fun describe(request: Request) = buildString {
         append(request.storage)
         append(if (request.isWholeStorage) " whole" else " ${request.folders.size} folders")
+        if (request.newFoldersOnly) {
+            append(", new folders only")
+        }
+
         append(" at priority ${request.priority}")
     }
 }

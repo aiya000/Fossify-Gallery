@@ -110,6 +110,8 @@ import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
 import org.fossify.gallery.extensions.effectiveStorageFilter
+import org.fossify.gallery.extensions.findNewPCloudFolders
+import org.fossify.gallery.extensions.findNewSmbFolders
 import org.fossify.gallery.extensions.getPCloudFoldersDueForRescan
 import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
@@ -617,6 +619,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 }
                 findItem(R.id.rescan_pcloud).isVisible = config.isPCloudLoggedIn
                 findItem(R.id.rescan_smb).isVisible = config.isSmbConfigured
+                findItem(R.id.find_new_folders).isVisible = config.isPCloudLoggedIn || config.isSmbConfigured
                 // shown for every group, not only for one that holds a folder of the share: a
                 // group does not say on its face what is inside it, and a menu item that comes
                 // and goes for a reason nobody can see is worse than one that reports nothing
@@ -669,6 +672,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.storage_filter -> showStorageFilterDialog()
                 R.id.rescan_pcloud -> rescanPCloudManually()
                 R.id.rescan_smb -> rescanSmbManually()
+                R.id.find_new_folders -> findNewFolders()
                 R.id.read_smb_durations_group -> readSmbVideoDurationsOfGroup()
                 R.id.open_camera -> launchCamera()
                 R.id.show_all -> showAllMedia()
@@ -1248,6 +1252,17 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 }
             }
         }
+    }
+
+    // "Find new folders" (#127): the folders of the remote storages that this app has no row for
+    // yet, found and put in the list without the full rescan a share of a thousand folders
+    // needs. Both remote storages that are set up, not only the one on screen: what is new is
+    // the question, wherever it is. The share's result comes back through the service's
+    // listener like a rescan's; the spinner is not raised, for the same reason a rescan's is not
+    private fun findNewFolders() {
+        toast(R.string.finding_new_folders)
+        findNewSmbFolders(priority = RemoteScanScheduler.PRIORITY_MANUAL)
+        findNewPCloudFolders(priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getDirectories() } }
     }
 
     // the menu item lists the whole account again: it is the way out when the diff sync

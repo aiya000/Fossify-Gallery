@@ -139,6 +139,15 @@
     <string name="smb_rescanning">Scanning the network share…</string>
     <string name="smb_rescan_done">Network share: %1$d folders, %2$d files</string>
     <string name="smb_rescan_done_with_skipped">Network share: %1$d folders, %2$d files. %3$d folders could not be read and were left as they were.</string>
+    <!-- #127: the folders the app has no row for yet, found without a full rescan -->
+    <string name="find_new_folders">Find new folders</string>
+    <string name="finding_new_folders">Looking for new folders…</string>
+    <string name="smb_finding_new_folders">Looking for new folders on the network share…</string>
+    <string name="smb_new_folders_progress">Network share: %1$d new folders so far</string>
+    <string name="smb_new_folders_done">Network share: %1$d new folders, %2$d files</string>
+    <string name="smb_new_folders_done_with_skipped">Network share: %1$d new folders, %2$d files. %3$d folders could not be read and were left as they were.</string>
+    <string name="pcloud_finding_new_folders">Looking for new folders on pCloud…</string>
+    <string name="pcloud_new_folders_done">pCloud: %1$d new folders, %2$d files</string>
     <string name="smb_scan_failed">Could not scan the network share. Its media was left as it was.</string>
     <string name="smb_scan_channel">Scanning the network share</string>
     <string name="smb_scan_progress">Network share: %1$d folders, %2$d files so far</string>

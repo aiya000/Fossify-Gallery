@@ -238,6 +238,25 @@ class RemoteScanSchedulerTest {
         assertEquals(2, generateSequence { startNext() }.count())
     }
 
+    // a search for new folders walks the whole storage too, but reads and drops nothing a rescan
+    // would, so neither stands in for the other (#127)
+    @Test
+    fun `a search for new folders and a whole rescan are queued separately`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL))
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL, newFoldersOnly = true))
+
+        assertEquals(2, generateSequence { startNext() }.count())
+    }
+
+    // and two searches for new folders are one search
+    @Test
+    fun `a second search for new folders is not queued behind the first`() {
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL, newFoldersOnly = true))
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL, newFoldersOnly = true))
+
+        assertEquals(1, generateSequence { startNext() }.count())
+    }
+
     // a folder is not the storage, so it queues behind a whole-storage walk rather than replacing it
     @Test
     fun `a single folder does not stand in for a whole storage scan`() {

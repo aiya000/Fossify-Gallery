@@ -84,6 +84,11 @@
         android:title="@string/smb_rescan"
         app:showAsAction="never" />
     <item
+        android:id="@+id/find_new_folders"
+        android:showAsAction="never"
+        android:title="@string/find_new_folders"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/read_smb_durations_group"
         android:showAsAction="never"
         android:title="@string/smb_read_durations_group"

@@ -159,10 +159,18 @@ class RemoteScanService : Service() {
             return false
         }
 
-        showProgress(buildNotification(getString(R.string.pcloud_rescanning), null))
+        showProgress(buildNotification(getString(if (request.newFoldersOnly) R.string.pcloud_finding_new_folders else R.string.pcloud_rescanning), null))
         var wrote = false
         try {
-            if (request.isWholeStorage) {
+            if (request.newFoldersOnly) {
+                val result = scanner.scanNewFolders()
+                // said even when the counts were not asked for, like the share's walk: the log
+                // is what a script reads, and the question was "what is new"
+                Log.i(TAG, "Found ${result.folderCount} new folders on pCloud, ${result.mediaCount} files")
+                if (request.reportCounts) {
+                    showResult(getString(R.string.pcloud_new_folders_done, result.folderCount, result.mediaCount))
+                }
+            } else if (request.isWholeStorage) {
                 val result = if (request.full) scanner.scanAll() else scanner.sync()
                 if (request.reportCounts) {
                     showResult(getString(R.string.pcloud_rescan_done, result.folderCount, result.mediaCount))
@@ -218,10 +226,24 @@ class RemoteScanService : Service() {
             return false
         }
 
-        showProgress(buildNotification(getString(R.string.smb_rescanning), null))
+        showProgress(buildNotification(getString(if (request.newFoldersOnly) R.string.smb_finding_new_folders else R.string.smb_rescanning), null))
         var wrote = false
         try {
-            if (request.isWholeStorage) {
+            if (request.newFoldersOnly) {
+                val result = scanner.scanNewFolders { newFolders, _, path -> showNewFoldersProgress(newFolders, path) }
+                Log.i(
+                    TAG,
+                    "Found ${result.folderCount} new folders on the share, ${result.mediaCount} files, ${result.skippedFolderCount} folders skipped"
+                )
+
+                when {
+                    result.skippedFolderCount > 0 -> showResult(
+                        getString(R.string.smb_new_folders_done_with_skipped, result.folderCount, result.mediaCount, result.skippedFolderCount)
+                    )
+
+                    request.reportCounts -> showResult(getString(R.string.smb_new_folders_done, result.folderCount, result.mediaCount))
+                }
+            } else if (request.isWholeStorage) {
                 val result = scanner.scanAll { folders, media, path -> showProgress(folders, media, path) }
                 // a scan that went through says so even when the counts were not asked for. How
                 // one ended is otherwise only visible in what it wrote, which is no help when the
@@ -296,14 +318,20 @@ class RemoteScanService : Service() {
         }
     }
 
-    private fun showProgress(folderCount: Int, mediaCount: Int, path: String) {
+    private fun showProgress(folderCount: Int, mediaCount: Int, path: String) =
+        showProgressNowAndThen(getString(R.string.smb_scan_progress, folderCount, mediaCount), path)
+
+    private fun showNewFoldersProgress(newFolderCount: Int, path: String) =
+        showProgressNowAndThen(getString(R.string.smb_new_folders_progress, newFolderCount), path)
+
+    private fun showProgressNowAndThen(text: String, path: String) {
         val now = System.currentTimeMillis()
         if (now - lastProgressAt < PROGRESS_INTERVAL_MILLIS) {
             return
         }
 
         lastProgressAt = now
-        showProgress(buildNotification(getString(R.string.smb_scan_progress, folderCount, mediaCount), path))
+        showProgress(buildNotification(text, path))
     }
 
     private fun showProgress(notification: Notification) {
