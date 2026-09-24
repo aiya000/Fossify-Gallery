@@ -216,6 +216,14 @@ at afterwards.
   pins that No walks nothing, that Yes walks exactly what the question named (the whole share,
   or this one folder), that a yes is remembered for the next pull on the same trip and a no is
   not, and that on Wi-Fi nothing is asked at all. The Wi-Fi is put back on the way out
+- **`93-a-pull-inside-a-group.sh`** — a pull on the folder list reaches what is on screen. At the
+  top it walks the whole share and lists the whole pCloud account; inside the group Trips, which
+  the seed is given a pCloud folder for (`FIXTURE_GROUP_EXTRA_MEMBER`), it rescans the share's two
+  folders of the group one by one without a walk, lists only the pCloud folder of the group and
+  never asks the account for its diff, and this device's recheck goes through the group's three
+  folders only. The share is read off the app's log, pCloud off the stub's request log. The two
+  remote scans share one queue, so pCloud's comes after the walk and the script waits for it.
+  Red with the pull inside the group handing on no folders: the share is walked whole
 - **`98-save-as-out-of-the-editor.sh`** — #105: the editor's "Save as" asks where and under what
   name on every storage, and sends the edit there. A photo of the share is edited twice, and each
   edit saved under a new name somewhere else: into another folder of the share, read off
