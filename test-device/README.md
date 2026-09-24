@@ -171,6 +171,12 @@ at afterwards.
   which the app is signed in to pCloud for, so that every row is there. Where the list is gets read off the mark
   in the storage menu, not off the folders on screen — with nothing scanned, both storages draw
   the same empty grid, and a check that cannot tell them apart passes whatever the app does
+- **`81-choose-the-storage-order.sh`** — #128, second step: "Storage order" in the settings lists
+  all four storages in the default order, All storages is dragged by its handle from the top to
+  the bottom, and after OK both the settings row and the storage menu of the folder list read
+  pCloud, this device, the network share, All storages. The menu is the witness that matters: a
+  dialog that only reordered itself would pass everything before it. The drag is held and moved
+  in steps, since ItemTouchHelper swaps a row only once the dragged one passes the next one's middle
 - **`83-a-search-and-a-mixed-selection.sh`** — #107: two places the share was left out of a rule
   the other storages had. A video of the share tapped in the search results opens in the app's
   own player rather than being handed to the system player as a pseudo path, which is what the

@@ -276,6 +276,11 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(STORAGE_FILTER, STORAGE_FILTER_LOCAL)
         set(storageFilter) = prefs.edit().putInt(STORAGE_FILTER, storageFilter).apply()
 
+    // the order the storages stand in, all four of them whether set up or not; see StorageOrder
+    var storageOrder: List<Int>
+        get() = StorageOrder.parse(prefs.getString(STORAGE_ORDER, null))
+        set(storageOrder) = prefs.edit().putString(STORAGE_ORDER, StorageOrder.serialize(storageOrder)).apply()
+
     // the network is never touched for pCloud unless one of these says so, the list always
     // comes from the cache first. The defaults follow the plan in issue #1; the launch one is
     // on since a rescan became a diff sync, which is cheap (issue #11)
