@@ -122,6 +122,65 @@ class SmbScanner(private val context: Context) {
         return Result(directories.size, media.size)
     }
 
+    // Walks the whole share the way scanAll() does, but reads only the folders the cache has no
+    // row for (#127). A known folder is listed to find the folders under it and nothing else:
+    // its media are not read again, its row is not rewritten, and nothing is dropped. So the
+    // share is asked one listing per folder, as a full walk is, and the cache is left as it was
+    // except for the folders that are new -- each one stored as it is found, so that it is in
+    // the folder list before the walk is over. A folder hidden in this app has a row, so it is
+    // not new; the recycle bin is left out of the walk like everywhere else. A folder that
+    // cannot be listed is skipped the way scanAll() skips it.
+    //
+    // The counts are the new folders and their media. smbLastFullScanAt is not moved: this was
+    // not a walk that could have dropped anything, so the automatic scans are still owed one
+    fun scanNewFolders(onProgress: (newFolderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
+        val known = context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).toHashSet()
+        val media = ArrayList<Medium>()
+        val directories = ArrayList<Directory>()
+        val collector = Collector(media, directories)
+        val skippedPaths = HashSet<String>()
+        var newFolderCount = 0
+        var mediaCount = 0
+
+        fun walk(path: String, depth: Int) {
+            throwIfAborted()
+            val entries = try {
+                listWithOneRetry(path)
+            } catch (e: Exception) {
+                throwIfAborted()
+                if (depth == 0 || !SmbClient.isConnected()) {
+                    throw e
+                }
+
+                Log.w(TAG, "Skipping \"$path\", a folder of the share that could not be listed", e)
+                skippedPaths.add(path)
+                return
+            }
+
+            if (path !in known) {
+                collector.collectOne(path, entries)
+                if (directories.isNotEmpty()) {
+                    storeFolder(path, media, directories)
+                    newFolderCount++
+                    mediaCount += media.size
+                }
+
+                media.clear()
+                directories.clear()
+            }
+
+            onProgress(newFolderCount, mediaCount, path)
+            if (depth >= MAX_DEPTH) {
+                return
+            }
+
+            entries.filter { it.isFolder && !isRecycleBinFolder(path, it) }.forEach { walk(childPathOf(path, it.name), depth + 1) }
+        }
+
+        walk(SMB_PATH_SCHEME, 0)
+        return Result(newFolderCount, mediaCount, skippedPaths.size)
+    }
+
     // the direct subfolders of a folder, for the folder pickers. Not cached: a picker is opened
     // rarely and a stale list of folders is worse there than a moment's wait
     fun listFolders(path: String): List<String> {

@@ -214,6 +214,19 @@ class PCloudScanner(private val context: Context) {
         return Result(folderCount, mediaCount)
     }
 
+    // The new folders of the account (#127): a diff sync, which is how pCloud says what changed
+    // and costs one call for nothing changed, and then the folders the cache has a row for now
+    // that it had none for before. A hidden folder has a row, so it is not new. A sync that
+    // falls back to listing the whole account counts the same way -- on a fresh account that
+    // makes every folder new, which is what it is. Blocks and throws like sync() does
+    fun scanNewFolders(): Result {
+        val before = context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).toHashSet()
+        sync()
+
+        val newFolders = context.directoryDB.getAll().filter { it.path.startsWith(PCLOUD_PATH_SCHEME) && it.path !in before }
+        return Result(newFolders.size, newFolders.sumOf { it.mediaCnt })
+    }
+
     // Applies one event to the cache, or notes the folder it touched for a listing. Answers
     // false when the event cannot be applied from what the cache knows. Events pCloud sends
     // about shares and the account are not about files and are passed over
