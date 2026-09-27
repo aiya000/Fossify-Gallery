@@ -165,6 +165,14 @@ at afterwards.
   `run-as`; and the device's Carried keeps its file through the copies and gives it up to the
   move. Red before the fix: the OK of "Copy to" picked nothing, and inside a group said that a
   group holds folders, not files
+- **`73-a-folder-onto-pcloud-and-this-device.sh`** — the same OK onto the two other storages,
+  whose folders are made another way than the share's. Carried is copied with pCloud's chip:
+  the stub's account has to gain `Carried` with the photo byte for byte, and the stub has to
+  have been asked to make the folder first, pCloud uploading into a folder id that only a folder
+  that exists has. Then `FromTheCloud`, a folder of the stub, is copied with this device's chip
+  and has to land as `/sdcard/Pictures/FromTheCloud`. pCloud's transfers log nothing when they
+  go well, so the files arriving are what is waited for. Red with the folder not made on pCloud
+  first: the upload has nowhere to go
 - **`75-save-as-storages.sh`** — #92 and #71: "Save as" knows all three storages, and a photo of
   the share can be rotated and saved. The bug it was written for ended in an OS toast reading
   `java.io.FileNotFoundException: sm…`: the viewer handed the share's pseudo path to the file
