@@ -212,6 +212,7 @@
     <string name="smb_move_folder_to_recycle_bin_confirmation">Move the media in %1$s to the recycle bin and delete the folder? The media stay on the network share, and can be restored from this app for 30 days.</string>
     <string name="smb_already_exists">The network share already has a file or folder with that name</string>
     <string name="smb_no_remote_copy_to_share">A copy onto the network share can only come from this device, for now.</string>
+    <string name="smb_no_folder_copy_within_share">A folder of the network share cannot be copied within the share yet. Move it instead.</string>
     <string name="smb_transfer_channel">Network share copies</string>
     <string name="smb_transfer_started">Copying started, the notification shows its progress</string>
     <string name="smb_move_started">Moving started, the notification shows its progress</string>

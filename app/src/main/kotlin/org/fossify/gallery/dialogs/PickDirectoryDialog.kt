@@ -3,6 +3,7 @@ package org.fossify.gallery.dialogs
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.InsetDrawable
+import android.os.Environment
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
@@ -25,6 +26,7 @@ import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.handleHiddenFolderPasswordProtection
 import org.fossify.commons.extensions.handleLockedFolderOpening
 import org.fossify.commons.extensions.hideKeyboard
+import org.fossify.commons.extensions.internalStoragePath
 import org.fossify.commons.extensions.isGone
 import org.fossify.commons.extensions.isInDownloadDir
 import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
@@ -51,6 +53,7 @@ import org.fossify.gallery.extensions.getSortedDirectories
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
+import org.fossify.gallery.helpers.FolderPlacement
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
@@ -58,8 +61,10 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
+import org.fossify.gallery.helpers.placeFolder
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
+import java.io.File
 
 // a sentence of guidance wants more than the two lines a snackbar gives it by default
 private const val SNACKBAR_MAX_LINES = 5
@@ -79,6 +84,11 @@ private const val SNACKBAR_MAX_LINES = 5
  * [isCopyOperation] says which of the two a copy/move destination is being picked for. It is what
  * tells a folder that can be copied into from one that can be moved into, which is not the same
  * thing on the network share (#28); it means nothing when [isPickingCopyMoveDestination] is off.
+ *
+ * [foldersToPlace] are folders of the folder list being copied or moved. With them, the OK at the
+ * top or inside a group takes the folders themselves there, on the storage the chips were
+ * showing, see [placeFolder]; [onFoldersPlaced] gets each folder with where it goes. A move that
+ * stays on the folders' own storage is still only a change of group, for [groupCallback]
  */
 class PickDirectoryDialog(
     val activity: BaseSimpleActivity,
@@ -92,6 +102,8 @@ class PickDirectoryDialog(
     navigateGroups: Boolean = false,
     val localDestinationOnly: Boolean = false,
     val isCopyOperation: Boolean = true,
+    val foldersToPlace: List<String> = emptyList(),
+    val onFoldersPlaced: ((List<Pair<String, FolderPlacement.Transfer>>) -> Unit)? = null,
     val groupCallback: ((groupId: Long?) -> Unit)? = null,
     val onCancelled: (() -> Unit)? = null,
     val callback: (path: String) -> Unit
@@ -172,16 +184,23 @@ class PickDirectoryDialog(
                     updateGroupHint()
                     if (isPickingGroup) {
                         alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                            groupCallback?.invoke(currentGroupId)
-                            alertDialog.dismiss()
+                            if (!placeFoldersHere()) {
+                                groupCallback?.invoke(currentGroupId)
+                                alertDialog.dismiss()
+                            }
                         }
                     } else {
-                        // OK picks nothing in this mode: a destination is a folder tapped in the
-                        // list, and a group is only walked into -- it holds folders, not files.
-                        // It used to close the dialog without picking anything, which looked like
-                        // a copy that quietly did nothing, so it says what to do instead and the
-                        // dialog stays where it is. Cancel is still how it is left
+                        // With files, OK picks nothing in this mode: a destination is a folder
+                        // tapped in the list, and a group is only walked into -- it holds
+                        // folders, not files. It used to close the dialog without picking
+                        // anything, which looked like a copy that quietly did nothing, so it says
+                        // what to do instead and the dialog stays where it is. Cancel is still
+                        // how it is left. With folders, the folders themselves go here
                         alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                            if (placeFoldersHere()) {
+                                return@setOnClickListener
+                            }
+
                             showPickerMessage(
                                 if (currentGroupId == null) {
                                     R.string.pick_a_destination_by_tapping
@@ -421,6 +440,56 @@ class PickDirectoryDialog(
             view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.maxLines = SNACKBAR_MAX_LINES
             show()
         }
+    }
+
+    // The OK with [foldersToPlace]: each folder goes to the top or into the opened group, on the
+    // storage the chips were showing. Answers false when the OK keeps its old meaning -- there
+    // are no folders, or a move stays on their storage and is only a change of group -- and
+    // true when it was answered here, by a transfer or by a refusal said on screen
+    private fun placeFoldersHere(): Boolean {
+        val onPlaced = onFoldersPlaced ?: return false
+        if (foldersToPlace.isEmpty()) {
+            return false
+        }
+
+        val deviceRoot = "${activity.internalStoragePath}/${Environment.DIRECTORY_PICTURES}"
+        // what the list knows, and what the device has on disk; a remote folder that the app
+        // has no row for is left to the transfer, which never writes over a file
+        val taken = allDirectories.mapTo(HashSet()) { it.path.trimEnd('/') }
+        val isTaken = { path: String -> path in taken || (!path.isPCloudPath() && !path.isSmbPath() && File(path).exists()) }
+        val placed = foldersToPlace.map { source ->
+            val placement = placeFolder(source, isCopyOperation, storageFilter, currentGroupId, deviceRoot, isTaken)
+            if (placement is FolderPlacement.Transfer) {
+                taken.add(placement.destination)
+            }
+            source to placement
+        }
+
+        val transfers = placed.mapNotNull { (source, placement) -> (placement as? FolderPlacement.Transfer)?.let { source to it } }
+        if (transfers.isEmpty()) {
+            return false
+        }
+
+        val refusal = transfers.firstNotNullOfOrNull { (source, transfer) ->
+            val from = MediaStorage.of(activity, source)
+            val to = MediaStorage.of(activity, transfer.destination)
+            when {
+                // pCloud straight onto the share, see MediaStorage.canTransferTo()
+                !from.canTransferTo(to) -> R.string.smb_no_remote_copy_to_share
+                // the share has no copy within itself, a copy there would be a move
+                isCopyOperation && from is MediaStorage.Smb && to is MediaStorage.Smb -> R.string.smb_no_folder_copy_within_share
+                else -> null
+            }
+        }
+
+        if (refusal != null) {
+            showPickerMessage(refusal)
+            return true
+        }
+
+        onPlaced(transfers)
+        dialog?.dismiss()
+        return true
     }
 
     private fun filterFolderListBySearchQuery(query: String) {

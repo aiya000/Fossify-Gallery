@@ -6,7 +6,7 @@ personal and needs nothing secret. A throwaway pCloud account would mean a token
 the repository, a network the run depends on, and an account whose state drifts between runs --
 and the thing under test is the app's path from a share to pCloud, not pCloud itself.
 
-What it serves is the slice PCloudApi calls: userinfo, diff, listfolder, uploadfile, getthumb,
+What it serves is the slice PCloudApi calls: userinfo, diff, listfolder, createfolder, uploadfile, getthumb,
 getfilelink and the download link that one hands out. Everything is backed by a directory on this
 machine, so a test can look at what arrived with plain `stat`, the way it looks at the share.
 
@@ -250,6 +250,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_thumb(params)
         elif method == "getfilelink":
             self.serve_file_link(params)
+        elif method == "createfolder":
+            self.serve_create_folder(params)
         else:
             self.send_refusal(RESULT_INVALID_REQUEST, "the stub does not answer %s" % method)
 
@@ -286,6 +288,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         recursive = params.get("recursive", "0") == "1"
         self.send_json({"result": 0, "metadata": folder_metadata(self.account, relative, recursive)})
+
+    # pCloud refuses a name that is already there with 2004, which is what the app is told when it
+    # makes a folder the account already has
+    def serve_create_folder(self, params):
+        parent = self.account.path_of_id(int(params.get("folderid", "0")))
+        name = params.get("name", "")
+        if parent is None or not name:
+            self.send_refusal(2005, "Directory does not exist.")
+            return
+
+        relative = os.path.join(parent, name) if parent else name
+        absolute = self.account.absolute(relative)
+        if os.path.exists(absolute):
+            self.send_refusal(2004, "File or folder alredy exists.")
+            return
+
+        os.makedirs(absolute)
+        metadata = folder_metadata(self.account, relative, False)
+        self.account.add_event("createfolder", metadata)
+        self.account.log("CREATED FOLDER %s" % relative)
+        self.send_json({"result": 0, "metadata": metadata})
 
     def serve_upload(self, params):
         folder = self.account.path_of_id(int(params.get("folderid", "0")))
