@@ -190,6 +190,8 @@
     <string name="smb_download_progress">動画を読み込んでいます: %1$s / %2$s</string>
     <string name="smb_download_progress_queue">動画を読み込んでいます (%1$d / %2$d): %3$s / %4$s</string>
     <string name="smb_download_videos">選択した動画を読み込む</string>
+    <string name="deselect_photos">写真の選択を解除</string>
+    <string name="deselect_videos">動画の選択を解除</string>
     <string name="smb_download_videos_confirmation">選択した動画のうち、まだ読み込んでいないものが %1$d 本（合計 %2$s）あります。\n共有から読み込みますか？ 選んだ順に、1 本ずつ読み込みます。</string>
     <string name="smb_download_videos_none">選択した動画は、すべて読み込み済みです。</string>
     <string name="smb_download_videos_no_videos">共有の動画が選択されていません。</string>
