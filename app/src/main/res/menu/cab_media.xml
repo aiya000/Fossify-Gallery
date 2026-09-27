@@ -137,4 +137,14 @@
         android:icon="@drawable/ic_select_all_vector"
         android:title="@string/select_all"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/cab_deselect_photos"
+        android:showAsAction="never"
+        android:title="@string/deselect_photos"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_deselect_videos"
+        android:showAsAction="never"
+        android:title="@string/deselect_videos"
+        app:showAsAction="never" />
 </menu>

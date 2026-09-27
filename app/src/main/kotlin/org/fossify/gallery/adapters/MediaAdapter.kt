@@ -82,6 +82,7 @@ import org.fossify.gallery.extensions.updateFavoritePaths
 import org.fossify.gallery.extensions.withLocalMediaFile
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.positionsToDeselect
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
@@ -262,6 +263,9 @@ class MediaAdapter(
             findItem(R.id.cab_properties).isVisible = storage != null
             // media of the share are copied off it by SmbTransferService
             findItem(R.id.cab_copy_to).isVisible = storage != null && !isInRemoteBin
+            // offered only when there is something of that kind to take out (#138)
+            findItem(R.id.cab_deselect_photos).isVisible = selectedItems.any { !it.isVideo() }
+            findItem(R.id.cab_deselect_videos).isVisible = selectedItems.any { it.isVideo() }
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -295,6 +299,8 @@ class MediaAdapter(
             R.id.cab_move_to -> moveFilesTo()
             R.id.cab_create_shortcut -> createShortcut()
             R.id.cab_select_all -> selectAll()
+            R.id.cab_deselect_photos -> deselectKind(videos = false)
+            R.id.cab_deselect_videos -> deselectKind(videos = true)
             R.id.cab_open_with -> openPath()
             R.id.cab_fix_date_taken -> fixDateTaken()
             R.id.cab_set_as -> setAs()
@@ -326,6 +332,15 @@ class MediaAdapter(
         }
 
         refreshPreviewButtons()
+    }
+
+    // deselected one by one the same as a tap does it, so the title and the menu follow, and taking
+    // out the last selected medium ends the selection
+    private fun deselectKind(videos: Boolean) {
+        val positions = positionsToDeselect(media, videos) { selectedKeys.contains(getItemSelectionKey(it)) }
+        positions.forEachIndexed { index, position ->
+            toggleItemSelection(false, position, index == positions.lastIndex)
+        }
     }
 
     // grouping splits the items up with section titles that must not be dragged around, so a
