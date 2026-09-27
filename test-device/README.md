@@ -173,6 +173,13 @@ at afterwards.
   and has to land as `/sdcard/Pictures/FromTheCloud`. pCloud's transfers log nothing when they
   go well, so the files arriving are what is waited for. Red with the folder not made on pCloud
   first: the upload has nowhere to go
+- **`74-deselect-photos-or-videos.sh`** — #138: "Deselect photos" and "Deselect videos" under
+  "Select all" in a folder's selection menu. A folder of this device with two photos and two
+  videos is selected whole, one kind taken out, then the other: the toolbar's count has to read
+  `2 / 4` in between, the entry just used has to be gone from the menu with the other one still
+  there, and taking out the last kind has to end the selection. Driven both ways round, so
+  neither entry passes by only ever being the one that ends it. Red with the entries re-selecting
+  instead of deselecting
 - **`75-save-as-storages.sh`** — #92 and #71: "Save as" knows all three storages, and a photo of
   the share can be rotated and saved. The bug it was written for ended in an OS toast reading
   `java.io.FileNotFoundException: sm…`: the viewer handed the share's pseudo path to the file
