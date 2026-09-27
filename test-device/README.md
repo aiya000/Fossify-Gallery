@@ -156,6 +156,15 @@ at afterwards.
   file — the picker refusing a folder of the share as a *move* destination, with the share still
   empty of it, so "the share gained nothing" cannot pass by accident — and ends on the same
   numbering check as `50`, from the other side
+- **`72-a-folder-to-the-top-or-into-a-group.sh`** — a folder of the folder list, copied or moved
+  with the destination picker's OK, goes there whole. Carried, a folder of this device put into
+  the group Trips, is copied with the share's chip and OK at the top, then again with Trips opened
+  in the picker, then moved the same way into Trips. The share has to gain `Carried`,
+  `Carried (1)` and `Carried (2)` -- a copy never pours into a folder that is already there --
+  read off `fixture/share`; the last two have to be in Trips, read off the app's preferences with
+  `run-as`; and the device's Carried keeps its file through the copies and gives it up to the
+  move. Red before the fix: the OK of "Copy to" picked nothing, and inside a group said that a
+  group holds folders, not files
 - **`75-save-as-storages.sh`** — #92 and #71: "Save as" knows all three storages, and a photo of
   the share can be rotated and saved. The bug it was written for ended in an OS toast reading
   `java.io.FileNotFoundException: sm…`: the viewer handed the share's pseudo path to the file
