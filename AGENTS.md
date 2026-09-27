@@ -135,6 +135,21 @@ git switch -c <ブランチ名> --no-track origin/main
 - 実装の話は、聞かれたときにします。判断とその理由は、報告ではなく Pull Request 本文と
   `agents/` に書いてください。そちらのほうが長持ちします
 
+## 翻訳: ユーザーに話すときの言葉
+
+Issue や Pull Request、コードは英語で書きますが、ユーザーとの会話は日本語です。
+英語から訳したその場かぎりの言葉は、ユーザーには見慣れず、何のことか伝わりません（2026-09-28 から）。
+
+- **画面やボタンの名前は、アプリが日本語で出している言葉をそのまま使います**
+    - `app/src/main/res/values-ja/strings.xml` の訳です。「Select all」のように commons 側が持っている
+      言葉は、その AAR の `values-ja`（[agents/tests/the-menu-text-lives-in-the-commons-aar.md](./agents/tests/the-menu-text-lives-in-the-commons-aar.md) と同じ引きかた）です
+    - 自分で訳し直さないでください。ユーザーが画面で見る言葉と違うと、どのボタンの話か分からなくなります
+- **決まった訳が無い言葉は、訳のあとに英語をかっこで添えます**
+    - Good「宛先ピッカー（destination picker）」
+- **`test-device/` のスクリプトは、ユーザーには「テスト」と呼びます**
+    - `agents/` やこのファイルの索引には「台本」と書いてあるところがありますが、それはエージェント向けの
+      呼び名です。ユーザーには伝わりにくいと言われました
+
 ## ビルドと動作確認
 
 `.claude/skills/` の `debug-build` / `debug-install` / `release-build` / `release-install` を使います。
