@@ -80,6 +80,7 @@ import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isSmbFolderHidden
 import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.writeToPCloud
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
 import org.fossify.gallery.extensions.emptyTheRecycleBin
 import org.fossify.gallery.extensions.favoritesDB
@@ -101,6 +102,8 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.LOCATION_PCLOUD
 import org.fossify.gallery.helpers.LOCATION_SMB
 import org.fossify.gallery.helpers.LOCATION_SD
+import org.fossify.gallery.helpers.FolderPlacement
+import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -774,7 +777,12 @@ class DirectoryAdapter(
     private fun copyFilesTo() {
         handleLockedFolderOpeningForFolders(getSelectedRealPaths()) { folders ->
             getMediaFileDirItems(folders) { fileDirItems ->
-                activity.tryCopyMoveFilesTo(fileDirItems, true) { destinationPath ->
+                activity.tryCopyMoveFilesTo(
+                    fileDirItems = fileDirItems,
+                    isCopyOperation = true,
+                    foldersToPlace = folders.toList(),
+                    onFoldersPlaced = { transferFolders(it, isCopy = true) }
+                ) { destinationPath ->
                     onFilesCopiedMoved(fileDirItems, destinationPath)
                 }
             }
@@ -805,6 +813,10 @@ class DirectoryAdapter(
                         excludedGroupIds = groupIds,
                         allowFolderDestination = !groupsOnly,
                         isCopyOperation = false,
+                        // a group has no storage to be carried to, so a selection holding one
+                        // is only ever moved between groups
+                        foldersToPlace = if (groupsOnly) emptyList() else folderPaths,
+                        onFoldersPlaced = { transferFolders(it, isCopy = false) },
                         groupCallback = { destinationGroupId ->
                             moveToGroup(folderPaths, groupIds, destinationGroupId)
                         }
@@ -824,6 +836,53 @@ class DirectoryAdapter(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Each folder taken whole by the picker's OK: a new folder made where FolderPlacement put it,
+    // its media copied or moved in by the storage they are on, and the new folder put into the
+    // group that was open. The group is written down at once, before anything has arrived: a
+    // group is a note about a path, and the folder turns up in it when the transfer is through
+    private fun transferFolders(placed: List<Pair<String, FolderPlacement.Transfer>>, isCopy: Boolean) {
+        placed.forEach { (source, transfer) ->
+            getMediaFileDirItems(listOf(source)) { fileDirItems ->
+                if (fileDirItems.isEmpty()) {
+                    activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    return@getMediaFileDirItems
+                }
+
+                if (transfer.groupId != null) {
+                    config.setFolderGroupOfPaths(listOf(transfer.destination), transfer.groupId)
+                }
+
+                prepareFolder(transfer.destination) {
+                    MediaStorage.of(activity, source).copyMoveTo(activity, fileDirItems, source, transfer.destination, isCopy, onQueued = null) {
+                        onFilesCopiedMoved(fileDirItems, it)
+                    }
+                }
+            }
+        }
+
+        finishActMode()
+        listener?.refreshGroups()
+    }
+
+    // The folder a transfer is about to fill, made first where the storage needs it made: pCloud
+    // uploads into a folder id, which only a folder that exists has. The share's transfer makes
+    // its folder itself, and the device's is made here since the commons copy expects one
+    private fun prepareFolder(path: String, then: () -> Unit) {
+        when {
+            path.isPCloudPath() -> activity.writeToPCloud(emptyList(), { createFolder(PCLOUD_PATH_SCHEME, path.getFilenameFromPath()) }) { made ->
+                if (made) {
+                    activity.runOnUiThread(then)
+                }
+            }
+
+            path.isSmbPath() -> then()
+            else -> ensureBackgroundThread {
+                File(path).mkdirs()
+                activity.runOnUiThread(then)
             }
         }
     }

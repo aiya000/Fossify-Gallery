@@ -52,6 +52,7 @@ import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.dialogs.RestoreFromBinDialog
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.EDIT_ORIGIN_PATH
+import org.fossify.gallery.helpers.FolderPlacement
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
@@ -448,13 +449,17 @@ fun BaseSimpleActivity.toggleFileVisibility(oldPath: String, hide: Boolean, call
 // see MediaStorage.copyMoveTo(). [localDestinationOnly] keeps pCloud out of the picker, for a
 // caller whose files can only go to the device. [onCancelled] fires when the picker is left
 // without a destination, and [onPCloudTransferQueued] once a remote transfer is with its
-// service, both for a caller that has nothing else on screen
+// service, both for a caller that has nothing else on screen. [foldersToPlace] and
+// [onFoldersPlaced] are the folder list's, whose folders can be taken whole to the top or into a
+// group with the picker's OK, see PickDirectoryDialog
 fun BaseSimpleActivity.tryCopyMoveFilesTo(
     fileDirItems: ArrayList<FileDirItem>,
     isCopyOperation: Boolean,
     localDestinationOnly: Boolean = false,
     onCancelled: (() -> Unit)? = null,
     onPCloudTransferQueued: (() -> Unit)? = null,
+    foldersToPlace: List<String> = emptyList(),
+    onFoldersPlaced: ((List<Pair<String, FolderPlacement.Transfer>>) -> Unit)? = null,
     callback: (destinationPath: String) -> Unit
 ) {
     if (fileDirItems.isEmpty()) {
@@ -473,6 +478,8 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
         navigateGroups = true,
         localDestinationOnly = localDestinationOnly,
         isCopyOperation = isCopyOperation,
+        foldersToPlace = foldersToPlace,
+        onFoldersPlaced = onFoldersPlaced,
         onCancelled = onCancelled
     ) { destination ->
         MediaStorage.of(this, source).copyMoveTo(this, fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued, callback)
