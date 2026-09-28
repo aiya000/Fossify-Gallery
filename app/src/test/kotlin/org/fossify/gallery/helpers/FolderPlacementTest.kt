@@ -3,9 +3,9 @@ package org.fossify.gallery.helpers
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-// What the destination picker's OK does with a folder of the folder list, at the top or inside a
-// group: the folder itself goes there, on the storage the chips were showing. It used to be told
-// that a group holds folders, not files -- about a folder
+// What the destination picker's OK does with a folder of the folder list, apart from the pair of
+// storages: every pair, copy or move, at the top or inside a group, is FolderPlacementTableTest's.
+// Here is what names the new folder, and the chips showing every storage
 class FolderPlacementTest {
     private val deviceRoot = "/storage/emulated/0/Pictures"
     private val outbox = "$deviceRoot/Outbox"
@@ -20,37 +20,27 @@ class FolderPlacementTest {
         isTaken: (String) -> Boolean = taking()
     ) = placeFolder(source, isCopy, storageFilter, groupId, deviceRoot, isTaken)
 
-    @Test
-    fun `a copy at the top of the share makes the folder in the share's root`() {
-        assertEquals(FolderPlacement.Transfer("smb:/Outbox", null), place())
-    }
-
-    // a group belongs to no storage, so the one the chips showed before it was opened is the one
-    // the folder is made on, and the new folder goes into the group
-    @Test
-    fun `a copy inside a group makes the folder on the chips' storage and puts it in the group`() {
-        assertEquals(FolderPlacement.Transfer("smb:/Outbox", 1L), place(groupId = 1L))
-    }
-
-    @Test
-    fun `a copy onto pCloud makes the folder in pCloud's root`() {
-        assertEquals(FolderPlacement.Transfer("pcloud:/Outbox", null), place(storageFilter = STORAGE_FILTER_PCLOUD))
-    }
-
-    @Test
-    fun `a copy onto the device makes the folder under Pictures`() {
-        assertEquals(
-            FolderPlacement.Transfer("$deviceRoot/Camera", null),
-            place(source = "smb:/Camera", storageFilter = STORAGE_FILTER_LOCAL)
-        )
-    }
-
     // with every storage on the chips there is no storage picked, so the folder stays on its own
     @Test
     fun `with every storage shown a copy stays on the folder's own storage`() {
         assertEquals(
             FolderPlacement.Transfer("$deviceRoot/Outbox (1)", null),
             place(storageFilter = STORAGE_FILTER_ALL, isTaken = taking(outbox))
+        )
+    }
+
+    @Test
+    fun `with every storage shown a move only changes the folder's group`() {
+        assertEquals(FolderPlacement.Regroup(null), place(isCopy = false, storageFilter = STORAGE_FILTER_ALL))
+        assertEquals(FolderPlacement.Regroup(1L), place(source = "smb:/Camera", isCopy = false, storageFilter = STORAGE_FILTER_ALL, groupId = 1L))
+    }
+
+    // the share's folder copied with every storage shown is a copy within the share
+    @Test
+    fun `with every storage shown a copy of a share folder is refused`() {
+        assertEquals(
+            FolderPlacement.Refused(FolderRefusal.COPY_WITHIN_SHARE),
+            place(source = "smb:/Camera", storageFilter = STORAGE_FILTER_ALL)
         )
     }
 
@@ -72,16 +62,12 @@ class FolderPlacementTest {
         )
     }
 
+    // a folder under another on its own storage is still made in the destination's root
     @Test
-    fun `a move onto another storage makes the folder there too`() {
-        assertEquals(FolderPlacement.Transfer("smb:/Outbox", 1L), place(isCopy = false, groupId = 1L))
-    }
-
-    // what "Move to" always did: the folder changes group and nothing on any storage moves
-    @Test
-    fun `a move that stays on the folder's storage only changes its group`() {
-        assertEquals(FolderPlacement.Regroup(1L), place(isCopy = false, storageFilter = STORAGE_FILTER_LOCAL, groupId = 1L))
-        assertEquals(FolderPlacement.Regroup(null), place(isCopy = false, storageFilter = STORAGE_FILTER_ALL))
-        assertEquals(FolderPlacement.Regroup(1L), place(source = "smb:/Camera", isCopy = false, groupId = 1L))
+    fun `a nested folder is made in the destination's root`() {
+        assertEquals(
+            FolderPlacement.Transfer("pcloud:/Kyoto", null),
+            place(source = "smb:/Trips/Kyoto", storageFilter = STORAGE_FILTER_PCLOUD)
+        )
     }
 }
