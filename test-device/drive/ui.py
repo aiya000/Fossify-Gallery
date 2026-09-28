@@ -79,6 +79,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--is-checked",
+        action="store_true",
+        help=(
+            "exit 0 when the matched node is checked and 1 when it is not or is not there, which "
+            "is how a script reads one checkbox of a dialog whose radio buttons are checked too"
+        ),
+    )
+    parser.add_argument(
         "--value",
         action="store_true",
         help=(
@@ -111,6 +119,12 @@ def main():
 
     if args.text is None and args.resource_id is None:
         parser.error("one of --text, --resource-id, --list or --checked is needed")
+
+    if args.is_checked:
+        for node in tree.iter("node"):
+            if matches(node, args.text, args.resource_id, args.exact):
+                return 0 if node.get("checked") == "true" else 1
+        return 1
 
     if args.value:
         for node in tree.iter("node"):
