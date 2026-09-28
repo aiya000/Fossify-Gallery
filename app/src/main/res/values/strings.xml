@@ -78,6 +78,9 @@
     <string name="pcloud_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder or a group, switching storage)</string>
     <string name="pcloud_rescan_on_launch">Rescan pCloud when the app starts (only what changed since the last scan)</string>
     <string name="use_for_this_storage_only">Apply to this storage only</string>
+    <!-- #137: the same checkbox inside a folder group, and what is asked before it is unchecked -->
+    <string name="use_for_this_group_only">Apply to this group only</string>
+    <string name="use_for_every_group_confirmation">This sorting will also apply to every other group without its own sorting, and to the folder list outside the groups. Continue?</string>
     <string name="pcloud_rescan_on_storage_switch">Rescan pCloud when switching storage</string>
     <string name="pcloud_rescan_on_folder_open">Rescan a pCloud folder when opening it</string>
     <string name="pcloud_rescan_on_pull_to_refresh">Rescan pCloud when pulling the folder list to refresh (inside a group, only its folders)</string>

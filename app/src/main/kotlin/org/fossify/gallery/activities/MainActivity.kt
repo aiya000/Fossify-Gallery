@@ -130,6 +130,7 @@ import org.fossify.gallery.extensions.storeDirectoryItems
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBDirectory
 import org.fossify.gallery.extensions.updateWidgets
+import org.fossify.gallery.helpers.Config
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
@@ -229,8 +230,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // used at "Group direct subfolders" for navigating Up with the back button
     private var mOpenedSubfolders = arrayListOf("")
 
-    // the virtual folder group currently opened, null at the top level
+    // the virtual folder group currently opened, null at the top level. Config is told as well,
+    // since a group may carry a sorting of its own (#137) and every reader of the folder list's
+    // sorting goes through Config.directorySorting
     private var mCurrentGroupId: Long? = null
+        set(value) {
+            field = value
+            Config.openedFolderGroupId = value
+        }
 
     // used for navigating Up through virtual folder groups with the back button
     private var mOpenedGroups = arrayListOf<Long?>(null)
@@ -262,6 +269,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         appLaunched(BuildConfig.APPLICATION_ID)
+        // the list opens at its top, whatever group an earlier instance had open
+        mCurrentGroupId = null
 
         if (savedInstanceState == null) {
             config.temporarilyShowHidden = false
@@ -472,6 +481,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             config.temporarilyShowExcluded = false
             config.tempSkipDeleteConfirmation = false
             config.tempSkipRecycleBin = false
+            Config.openedFolderGroupId = null
             mTempShowHiddenHandler.removeCallbacksAndMessages(null)
             removeTempFolder()
             unregisterFileUpdateListener()
@@ -842,7 +852,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     private fun showSortingDialog() {
-        ChangeSortingDialog(this, true, false) {
+        ChangeSortingDialog(this, true, false, groupId = mCurrentGroupId) {
             binding.directoriesGrid.adapter = null
             if (config.directorySorting and SORT_BY_DATE_MODIFIED != 0 || config.directorySorting and SORT_BY_DATE_TAKEN != 0) {
                 getDirectories()

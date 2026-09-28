@@ -272,6 +272,8 @@ const val STORAGE_FILTER = "storage_filter"
 const val STORAGE_ORDER = "storage_order"
 // the folder list sorting of one storage, the STORAGE_FILTER_* value follows; see Config.directorySorting
 const val SORT_FOLDERS_STORAGE_PREFIX = "sort_folders_storage_"
+// the folder list sorting inside one folder group, the group's id follows; see Config.directorySorting
+const val SORT_FOLDERS_GROUP_PREFIX = "sort_folders_group_"
 // in a sorting export only: which storages carry a sorting of their own, see Config.getSortingPreferences()
 const val SORT_FOLDERS_OWN_STORAGES = "sort_folders_own_storages"
 

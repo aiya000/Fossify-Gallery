@@ -77,6 +77,8 @@
     <string name="pcloud_rescan_on_unmetered_only">自動再スキャンは Wi-Fi 接続時のみ。従量制の回線では、操作で始まる再スキャン（引っぱって更新、フォルダやグループを開く、ストレージ切替）の前に確認する</string>
     <string name="pcloud_rescan_on_launch">起動時に pCloud を再スキャン（前回からの差分だけ）</string>
     <string name="use_for_this_storage_only">このストレージのみに適用する</string>
+    <string name="use_for_this_group_only">このグループのみに適用する</string>
+    <string name="use_for_every_group_confirmation">この並び順は、独自の並び順を持たないほかのすべてのグループと、グループの外のフォルダ一覧にも適用されます。続けますか？</string>
     <string name="pcloud_rescan_on_storage_switch">ストレージ切替時に pCloud を再スキャン</string>
     <string name="pcloud_rescan_on_folder_open">pCloud のフォルダを開いたときに再スキャン</string>
     <string name="pcloud_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに pCloud を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
