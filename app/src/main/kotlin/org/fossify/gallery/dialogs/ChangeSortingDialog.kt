@@ -2,6 +2,7 @@ package org.fossify.gallery.dialogs
 
 import android.content.DialogInterface
 import org.fossify.commons.activities.BaseSimpleActivity
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.getAlertDialogBuilder
@@ -28,6 +29,8 @@ class ChangeSortingDialog(
     val isDirectorySorting: Boolean,
     val showFolderCheckbox: Boolean,
     val path: String = "",
+    // the folder group the folder list has open, null at its top
+    val groupId: Long? = null,
     val callback: () -> Unit
 ) :
     DialogInterface.OnClickListener {
@@ -43,7 +46,11 @@ class ChangeSortingDialog(
 
     // the folder list offers one sorting per storage where the media of a folder offer one per
     // folder, once there is a second storage to tell apart; the checkbox is the same view
-    private val showStorageCheckbox = isDirectorySorting && config.isPCloudLoggedIn
+    //
+    // Inside a group it is about the group instead (#137): a group belongs to no storage, so a
+    // storage's own sorting means nothing there, and what is sorted is plainly the group
+    private val showGroupCheckbox = isDirectorySorting && groupId != null
+    private val showStorageCheckbox = isDirectorySorting && !showGroupCheckbox && config.isPCloudLoggedIn
     private val storageFilter = config.storageFilter
 
     init {
@@ -67,12 +74,18 @@ class ChangeSortingDialog(
             // the divider only has to separate the order from the numeric switch now, the folder
             // switch moved above the sortings and brought its own divider
             sortingDialogOrderDivider.beVisibleIf(sortingDialogNumericSorting.isVisible())
-            sortingDialogFolderDivider.beVisibleIf(showFolderCheckbox || showStorageCheckbox)
+            sortingDialogFolderDivider.beVisibleIf(showFolderCheckbox || showStorageCheckbox || showGroupCheckbox)
 
             sortingDialogNumericSorting.isChecked = currSorting and SORT_USE_NUMERIC_VALUE != 0
 
-            sortingDialogUseForThisFolder.beVisibleIf(showFolderCheckbox || showStorageCheckbox)
-            if (showStorageCheckbox) {
+            sortingDialogUseForThisFolder.beVisibleIf(showFolderCheckbox || showStorageCheckbox || showGroupCheckbox)
+            if (showGroupCheckbox) {
+                // checked whenever the dialog opens, since changing every group at once is rarely
+                // what is meant; see confirmApplyingToEveryGroup()
+                sortingDialogUseForThisFolder.setText(R.string.use_for_this_group_only)
+                sortingDialogUseForThisFolder.isChecked = true
+                sortingDialogUseForThisFolder.setOnClickListener { confirmApplyingToEveryGroup() }
+            } else if (showStorageCheckbox) {
                 sortingDialogUseForThisFolder.setText(R.string.use_for_this_storage_only)
                 sortingDialogUseForThisFolder.isChecked = config.hasStorageDirectorySorting(storageFilter)
             } else {
@@ -172,6 +185,21 @@ class ChangeSortingDialog(
         binding.sortingDialogUseForThisFolderNote.beVisibleIf(isCustomSorting)
     }
 
+    // Unchecking "apply to this group only" changes the order of every group without a sorting of
+    // its own, and of the folder list's top, so it is asked about first. The box is put back at
+    // once and only unchecked on a yes, so a No, a back press or a tap outside all leave it checked
+    private fun confirmApplyingToEveryGroup() {
+        val checkbox = binding.sortingDialogUseForThisFolder
+        if (checkbox.isChecked) {
+            return
+        }
+
+        checkbox.isChecked = true
+        ConfirmationDialog(activity, activity.getString(R.string.use_for_every_group_confirmation)) {
+            checkbox.isChecked = false
+        }
+    }
+
     private fun setupOrderRadio() {
         var orderBtn = binding.sortingDialogRadioAscending
 
@@ -208,7 +236,16 @@ class ChangeSortingDialog(
             sorting = sorting or SORT_USE_NUMERIC_VALUE
         }
 
-        if (isDirectorySorting) {
+        if (showGroupCheckbox) {
+            if (binding.sortingDialogUseForThisFolder.isChecked) {
+                config.saveGroupDirectorySorting(groupId!!, sorting)
+            } else {
+                // written to what the group falls back to without its own: the storage's own
+                // sorting when it has one, the shared one otherwise
+                config.removeGroupDirectorySorting(groupId!!)
+                config.directorySorting = sorting
+            }
+        } else if (isDirectorySorting) {
             if (showStorageCheckbox && binding.sortingDialogUseForThisFolder.isChecked) {
                 config.saveStorageDirectorySorting(storageFilter, sorting)
             } else {

@@ -21,30 +21,38 @@ import java.util.Locale
 class Config(context: Context) : BaseConfig(context) {
     companion object {
         fun newInstance(context: Context) = Config(context)
+
+        // the folder group the folder list has open, null at its top. It is the screen's state
+        // rather than a setting, so it is not stored; MainActivity keeps it up to date, and a new
+        // Config is made on every `config`, which is why it lives here
+        @Volatile
+        var openedFolderGroupId: Long? = null
     }
 
-    // The sorting of the folder list on screen. A storage (see storageFilter) may carry a sorting
-    // of its own, chosen with "apply to this storage only" in the sorting dialog; while it does,
-    // reading and writing go through that one, so every reader and the drag order act on the
-    // list that is shown. globalDirectorySorting is the one storages without their own fall back to
+    // The sorting of the folder list on screen. The group opened in it (#137) and the storage
+    // (see storageFilter) may each carry a sorting of their own, chosen with "apply to this group
+    // only" or "apply to this storage only" in the sorting dialog; while one does, reading and
+    // writing go through it, so every reader and the drag order act on the list that is shown.
+    // globalDirectorySorting is the one lists without their own fall back to
     var directorySorting: Int
-        get(): Int = prefs.getInt(getStorageDirectorySortingKey(storageFilter), globalDirectorySorting)
-        set(order) {
-            val key = if (hasStorageDirectorySorting(storageFilter)) getStorageDirectorySortingKey(storageFilter) else DIRECTORY_SORT_ORDER
-            prefs.edit().putInt(key, order).apply()
-        }
+        get(): Int = prefs.getInt(directorySortingKey(openedFolderGroupId, storageFilter, prefs::contains), globalDirectorySorting)
+        set(order) = prefs.edit().putInt(directorySortingKey(openedFolderGroupId, storageFilter, prefs::contains), order).apply()
+
+    fun hasGroupDirectorySorting(groupId: Long) = prefs.contains(groupDirectorySortingKey(groupId))
+
+    fun saveGroupDirectorySorting(groupId: Long, sorting: Int) = prefs.edit().putInt(groupDirectorySortingKey(groupId), sorting).apply()
+
+    fun removeGroupDirectorySorting(groupId: Long) = prefs.edit().remove(groupDirectorySortingKey(groupId)).apply()
 
     var globalDirectorySorting: Int
         get(): Int = prefs.getInt(DIRECTORY_SORT_ORDER, SORT_BY_DATE_MODIFIED or SORT_DESCENDING)
         set(order) = prefs.edit().putInt(DIRECTORY_SORT_ORDER, order).apply()
 
-    fun hasStorageDirectorySorting(storageFilter: Int) = prefs.contains(getStorageDirectorySortingKey(storageFilter))
+    fun hasStorageDirectorySorting(storageFilter: Int) = prefs.contains(storageDirectorySortingKey(storageFilter))
 
-    fun saveStorageDirectorySorting(storageFilter: Int, sorting: Int) = prefs.edit().putInt(getStorageDirectorySortingKey(storageFilter), sorting).apply()
+    fun saveStorageDirectorySorting(storageFilter: Int, sorting: Int) = prefs.edit().putInt(storageDirectorySortingKey(storageFilter), sorting).apply()
 
-    fun removeStorageDirectorySorting(storageFilter: Int) = prefs.edit().remove(getStorageDirectorySortingKey(storageFilter)).apply()
-
-    private fun getStorageDirectorySortingKey(storageFilter: Int) = "$SORT_FOLDERS_STORAGE_PREFIX$storageFilter"
+    fun removeStorageDirectorySorting(storageFilter: Int) = prefs.edit().remove(storageDirectorySortingKey(storageFilter)).apply()
 
     // the storages whose folder list has a sorting of its own, in the order of their STORAGE_FILTER_* values
     fun getStoragesWithOwnDirectorySorting(): List<Int> = prefs.all.keys

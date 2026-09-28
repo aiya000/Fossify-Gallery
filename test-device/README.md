@@ -248,6 +248,15 @@ at afterwards.
   folders only. The share is read off the app's log, pCloud off the stub's request log. The two
   remote scans share one queue, so pCloud's comes after the walk and the script waits for it.
   Red with the pull inside the group handing on no folders: the share is walked whole
+- **`94-sort-inside-a-group.sh`** — #137: the sorting dialog opened inside the group Trips
+  offers "Apply to this group only", checked, in place of "Apply to this storage only", and the
+  one at the top of the list does not. Unchecking it asks first and No leaves it checked; OK with
+  it checked stores a sorting for Trips alone (`sort_folders_group_1`) and leaves the shared
+  `directory_sort_order` as it was; opened again the dialog shows Trips' own sorting, and
+  unchecking it with Yes takes that away and writes the shared one instead. The witness is the
+  app's preferences, read with `run-as`. Trips is given a folder of this device, so that it
+  shows on this device's list without a walk of the share. Red with the dialog not told which
+  group is open
 - **`98-save-as-out-of-the-editor.sh`** — #105: the editor's "Save as" asks where and under what
   name on every storage, and sends the edit there. A photo of the share is edited twice, and each
   edit saved under a new name somewhere else: into another folder of the share, read off
