@@ -7,7 +7,7 @@ the repository, a network the run depends on, and an account whose state drifts 
 and the thing under test is the app's path from a share to pCloud, not pCloud itself.
 
 What it serves is the slice PCloudApi calls: userinfo, diff, listfolder, createfolder, uploadfile, getthumb,
-getfilelink and the download link that one hands out, copyfile and deletefile. Everything is backed by a directory on this
+getfilelink and the download link that one hands out, copyfile, renamefile and deletefile. Everything is backed by a directory on this
 machine, so a test can look at what arrived with plain `stat`, the way it looks at the share.
 
 Plain http, on purpose. An https stub would need a certificate the app is built to trust, and a
@@ -32,9 +32,13 @@ import zlib
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qs
 
-# pCloud's own result codes, the two the app reads by number
+# pCloud's own result codes. 2000 is one of the two the app reads by number: with it, or with
+# 1000 ("Log in required"), the app signs out of pCloud
 RESULT_LOG_IN_FAILED = 2000
-RESULT_INVALID_REQUEST = 1000
+# what a method the stub does not know is answered with: pCloud's "Internal error". Not 1000,
+# which is what it used to be, because the app took that for a dead token and signed out -- a
+# method missing from the stub then read as every pCloud cell after it losing its chip
+RESULT_UNANSWERED = 5000
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".webm", ".avi", ".mov", ".3gp")
@@ -254,10 +258,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_create_folder(params)
         elif method == "copyfile":
             self.serve_copy_file(params)
+        elif method == "renamefile":
+            self.serve_rename_file(params)
         elif method == "deletefile":
             self.serve_delete_file(params)
         else:
-            self.send_refusal(RESULT_INVALID_REQUEST, "the stub does not answer %s" % method)
+            self.send_refusal(RESULT_UNANSWERED, "the stub does not answer %s" % method)
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -271,7 +277,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if method == "uploadfile":
             self.serve_upload(params)
         else:
-            self.send_refusal(RESULT_INVALID_REQUEST, "the stub does not answer %s" % method)
+            self.send_refusal(RESULT_UNANSWERED, "the stub does not answer %s" % method)
 
     def serve_diff(self, params):
         # with last=1 the app is only after the current id, before a full listing
@@ -349,6 +355,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.account.log("COPIED %s TO %s" % (source, relative))
         self.send_json({"result": 0, "metadata": metadata})
 
+    # a move into the folder with the given id, under toname, which is how the app moves a file
+    # within the account. A name that is taken there is refused rather than written over, so that
+    # a move the app did not number shows up as a failure instead of as a lost file
+    def serve_rename_file(self, params):
+        source = self.file_of(params)
+        folder = self.account.path_of_id(int(params.get("tofolderid", "0")))
+        if source is None:
+            self.send_refusal(2009, "File not found.")
+            return
+        if folder is None:
+            self.send_refusal(2005, "Directory does not exist.")
+            return
+
+        name = params.get("toname", os.path.basename(source))
+        relative = os.path.join(folder, name) if folder else name
+        if os.path.exists(self.account.absolute(relative)):
+            self.send_refusal(2004, "File or folder alredy exists.")
+            return
+
+        old_metadata = file_metadata(self.account, source)
+        shutil.move(self.account.absolute(source), self.account.absolute(relative))
+        metadata = file_metadata(self.account, relative)
+        self.account.add_event("deletefile", old_metadata)
+        self.account.add_event("createfile", metadata)
+        self.account.log("MOVED %s TO %s" % (source, relative))
+        self.send_json({"result": 0, "metadata": metadata})
+
     # pCloud moves a deleted file to its trash; the stub has none, and a test only asks whether
     # the file is still where it was
     def serve_delete_file(self, params):
@@ -372,14 +405,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         content_type = self.headers.get("Content-Type", "")
         match = re.search(r"boundary=(.+)$", content_type)
         if not match:
-            self.send_refusal(RESULT_INVALID_REQUEST, "not a multipart upload")
+            self.send_refusal(RESULT_UNANSWERED, "not a multipart upload")
             return
 
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length)
         sent_name, content = split_multipart(body, match.group(1).strip('"').encode("utf-8"))
         if content is None:
-            self.send_refusal(RESULT_INVALID_REQUEST, "the multipart body carried no file")
+            self.send_refusal(RESULT_UNANSWERED, "the multipart body carried no file")
             return
 
         name = params.get("filename", sent_name)
