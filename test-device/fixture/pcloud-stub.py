@@ -7,7 +7,7 @@ the repository, a network the run depends on, and an account whose state drifts 
 and the thing under test is the app's path from a share to pCloud, not pCloud itself.
 
 What it serves is the slice PCloudApi calls: userinfo, diff, listfolder, createfolder, uploadfile, getthumb,
-getfilelink and the download link that one hands out. Everything is backed by a directory on this
+getfilelink and the download link that one hands out, copyfile and deletefile. Everything is backed by a directory on this
 machine, so a test can look at what arrived with plain `stat`, the way it looks at the share.
 
 Plain http, on purpose. An https stub would need a certificate the app is built to trust, and a
@@ -252,6 +252,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_file_link(params)
         elif method == "createfolder":
             self.serve_create_folder(params)
+        elif method == "copyfile":
+            self.serve_copy_file(params)
+        elif method == "deletefile":
+            self.serve_delete_file(params)
         else:
             self.send_refusal(RESULT_INVALID_REQUEST, "the stub does not answer %s" % method)
 
@@ -308,6 +312,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
         metadata = folder_metadata(self.account, relative, False)
         self.account.add_event("createfolder", metadata)
         self.account.log("CREATED FOLDER %s" % relative)
+        self.send_json({"result": 0, "metadata": metadata})
+
+    # a file named by path or by id, as the app names it either way
+    def file_of(self, params):
+        if "fileid" in params:
+            relative = self.account.path_of_id(int(params["fileid"]))
+        else:
+            relative = params.get("path", "").strip("/")
+
+        if not relative or not os.path.isfile(self.account.absolute(relative)):
+            return None
+        return relative
+
+    # a copy into the folder with the given id; with noover a name that is taken there is
+    # numbered rather than written over, the same as an upload with renameifexists
+    def serve_copy_file(self, params):
+        source = self.file_of(params)
+        folder = self.account.path_of_id(int(params.get("tofolderid", "0")))
+        if source is None:
+            self.send_refusal(2009, "File not found.")
+            return
+        if folder is None:
+            self.send_refusal(2005, "Directory does not exist.")
+            return
+
+        destination = self.account.absolute(folder)
+        name = params.get("toname", os.path.basename(source))
+        if params.get("noover", "0") == "1":
+            name = available_name(destination, name)
+
+        shutil.copy2(self.account.absolute(source), os.path.join(destination, name))
+        relative = os.path.join(folder, name) if folder else name
+        metadata = file_metadata(self.account, relative)
+        self.account.add_event("createfile", metadata)
+        self.account.log("COPIED %s TO %s" % (source, relative))
+        self.send_json({"result": 0, "metadata": metadata})
+
+    # pCloud moves a deleted file to its trash; the stub has none, and a test only asks whether
+    # the file is still where it was
+    def serve_delete_file(self, params):
+        relative = self.file_of(params)
+        if relative is None:
+            self.send_refusal(2009, "File not found.")
+            return
+
+        metadata = file_metadata(self.account, relative)
+        os.remove(self.account.absolute(relative))
+        self.account.add_event("deletefile", metadata)
+        self.account.log("DELETED %s" % relative)
         self.send_json({"result": 0, "metadata": metadata})
 
     def serve_upload(self, params):

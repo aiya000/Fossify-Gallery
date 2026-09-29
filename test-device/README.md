@@ -156,23 +156,24 @@ at afterwards.
   file — the picker refusing a folder of the share as a *move* destination, with the share still
   empty of it, so "the share gained nothing" cannot pass by accident — and ends on the same
   numbering check as `50`, from the other side
-- **`72-a-folder-to-the-top-or-into-a-group.sh`** — a folder of the folder list, copied or moved
-  with the destination picker's OK, goes there whole. Carried, a folder of this device put into
-  the group Trips, is copied with the share's chip and OK at the top, then again with Trips opened
-  in the picker, then moved the same way into Trips. The share has to gain `Carried`,
-  `Carried (1)` and `Carried (2)` -- a copy never pours into a folder that is already there --
-  read off `fixture/share`; the last two have to be in Trips, read off the app's preferences with
-  `run-as`; and the device's Carried keeps its file through the copies and gives it up to the
-  move. Red before the fix: the OK of "Copy to" picked nothing, and inside a group said that a
-  group holds folders, not files
-- **`73-a-folder-onto-pcloud-and-this-device.sh`** — the same OK onto the two other storages,
-  whose folders are made another way than the share's. Carried is copied with pCloud's chip:
-  the stub's account has to gain `Carried` with the photo byte for byte, and the stub has to
-  have been asked to make the folder first, pCloud uploading into a folder id that only a folder
-  that exists has. Then `FromTheCloud`, a folder of the stub, is copied with this device's chip
-  and has to land as `/sdcard/Pictures/FromTheCloud`. pCloud's transfers log nothing when they
-  go well, so the files arriving are what is waited for. Red with the folder not made on pCloud
-  first: the upload has nowhere to go
+- **`72-a-folder-onto-every-storage.sh`** — #139, #140: a folder of the folder list copied or
+  moved with the destination picker's OK, for every cell of `FolderPlacementTableTest`'s table:
+  the storage it is on, the storage the picker's chips show, copy or move, and the OK at the top
+  or inside Trips -- 36 cells. A new folder has to turn up on the destination, named after the
+  source and numbered when that name is taken, with the photo byte for byte, read off
+  `fixture/share`, the pCloud stub's directory or `/sdcard/Pictures`; inside Trips it has to be a
+  member of Trips, read off the app's preferences with `run-as`; a copy leaves the source's photo
+  and a move takes it. A move that stays on its storage carries nothing and only changes the
+  source's group; pCloud onto the share, and a copy within the share, are refused with the
+  picker saying why and nothing arriving. Every move has a source folder of its own, since it
+  uses it up; Trips is given a folder of this device and one of pCloud so that it is in the
+  picker on every chip. It walks the share once, so it is long: about five minutes of walk and
+  half a minute or so per cell. It replaced two scripts that drove five of these cells between
+  them. The cells only hand their transfers over, and what arrived is judged once they have all
+  been driven, against one deadline (`FIXTURE_JUDGE_SECONDS`, 180 by default), so a cell that
+  goes wrong costs no timeout of its own. Four cells are marked with the Issue that makes them
+  fail (#144, #145, see "既知の問題" in the root `AGENTS.md`): they are reported, not counted, and
+  say so when they start to pass. `FIXTURE_ONLY_CELLS="3 4"` drives only those cells
 - **`74-deselect-photos-or-videos.sh`** — #138: "Deselect photos" and "Deselect videos" under
   "Select all" in a folder's selection menu. A folder of this device with two photos and two
   videos is selected whole, one kind taken out, then the other: the toolbar's count has to read
@@ -279,7 +280,8 @@ at afterwards.
 ## pCloud, without a pCloud account
 
 `fixture/pcloud-stub.py` answers the slice of the API this app calls — `userinfo`, `diff`,
-`listfolder`, `uploadfile`, `getthumb`, `getfilelink` — out of a directory on this machine. The
+`listfolder`, `createfolder`, `uploadfile`, `copyfile`, `deletefile`, `getthumb`, `getfilelink` —
+out of a directory on this machine. The
 app is pointed at it by seeding a token and a host into its settings, which is all the OAuth
 screen leaves behind.
 

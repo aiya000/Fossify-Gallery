@@ -54,6 +54,7 @@ import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.FolderPlacement
+import org.fossify.gallery.helpers.FolderRefusal
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
@@ -465,26 +466,20 @@ class PickDirectoryDialog(
             source to placement
         }
 
+        val refusal = placed.firstNotNullOfOrNull { (_, placement) -> (placement as? FolderPlacement.Refused)?.reason }
+        if (refusal != null) {
+            showPickerMessage(
+                when (refusal) {
+                    FolderRefusal.PCLOUD_ONTO_SHARE -> R.string.smb_no_remote_copy_to_share
+                    FolderRefusal.COPY_WITHIN_SHARE -> R.string.smb_no_folder_copy_within_share
+                }
+            )
+            return true
+        }
+
         val transfers = placed.mapNotNull { (source, placement) -> (placement as? FolderPlacement.Transfer)?.let { source to it } }
         if (transfers.isEmpty()) {
             return false
-        }
-
-        val refusal = transfers.firstNotNullOfOrNull { (source, transfer) ->
-            val from = MediaStorage.of(activity, source)
-            val to = MediaStorage.of(activity, transfer.destination)
-            when {
-                // pCloud straight onto the share, see MediaStorage.canTransferTo()
-                !from.canTransferTo(to) -> R.string.smb_no_remote_copy_to_share
-                // the share has no copy within itself, a copy there would be a move
-                isCopyOperation && from is MediaStorage.Smb && to is MediaStorage.Smb -> R.string.smb_no_folder_copy_within_share
-                else -> null
-            }
-        }
-
-        if (refusal != null) {
-            showPickerMessage(refusal)
-            return true
         }
 
         onPlaced(transfers)
