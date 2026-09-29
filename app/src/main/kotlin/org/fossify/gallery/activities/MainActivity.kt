@@ -1058,8 +1058,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // other touch stays with the list: this takes over only once a drag is clearly sideways
     // and the list is not scrolling, and never while the list scrolls horizontally (a sideways
     // drag is the scroll then), while folders are selected (a drag reorder or a drag selection
-    // ends with a sideways move too), with only the device set up, or on the side where nothing
-    // lies in that direction
+    // ends with a sideways move too), with only the device set up, inside a group or a folder
+    // (#136), or on the side where nothing lies in that direction; see canSwipeStorage()
     private inner class StorageSwipe : RecyclerView.OnItemTouchListener {
         private val touchSlop = ViewConfiguration.get(this@MainActivity).scaledTouchSlop
         private val minFlingVelocity = ViewConfiguration.get(this@MainActivity).scaledMinimumFlingVelocity * 4
@@ -1146,12 +1146,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // the refresh spinner is no reason to wait: it stands for the recheck of the folders on
         // screen, which a switch stops anyway (reloadDirectories() raises mShouldStopFetching),
         // or for a pCloud scan, which runs on in the background and only fills the cache
-        private fun canSwipeStorage(): Boolean {
-            return availableStorages().size > 1
-                && !animating
-                && !config.scrollHorizontally
-                && getRecyclerAdapter()?.isSelecting() != true
-        }
+        private fun canSwipeStorage(): Boolean = org.fossify.gallery.helpers.canSwipeStorage(
+            storageCount = availableStorages().size,
+            isAnimating = animating,
+            scrollsHorizontally = config.scrollHorizontally,
+            isSelecting = getRecyclerAdapter()?.isSelecting() == true,
+            isInsideGroup = mCurrentGroupId != null,
+            isInsideFolder = mCurrentPathPrefix.isNotEmpty()
+        )
 
         // The storage a drag in this direction leads to, 0 when there is none that way: the
         // storages are walked in the order the menu lists them, dragging left towards the next
