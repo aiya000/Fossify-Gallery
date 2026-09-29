@@ -177,6 +177,18 @@ at afterwards.
   may be marked with the Issue that makes it fail (see "既知の問題" in the root `AGENTS.md`): it
   is reported, not counted, and says so when it starts to pass. All 36 pass now.
   `FIXTURE_ONLY_CELLS="3 4"` drives only those cells
+- **`73-a-medium-onto-every-storage.sh`** — #140: a medium copied or moved into a folder with the
+  destination picker, for every cell of `MediaTransferTableTest`'s table: the storage it is on,
+  the storage of the folder tapped, and copy or move -- 18 cells. Every cell carries a medium of
+  its own, named after the cell and with bytes of its own, from `AbFrom` into `AbTo`, so an
+  arrival is told apart by its name and read byte for byte off `fixture/share`, the pCloud stub's
+  directory or `/sdcard/Pictures`; a copy leaves the source and a move takes it. pCloud onto the
+  share, and a copy within the share (#150), are refused: the picker stays up and the medium stays
+  where it was. Judged all at once against one deadline, like `72`, after one walk of the share:
+  about five minutes of walk and a minute per cell, 25 minutes in all.
+  `FIXTURE_ONLY_CELLS="3 4"` drives only those cells. What `50`, `60`, `70` and `95` pin besides
+  the pair -- modification times, numbering, the requests pCloud is sent, rows that follow a move
+  without a walk -- stays theirs
 - **`74-deselect-photos-or-videos.sh`** — #138: "Deselect photos" and "Deselect videos" under
   "Select all" in a folder's selection menu. A folder of this device with two photos and two
   videos is selected whole, one kind taken out, then the other: the toolbar's count has to read
@@ -290,7 +302,7 @@ at afterwards.
 ## pCloud, without a pCloud account
 
 `fixture/pcloud-stub.py` answers the slice of the API this app calls — `userinfo`, `diff`,
-`listfolder`, `createfolder`, `uploadfile`, `copyfile`, `deletefile`, `getthumb`, `getfilelink` —
+`listfolder`, `createfolder`, `uploadfile`, `copyfile`, `renamefile`, `deletefile`, `getthumb`, `getfilelink` —
 out of a directory on this machine. The
 app is pointed at it by seeding a token and a host into its settings, which is all the OAuth
 screen leaves behind.
