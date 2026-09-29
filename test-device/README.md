@@ -135,6 +135,17 @@ at afterwards.
   restored through the same dialog every storage gets, back where it was with its bytes and with
   its copy gone from the bin -- the copy used to stay behind until the bin was emptied -- and
   "Empty the recycle bin" taking the rest away, the tile with it
+- **`57-delete-on-every-storage.sh`** — #140: a medium and a whole folder deleted on every
+  storage, every way the app deletes: into the recycle bin, past it with the confirmation's "skip
+  the recycle bin", and with the bin turned off in the settings -- a folder's confirmation has no
+  checkbox, so 3 storages x (3 + 2) = 15 cells. Every cell deletes something of its own, named
+  after the cell; what says it went is the storage, the medium gone from `/sdcard`,
+  `fixture/share` or the pCloud stub's directory, and found in that storage's bin (the app's own
+  files on the device, `.gallery-recycle-bin` on the share and on pCloud) or in none. The medium
+  beside them has to stay. The setting is flipped between the two halves with the app stopped,
+  after the first half is judged. `55` and `56` keep the round trip through one bin -- the
+  wording, a restore, emptying it; this is the other axis, and the first script to delete
+  anything on pCloud. `FIXTURE_ONLY_CELLS="2 5"` drives only those cells
 - **`60-copy-to-pcloud.sh`** — #28 the other way: the same medium copied to pCloud, which goes
   through the app's cache, an upload, and a scan of the destination folder. pCloud is
   `fixture/pcloud-stub.py` rather than an account; see below for why. What arrived is read off this
@@ -302,7 +313,7 @@ at afterwards.
 ## pCloud, without a pCloud account
 
 `fixture/pcloud-stub.py` answers the slice of the API this app calls — `userinfo`, `diff`,
-`listfolder`, `createfolder`, `uploadfile`, `copyfile`, `renamefile`, `deletefile`, `getthumb`, `getfilelink` —
+`listfolder`, `createfolder`, `createfolderifnotexists`, `uploadfile`, `copyfile`, `renamefile`, `deletefile`, `deletefolderrecursive`, `getthumb`, `getfilelink` —
 out of a directory on this machine. The
 app is pointed at it by seeding a token and a host into its settings, which is all the OAuth
 screen leaves behind.
