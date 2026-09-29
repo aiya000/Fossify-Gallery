@@ -842,8 +842,10 @@ class DirectoryAdapter(
 
     // Each folder taken whole by the picker's OK: a new folder made where FolderPlacement put it,
     // its media copied or moved in by the storage they are on, and the new folder put into the
-    // group that was open. The group is written down at once, before anything has arrived: a
-    // group is a note about a path, and the folder turns up in it when the transfer is through
+    // group that was open. The group is written down as soon as the folder is made, before
+    // anything has arrived: a group is a note about a path, and the folder turns up in it when
+    // the transfer is through. Not before the folder is made, since pCloud may give it another
+    // name than the one it was placed under, see prepareFolder()
     private fun transferFolders(placed: List<Pair<String, FolderPlacement.Transfer>>, isCopy: Boolean) {
         placed.forEach { (source, transfer) ->
             getMediaFileDirItems(listOf(source)) { fileDirItems ->
@@ -852,12 +854,13 @@ class DirectoryAdapter(
                     return@getMediaFileDirItems
                 }
 
-                if (transfer.groupId != null) {
-                    config.setFolderGroupOfPaths(listOf(transfer.destination), transfer.groupId)
-                }
+                prepareFolder(source, transfer.destination) { destination ->
+                    if (transfer.groupId != null) {
+                        config.setFolderGroupOfPaths(listOf(destination), transfer.groupId)
+                        listener?.refreshGroups()
+                    }
 
-                prepareFolder(transfer.destination) {
-                    MediaStorage.of(activity, source).copyMoveTo(activity, fileDirItems, source, transfer.destination, isCopy, onQueued = null) {
+                    MediaStorage.of(activity, source).copyMoveTo(activity, fileDirItems, source, destination, isCopy, onQueued = null) {
                         onFilesCopiedMoved(fileDirItems, it)
                     }
                 }
@@ -868,21 +871,29 @@ class DirectoryAdapter(
         listener?.refreshGroups()
     }
 
-    // The folder a transfer is about to fill, made first where the storage needs it made: pCloud
-    // uploads into a folder id, which only a folder that exists has. The share's transfer makes
-    // its folder itself, and the device's is made here since the commons copy expects one
-    private fun prepareFolder(path: String, then: () -> Unit) {
+    // The folder a transfer is about to fill, made first where the storage needs it made, and
+    // handed on as the path it was made at. pCloud uploads into a folder id, which only a folder
+    // that exists has, and it is the one storage whose folder may end up under another name: the
+    // name was placed by the rows the app has, and a folder an earlier transfer made a moment ago
+    // has none yet. pCloud refuses that name, so the folder is made under the source's name, or
+    // the first "name (n)" pCloud has free (#144). The share's transfer makes its folder itself,
+    // and the device's is made here since the commons copy expects one
+    private fun prepareFolder(source: String, path: String, then: (path: String) -> Unit) {
         when {
-            path.isPCloudPath() -> activity.writeToPCloud(emptyList(), { createFolder(PCLOUD_PATH_SCHEME, path.getFilenameFromPath()) }) { made ->
-                if (made) {
-                    activity.runOnUiThread(then)
+            path.isPCloudPath() -> {
+                var made = path
+                val name = source.trimEnd('/').getFilenameFromPath()
+                activity.writeToPCloud(emptyList(), { made = createFolderWithFreeName(PCLOUD_PATH_SCHEME, name) }) { success ->
+                    if (success) {
+                        activity.runOnUiThread { then(made) }
+                    }
                 }
             }
 
-            path.isSmbPath() -> then()
+            path.isSmbPath() -> then(path)
             else -> ensureBackgroundThread {
                 File(path).mkdirs()
-                activity.runOnUiThread(then)
+                activity.runOnUiThread { then(path) }
             }
         }
     }

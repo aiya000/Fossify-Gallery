@@ -286,6 +286,25 @@ class PCloudWriter(private val context: Context) {
         return newPath
     }
 
+    // The same, under "name (n)" when pCloud already has the name there; answers the path it
+    // ended up with. For a folder a transfer is about to fill: its name was picked from the rows
+    // the app has, and a folder made a moment ago by an earlier transfer has no row yet (#144).
+    // Numbered the way FolderPlacement numbers, from 1 and with no extension split off
+    fun createFolderWithFreeName(parentPath: String, name: String): String {
+        for (attempt in 0 until MAX_NAME_ATTEMPTS) {
+            val candidate = if (attempt == 0) name else "$name ($attempt)"
+            try {
+                return createFolder(parentPath, candidate)
+            } catch (e: PCloudException) {
+                if (e.result != PCLOUD_RESULT_ALREADY_EXISTS) {
+                    throw e
+                }
+            }
+        }
+
+        throw PCloudException(PCLOUD_RESULT_ALREADY_EXISTS, "no free name for $name")
+    }
+
     // A copy within pCloud, one API call, nothing downloaded. The cache learns of the copy
     // when the destination is rescanned, which the caller does once its batch is through
     fun copyFileTo(path: String, destinationFolder: String) {
