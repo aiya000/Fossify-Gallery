@@ -291,10 +291,10 @@ cell() {
     fi
     step "$from to $to, $op at the $at: $expected"
 
-    # every cell starts from a fresh start of the app, so that no search, selection or opened
-    # group of the cell before is still standing
-    app_stop
-    app_start
+    # every cell starts from a fresh folder list, so that no search, selection or opened group of
+    # the cell before is still standing -- with the app left running, so that the transfers the
+    # cells before handed over carry on, see app_restart_screen
+    app_restart_screen
     sleep 3
     switch_storage_to "$(label_of "$from")" "$name-storage" || return 0
     sleep 2
@@ -476,21 +476,21 @@ driving_started=$SECONDS
 
 cell device device copy top DevCopy new
 cell device device copy group DevCopy new
-cell device cloud copy top DevCopy new 144
+cell device cloud copy top DevCopy new
 cell device cloud copy group DevCopy new
 cell device share copy top DevCopy new
 cell device share copy group DevCopy new
 
 cell cloud device copy top CloudCopy new
 cell cloud device copy group CloudCopy new
-cell cloud cloud copy top CloudCopy new 144
+cell cloud cloud copy top CloudCopy new
 cell cloud cloud copy group CloudCopy new
 cell cloud share copy top CloudCopy refused
 cell cloud share copy group CloudCopy refused
 
 cell share device copy top ShareCopy new
 cell share device copy group ShareCopy new
-cell share cloud copy top ShareCopy new 144
+cell share cloud copy top ShareCopy new
 cell share cloud copy group ShareCopy new
 cell share share copy top ShareCopy refused
 cell share share copy group ShareCopy refused
@@ -507,7 +507,7 @@ cell cloud share move group CloudCopy refused
 
 cell share device move top ShareMvDevTop new
 cell share device move group ShareMvDevGroup new
-cell share cloud move top ShareMvCloudTop new 145
+cell share cloud move top ShareMvCloudTop new
 cell share cloud move group ShareMvCloudGroup new
 
 note "the transfers were driven in $((SECONDS - driving_started))s"

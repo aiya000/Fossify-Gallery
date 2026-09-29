@@ -125,6 +125,21 @@ app_start() {
     switch_storage_to "$(storage_label_of "$FIXTURE_STORAGE_FILTER")" "start-storage"
 }
 
+# The folder list opened afresh, with the app left running: the task is cleared and the launcher
+# entry started again, so no search, selection or opened group of a step before is still there.
+#
+# Not app_stop and app_start. A force-stop takes the app's transfer services down with it, and a
+# transfer the step before handed over was lost that way whenever it had not finished -- which
+# read as the app losing it (#144's cells, and #145). The launcher entry is the alias the app is
+# installed with, since SplashActivity itself is not exported
+app_restart_screen() {
+    # 0x10008000 is FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK; am has no named option for
+    # the first of them on every version
+    "${ADB[@]}" shell am start -W -f 0x10008000 \
+        -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+        -n "$FIXTURE_PACKAGE/org.fossify.gallery.activities.SplashActivity.Green" > /dev/null
+}
+
 # The app's own log, from this moment on.
 #
 # Everything is taken by the app's pid rather than by a list of tags: the tags move (the scan

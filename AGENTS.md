@@ -26,6 +26,7 @@
 | 台本でトーストが出るのを待ったのに、アプリは出しているのに dump に一度も入らない | 2 秒のトーストは dump の 1 周より短い。他アプリの窓が前に出ることを `mCurrentFocus` で待つ形にした。chooser はタイトルではなく中身で見る | [agents/tests/a-toast-is-gone-before-the-dump.md](./agents/tests/a-toast-is-gone-before-the-dump.md) |
 | 台本で「従量制の回線（モバイル回線）にいるとき」の振る舞いを見たい | エミュレータの Wi-Fi を `svc wifi disable` で切ると携帯回線に落ちて従量制になる。ホストにはそのまま届く。出口で必ず戻す | [agents/tests/mobile-data-on-the-emulator.md](./agents/tests/mobile-data-on-the-emulator.md) |
 | 台本で「キーボードが出ているか」を見たら、出ているのに「出ていない」と言われた | `dumpsys input_method` の `mInputShown` は見た目と揺れる。`dumpsys window` の `type=ime ... visible=true` を数秒待って読むようにした | [agents/tests/is-the-keyboard-up.md](./agents/tests/is-the-keyboard-up.md) |
+| 端末を動かすテストで、pCloud にフォルダはできたのに中身が来ない。そのマスだけ流すと緑 | 次の手順の `app_stop`（強制終了）が、前の手順の転送サービスごと消していた。`app_restart_screen` で画面だけ始め直すようにした | [agents/tests/a-force-stop-between-steps-kills-the-transfer.md](./agents/tests/a-force-stop-between-steps-kills-the-transfer.md) |
 | ある機能が端末にはあって共有（や pCloud）に無い。忘れているのか、わざとなのか分からない | #107 で全部読み直して分けた。わざと違えてあるものは表にした。載っていなければ抜けなので、`MediaStorage` の capability に乗せて直す | [agents/storage/what-each-storage-does-differently-on-purpose.md](./agents/storage/what-each-storage-does-differently-on-purpose.md) |
 
 ### この索引に足すこと
@@ -63,8 +64,7 @@
 
 | 問題 | どこに出るか | Issue |
 |---|---|---|
-| 同じフォルダを pCloud へ続けてコピーすると（1 回目にまだ行が無いうち）、2 回目が黙って消え、1 回目のフォルダが 2 回目のグループへ入る | `test-device/drive/72-a-folder-onto-every-storage.sh` の 3・9・15 マス（pCloud へ、トップでコピー）。「既知」として数えず、緑になったら知らせる | #144 |
-| 共有から pCloud へフォルダを移動すると、1 つ目はフォルダだけできて写真が届かない。36 マス全部を流したときだけ出て、そのマスだけを流すと緑になる。転送がたくさん溜まったときの取りこぼしか、締め切りに間に合わないだけかは、まだ分からない | 同じテストの 29 マス（共有から pCloud へ、トップで移動）。そのマスだけを流すと「直ったかも」と出るが、直ってはいない | #145 |
+| （いまは無し。#144 と #145 は 2026-09-30 に片づいた） | | |
 
 テストに「既知」の印をつけるときは、そのマスが赤いまま数えられないようにするだけでなく、
 **緑になったら知らせる**ようにしておきます（72 の `cell` の 7 つ目の引数）。直ったことに誰も気づかないまま、
