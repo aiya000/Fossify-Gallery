@@ -171,9 +171,12 @@ at afterwards.
   half a minute or so per cell. It replaced two scripts that drove five of these cells between
   them. The cells only hand their transfers over, and what arrived is judged once they have all
   been driven, against one deadline (`FIXTURE_JUDGE_SECONDS`, 180 by default), so a cell that
-  goes wrong costs no timeout of its own. Four cells are marked with the Issue that makes them
-  fail (#144, #145, see "既知の問題" in the root `AGENTS.md`): they are reported, not counted, and
-  say so when they start to pass. `FIXTURE_ONLY_CELLS="3 4"` drives only those cells
+  goes wrong costs no timeout of its own. Each cell starts from a fresh folder list with the
+  app left running (`app_restart_screen`), so that the transfers of the cells before carry on:
+  a force-stop between cells used to take them down, which read as the app losing them. A cell
+  may be marked with the Issue that makes it fail (see "既知の問題" in the root `AGENTS.md`): it
+  is reported, not counted, and says so when it starts to pass. All 36 pass now.
+  `FIXTURE_ONLY_CELLS="3 4"` drives only those cells
 - **`74-deselect-photos-or-videos.sh`** — #138: "Deselect photos" and "Deselect videos" under
   "Select all" in a folder's selection menu. A folder of this device with two photos and two
   videos is selected whole, one kind taken out, then the other: the toolbar's count has to read
