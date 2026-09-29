@@ -7,7 +7,8 @@ the repository, a network the run depends on, and an account whose state drifts 
 and the thing under test is the app's path from a share to pCloud, not pCloud itself.
 
 What it serves is the slice PCloudApi calls: userinfo, diff, listfolder, createfolder, uploadfile, getthumb,
-getfilelink and the download link that one hands out, copyfile, renamefile and deletefile. Everything is backed by a directory on this
+getfilelink and the download link that one hands out, copyfile, renamefile, deletefile,
+createfolderifnotexists and deletefolderrecursive. Everything is backed by a directory on this
 machine, so a test can look at what arrived with plain `stat`, the way it looks at the share.
 
 Plain http, on purpose. An https stub would need a certificate the app is built to trust, and a
@@ -256,6 +257,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_file_link(params)
         elif method == "createfolder":
             self.serve_create_folder(params)
+        elif method == "createfolderifnotexists":
+            self.serve_create_folder(params, existing_is_fine=True)
+        elif method == "deletefolderrecursive":
+            self.serve_delete_folder_recursive(params)
         elif method == "copyfile":
             self.serve_copy_file(params)
         elif method == "renamefile":
@@ -301,7 +306,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # pCloud refuses a name that is already there with 2004, which is what the app is told when it
     # makes a folder the account already has
-    def serve_create_folder(self, params):
+    # createfolderifnotexists answers with the folder that is there instead, which is how the app
+    # finds its recycle bin on pCloud
+    def serve_create_folder(self, params, existing_is_fine=False):
         parent = self.account.path_of_id(int(params.get("folderid", "0")))
         name = params.get("name", "")
         if parent is None or not name:
@@ -310,6 +317,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         relative = os.path.join(parent, name) if parent else name
         absolute = self.account.absolute(relative)
+        if os.path.isdir(absolute) and existing_is_fine:
+            self.send_json({"result": 0, "metadata": folder_metadata(self.account, relative, False)})
+            return
         if os.path.exists(absolute):
             self.send_refusal(2004, "File or folder alredy exists.")
             return
@@ -356,11 +366,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_json({"result": 0, "metadata": metadata})
 
     # a move into the folder with the given id, under toname, which is how the app moves a file
-    # within the account. A name that is taken there is refused rather than written over, so that
-    # a move the app did not number shows up as a failure instead of as a lost file
+    # within the account -- or, with no folder given, a new name where it is. A name that is taken
+    # there is refused rather than written over, so that a move the app did not number shows up as
+    # a failure instead of as a lost file
     def serve_rename_file(self, params):
         source = self.file_of(params)
-        folder = self.account.path_of_id(int(params.get("tofolderid", "0")))
+        if "tofolderid" in params:
+            folder = self.account.path_of_id(int(params["tofolderid"]))
+        else:
+            folder = os.path.dirname(source) if source else None
         if source is None:
             self.send_refusal(2009, "File not found.")
             return
@@ -381,6 +395,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.account.add_event("createfile", metadata)
         self.account.log("MOVED %s TO %s" % (source, relative))
         self.send_json({"result": 0, "metadata": metadata})
+
+    # pCloud moves the folder and everything under it to its trash; the stub has none
+    def serve_delete_folder_recursive(self, params):
+        relative = params.get("path", "").strip("/")
+        absolute = self.account.absolute(relative)
+        if not relative or not os.path.isdir(absolute):
+            self.send_refusal(2005, "Directory does not exist.")
+            return
+
+        metadata = folder_metadata(self.account, relative, False)
+        shutil.rmtree(absolute)
+        self.account.add_event("deletefolder", metadata)
+        self.account.log("DELETED FOLDER %s" % relative)
+        self.send_json({"result": 0})
 
     # pCloud moves a deleted file to its trash; the stub has none, and a test only asks whether
     # the file is still where it was
