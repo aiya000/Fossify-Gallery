@@ -36,7 +36,7 @@ class FolderPlacementTableTest(
         // itself, as Outbox (1)
         data object NewFolder : Outcome
         data object Regroup : Outcome
-        data class Refused(val reason: FolderRefusal) : Outcome
+        data class Refused(val reason: TransferRefusal) : Outcome
     }
 
     companion object {
@@ -48,8 +48,8 @@ class FolderPlacementTableTest(
                 At.entries.forEach { at -> add(arrayOf(from, to, op, at, outcome)) }
             }
 
-            val pcloudOntoShare = Outcome.Refused(FolderRefusal.PCLOUD_ONTO_SHARE)
-            val copyWithinShare = Outcome.Refused(FolderRefusal.COPY_WITHIN_SHARE)
+            val pcloudOntoShare = Outcome.Refused(TransferRefusal.PCLOUD_ONTO_SHARE)
+            val copyWithinShare = Outcome.Refused(TransferRefusal.COPY_WITHIN_SHARE)
 
             cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, Outcome.Regroup)

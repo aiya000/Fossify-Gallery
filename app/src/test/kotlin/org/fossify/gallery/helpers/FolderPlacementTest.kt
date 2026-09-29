@@ -39,7 +39,7 @@ class FolderPlacementTest {
     @Test
     fun `with every storage shown a copy of a share folder is refused`() {
         assertEquals(
-            FolderPlacement.Refused(FolderRefusal.COPY_WITHIN_SHARE),
+            FolderPlacement.Refused(TransferRefusal.COPY_WITHIN_SHARE),
             place(source = "smb:/Camera", storageFilter = STORAGE_FILTER_ALL)
         )
     }
