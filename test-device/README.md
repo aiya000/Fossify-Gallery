@@ -189,6 +189,13 @@ at afterwards.
   pCloud chip means something), that the path box no longer shows a raw `smb:` path glued to
   this device's label, and that the save lands as a file on the device while the photo on the
   share stays byte for byte what it was
+- **`76-a-share-into-the-app-by-storage.sh`** — #72: a photo shared into the app from another
+  app, with the share sheet's own intent, opens the destination picker, and each of its chips lists
+  only its own storage -- the network share's chip no folder of this device or of pCloud, and no
+  group holding only those; pCloud's and this device's chips their own folder, so that "not
+  listed" cannot pass on a picker that lists nothing. Asked of the list as it opens and of its
+  search. The folders it brings sort ahead of the share's, so a wrong one is the first row. Red
+  with the chips no longer putting away the groups whose folders are all on another storage
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage

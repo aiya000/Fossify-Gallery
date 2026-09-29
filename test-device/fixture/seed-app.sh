@@ -70,6 +70,16 @@ if [ -n "$FIXTURE_GROUP_EXTRA_MEMBER" ]; then
     done
 fi
 
+# the third group and its members, when a script names any; see FIXTURE_OTHER_GROUP_MEMBERS
+other_group=""
+if [ -n "$FIXTURE_OTHER_GROUP_MEMBERS" ]; then
+    other_group=",{&quot;id&quot;:$FIXTURE_OTHER_GROUP_ID,&quot;name&quot;:&quot;$FIXTURE_OTHER_GROUP_NAME&quot;}"
+    IFS='|' read -r -a other_members <<< "$FIXTURE_OTHER_GROUP_MEMBERS"
+    for member in "${other_members[@]}"; do
+        extra_member="$extra_member,&quot;$member&quot;:$FIXTURE_OTHER_GROUP_ID"
+    done
+fi
+
 cat > "$prefs" <<XML
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
@@ -86,7 +96,7 @@ cat > "$prefs" <<XML
     <boolean name="smb_rescan_on_pull_to_refresh" value="$FIXTURE_RESCAN_ON_PULL_TO_REFRESH" />
     <int name="smb_rescan_interval_minutes" value="0" />
     <boolean name="smb_rescan_on_unmetered_only" value="$FIXTURE_RESCAN_ON_UNMETERED_ONLY" />
-    <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}]</string>
+    <string name="folder_groups">[{&quot;id&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_PARENT_NAME&quot;},{&quot;id&quot;:$FIXTURE_GROUP_CHILD_ID,&quot;name&quot;:&quot;$FIXTURE_GROUP_CHILD_NAME&quot;,&quot;parentId&quot;:$FIXTURE_GROUP_PARENT_ID}$other_group]</string>
     <string name="folder_group_members">{&quot;smb:/Trips/Osaka&quot;:$FIXTURE_GROUP_PARENT_ID,&quot;smb:/Trips/Kyoto&quot;:$FIXTURE_GROUP_CHILD_ID$extra_member}</string>
     <int name="directory_sort_order" value="$FIXTURE_DIRECTORY_SORT" />
     <string name="pcloud_access_token">$FIXTURE_PCLOUD_ACCESS_TOKEN</string>
