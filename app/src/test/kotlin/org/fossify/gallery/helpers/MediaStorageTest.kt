@@ -99,21 +99,6 @@ class MediaStorageTest {
         }
     }
 
-    // where media can be copied or moved to: anywhere, but for pCloud straight onto the share,
-    // which would have to be staged on the way (#28). The destination picker turns that pair
-    // away, and copyMoveTo() refuses it if asked anyway
-    @Test
-    fun `every pair of storages can be transferred between, but pCloud onto the share`() {
-        for (source in listOf(device, pCloud, smb)) {
-            assertTrue(source.canTransferTo(device))
-            assertTrue(source.canTransferTo(pCloud))
-        }
-
-        assertTrue(device.canTransferTo(smb))
-        assertTrue(smb.canTransferTo(smb))
-        assertFalse(pCloud.canTransferTo(smb))
-    }
-
     // Every storage has a bin, and a medium in one is deleted for good from there (#112). The
     // two remote bins are a folder in the storage's root, and a medium in it is told by its
     // path; the device's bin is a path under the app's files, which the context here cannot

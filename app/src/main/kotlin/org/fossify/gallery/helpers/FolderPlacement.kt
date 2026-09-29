@@ -13,19 +13,8 @@ sealed interface FolderPlacement {
     // into it and the folder put into [groupId]
     data class Transfer(val destination: String, val groupId: Long?) : FolderPlacement
 
-    // a pair of storages turned away on purpose, see FolderRefusal
-    data class Refused(val reason: FolderRefusal) : FolderPlacement
-}
-
-// The pairs the picker's OK turns away rather than carry out. Both are written down in
-// agents/storage/what-each-storage-does-differently-on-purpose.md
-enum class FolderRefusal {
-    // pCloud straight onto the share would have to be staged on the way (#28); the same rule as
-    // MediaStorage.PCloud.canTransferTo(), which the picker asks when a folder is tapped
-    PCLOUD_ONTO_SHARE,
-
-    // the share has no copy within itself, a copy there would be a move
-    COPY_WITHIN_SHARE
+    // a pair of storages turned away on purpose, the same pairs as for a medium
+    data class Refused(val reason: TransferRefusal) : FolderPlacement
 }
 
 // [storageFilter] is what the chips show; with every storage shown there is none picked, and
@@ -46,12 +35,8 @@ fun placeFolder(
         return FolderPlacement.Regroup(groupId)
     }
 
-    if (sourceStorage == STORAGE_FILTER_PCLOUD && storage == STORAGE_FILTER_SMB) {
-        return FolderPlacement.Refused(FolderRefusal.PCLOUD_ONTO_SHARE)
-    }
-
-    if (isCopy && sourceStorage == STORAGE_FILTER_SMB && storage == STORAGE_FILTER_SMB) {
-        return FolderPlacement.Refused(FolderRefusal.COPY_WITHIN_SHARE)
+    transferRefusal(sourceStorage, storage, isCopy)?.let {
+        return FolderPlacement.Refused(it)
     }
 
     val root = when (storage) {
@@ -70,10 +55,4 @@ fun placeFolder(
     }
 
     return FolderPlacement.Transfer(destination, groupId)
-}
-
-private fun storageFilterOf(path: String) = when {
-    path.startsWith(PCLOUD_PATH_SCHEME) -> STORAGE_FILTER_PCLOUD
-    path.startsWith(SMB_PATH_SCHEME) -> STORAGE_FILTER_SMB
-    else -> STORAGE_FILTER_LOCAL
 }

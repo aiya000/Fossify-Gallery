@@ -54,8 +54,6 @@ import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.FolderPlacement
-import org.fossify.gallery.helpers.FolderRefusal
-import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
@@ -63,6 +61,8 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.placeFolder
+import org.fossify.gallery.helpers.storageFilterOf
+import org.fossify.gallery.helpers.transferRefusal
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
 import java.io.File
@@ -468,12 +468,7 @@ class PickDirectoryDialog(
 
         val refusal = placed.firstNotNullOfOrNull { (_, placement) -> (placement as? FolderPlacement.Refused)?.reason }
         if (refusal != null) {
-            showPickerMessage(
-                when (refusal) {
-                    FolderRefusal.PCLOUD_ONTO_SHARE -> R.string.smb_no_remote_copy_to_share
-                    FolderRefusal.COPY_WITHIN_SHARE -> R.string.smb_no_folder_copy_within_share
-                }
-            )
+            showPickerMessage(refusal.messageId)
             return true
         }
 
@@ -662,6 +657,13 @@ class PickDirectoryDialog(
         val adapter = DirectoryAdapter(activity, dirs.clone() as ArrayList<Directory>, null, binding.directoriesGrid, true) {
             val clickedDir = it as Directory
             val path = clickedDir.path
+            // pCloud straight onto the share, or a copy within the share, see TransferRefusal
+            val refusal = if (isPickingCopyMoveDestination) {
+                transferRefusal(storageFilterOf(sourcePath), storageFilterOf(path), isCopyOperation)
+            } else {
+                null
+            }
+
             if (clickedDir.isGroup()) {
                 val groupId = clickedDir.getGroupId()
                 activity.handleLockedFolderOpening(path) { success ->
@@ -687,10 +689,8 @@ class PickDirectoryDialog(
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
                     return@DirectoryAdapter
-                } else if (isPickingCopyMoveDestination && !MediaStorage.of(activity, sourcePath).canTransferTo(MediaStorage.of(activity, path))) {
-                    // pCloud straight onto the share, see MediaStorage.canTransferTo(); the share
-                    // to itself is another thing entirely -- no bytes travel at all
-                    activity.toast(R.string.smb_no_remote_copy_to_share, Toast.LENGTH_LONG)
+                } else if (refusal != null) {
+                    activity.toast(refusal.messageId, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
                     activity.toast(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)

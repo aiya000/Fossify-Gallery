@@ -134,15 +134,65 @@ else
     fail "the filename toggle is not on screen (view tree in $dump)"
 fi
 
-########################################################################################
-step "moving $FIXTURE_MOVE_FILE into $FIXTURE_MOVE_DESTINATION, another folder of the share"
-########################################################################################
-
 if ! ui_wait_text "$FIXTURE_MOVE_FILE" 60 "95-grid"; then
     fail "$FIXTURE_MOVE_FILE is not in the grid; the scan did not see what was put on the share"
     screenshot "95-no-file"
     finish
 fi
+
+########################################################################################
+step "a copy of $FIXTURE_MOVE_FILE into $FIXTURE_MOVE_DESTINATION is turned away (#150)"
+########################################################################################
+
+# The share has no copy within itself, and the service carried one out as a move: the original
+# left the folder it was copied from. The picker turns the folder away now, with a toast that is
+# gone before a dump can be sure to see it (agents/tests/a-toast-is-gone-before-the-dump.md), so
+# the witnesses are the picker still being up, and the share: nothing arrived, nothing left
+if ! select_row "$FIXTURE_MOVE_FILE" "95-select-copy"; then
+    screenshot "95-not-selected-copy"
+    finish
+fi
+
+logcat_reset
+tap_action "Copy to" "95-tap-copy" || finish
+sleep 2
+if ! ui_wait_exact_text "$FIXTURE_MOVE_DESTINATION" 30 "95-copy-picker"; then
+    fail "$FIXTURE_MOVE_DESTINATION is not in the picker"
+    screenshot "95-no-copy-picker-folder"
+    finish
+fi
+
+ui_tap_exact_text "$FIXTURE_MOVE_DESTINATION" "95-pick-copy-folder"
+sleep 5
+if ui_wait_exact_text "$FIXTURE_MOVE_DESTINATION" 5 "95-copy-picker-still-up"; then
+    pass "the picker stays up rather than taking $FIXTURE_MOVE_DESTINATION as the copy's destination"
+else
+    fail "the picker went away, as if the copy was handed over"
+    screenshot "95-copy-picker-gone"
+fi
+
+if [ -f "$moved_from" ] && [ ! -f "$moved_to" ]; then
+    pass "and $FIXTURE_MOVE_FILE is still in $FIXTURE_MOVE_FOLDER, with nothing in $FIXTURE_MOVE_DESTINATION"
+else
+    fail "the copy was carried out: $FIXTURE_MOVE_FOLDER has it: $([ -f "$moved_from" ] && echo yes || echo no), $FIXTURE_MOVE_DESTINATION has it: $([ -f "$moved_to" ] && echo yes || echo no)"
+    finish
+fi
+
+capture_log "95-copy-within"
+refute_log "within the share" "the share was asked for nothing"
+
+# the picker first: while it is up, a dump holds only its window and no selection to see
+"${ADB[@]}" shell input keyevent KEYCODE_BACK
+sleep 1
+for _ in 1 2 3; do
+    in_selection_mode "95-leave-copy" || break
+    "${ADB[@]}" shell input keyevent KEYCODE_BACK
+    sleep 1
+done
+
+########################################################################################
+step "moving $FIXTURE_MOVE_FILE into $FIXTURE_MOVE_DESTINATION, another folder of the share"
+########################################################################################
 
 if ! select_row "$FIXTURE_MOVE_FILE" "95-select"; then
     screenshot "95-not-selected"
