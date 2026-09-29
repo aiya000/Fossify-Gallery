@@ -59,9 +59,15 @@ prefs="$RUN_DIR/Prefs.xml"
 # - app_run_count keeps the welcome and rating prompts out of the way
 #
 # &quot; because those values are JSON living inside XML.
+#
+# FIXTURE_GROUP_EXTRA_MEMBER may name several folders, separated by '|': a script that needs the
+# group on more than one storage's chip gives it a folder of each
 extra_member=""
 if [ -n "$FIXTURE_GROUP_EXTRA_MEMBER" ]; then
-    extra_member=",&quot;$FIXTURE_GROUP_EXTRA_MEMBER&quot;:$FIXTURE_GROUP_PARENT_ID"
+    IFS='|' read -r -a extra_members <<< "$FIXTURE_GROUP_EXTRA_MEMBER"
+    for member in "${extra_members[@]}"; do
+        extra_member="$extra_member,&quot;$member&quot;:$FIXTURE_GROUP_PARENT_ID"
+    done
 fi
 
 cat > "$prefs" <<XML
