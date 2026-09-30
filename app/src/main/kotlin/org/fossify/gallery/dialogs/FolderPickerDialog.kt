@@ -50,10 +50,11 @@ import org.fossify.gallery.databinding.DialogFolderPickerBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.smbLabel
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCloudScanner
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.smbRootOfPath
 import org.fossify.gallery.helpers.SmbScanner
 import org.fossify.gallery.views.StorageChips
 import java.io.File
@@ -102,7 +103,7 @@ class FolderPickerDialog(
                 currPath = activity.internalStoragePath
             }
         } else if (currPath.isSmbPath()) {
-            if (!config.isSmbConfigured || localStorageOnly) {
+            if (config.smbConnectionOf(currPath) == null || localStorageOnly) {
                 currPath = activity.internalStoragePath
             }
         } else {
@@ -198,8 +199,9 @@ class FolderPickerDialog(
             storages.add(Storage(PCLOUD_PATH_SCHEME, activity.getString(R.string.pcloud)))
         }
 
-        if (config.isSmbConfigured && !localStorageOnly) {
-            storages.add(Storage(SMB_PATH_SCHEME, activity.getString(R.string.smb)))
+        // a chip per share, each opening on its own root (#155)
+        if (!localStorageOnly) {
+            config.smbConnections.forEach { storages.add(Storage(it.root, activity.smbLabel(it.id))) }
         }
 
         return storages
@@ -212,7 +214,7 @@ class FolderPickerDialog(
         }
 
         if (path.isSmbPath()) {
-            return SMB_PATH_SCHEME
+            return smbRootOfPath(path)
         }
 
         val basePath = path.getBasePath(activity)

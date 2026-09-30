@@ -112,7 +112,6 @@ import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
-import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.StorageOrder
 import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.smbConnectionIdOf
@@ -742,16 +741,30 @@ fun Context.shownSmbConnectionIds(): List<Int> {
 // them and the pickers' chips stand in -- the order chosen in the settings, see StorageOrder.
 // A remote storage is only there once it is set up
 fun Context.availableStorages(): List<Int> =
-    StorageOrder.of(hasPCloud = config.isPCloudLoggedIn, hasSmb = config.isSmbConfigured, order = config.storageOrder)
+    StorageOrder.of(hasPCloud = config.isPCloudLoggedIn, shares = config.smbConnections.map { it.storageFilter }, order = config.storageOrder)
 
-fun Context.storageLabel(storageFilter: Int) = getString(
-    when (storageFilter) {
-        STORAGE_FILTER_PCLOUD -> R.string.pcloud
-        STORAGE_FILTER_SMB -> R.string.smb
-        STORAGE_FILTER_ALL -> R.string.storage_all
-        else -> R.string.storage_local
+fun Context.storageLabel(storageFilter: Int): String {
+    val smbConnectionId = smbConnectionIdOfFilter(storageFilter)
+    return when {
+        smbConnectionId != null -> smbLabel(smbConnectionId)
+        storageFilter == STORAGE_FILTER_PCLOUD -> getString(R.string.pcloud)
+        storageFilter == STORAGE_FILTER_ALL -> getString(R.string.storage_all)
+        else -> getString(R.string.storage_local)
     }
-)
+}
+
+// What a share is called on screen (#155): the name the user gave it; with none, "Network share"
+// while it is the only one, as it always was; and the host and share it is on once there are
+// others it has to be told from
+fun Context.smbLabel(connectionId: Int): String {
+    val connections = config.smbConnections
+    val connection = connections.firstOrNull { it.id == connectionId } ?: return getString(R.string.smb)
+    return when {
+        connection.name.isNotEmpty() -> connection.name
+        connections.size == 1 -> getString(R.string.smb)
+        else -> connection.address
+    }
+}
 
 // A path as the user should read it, whichever storage it is on.
 //
@@ -761,7 +774,7 @@ fun Context.storageLabel(storageFilter: Int) = getString(
 // and is not one. A remote path is shown as its storage's name followed by the folders under it
 fun Context.humanizeAnyPath(path: String): String = when {
     path.isPCloudPath() -> getString(R.string.pcloud) + path.removePrefix(PCLOUD_PATH_SCHEME)
-    path.isSmbPath() -> getString(R.string.smb) + path.removePrefix(smbRootOfPath(path))
+    path.isSmbPath() -> smbLabel(smbConnectionIdOf(path) ?: 0) + path.removePrefix(smbRootOfPath(path))
     else -> humanizePath(path)
 }
 

@@ -46,7 +46,8 @@ prefs="$RUN_DIR/Prefs.xml"
 # -- which showed up here as a share that scanned fine and a folder list that then drew nothing.
 # What each block is for:
 #
-# - the share: host, port, name, root, and the credentials of the fixture
+# - the share: host, port, name, root, and the credentials of the fixture; and a second
+#   connection before it, when a script asks for one (#155)
 # - which scans the settings may start. Off by default: a scan nobody asked for, arriving in the
 #   middle of a test, is the one thing that makes a run unreadable
 # - the groups of #64: a group holding a folder and a subgroup, which is the shape that shows
@@ -80,9 +81,26 @@ if [ -n "$FIXTURE_OTHER_GROUP_MEMBERS" ]; then
     done
 fi
 
+# the second connection, when a script names a root for it; see FIXTURE_SECOND_SMB_ROOT_PATH.
+# Its keys are the first one's with its id after them, and its id is listed on its own
+second_share=""
+if [ -n "$FIXTURE_SECOND_SMB_ROOT_PATH" ]; then
+    id="$FIXTURE_SECOND_SMB_ID"
+    second_share="
+    <string name=\"smb_connection_ids\">$id</string>
+    <string name=\"smb_name_$id\">$FIXTURE_SECOND_SMB_NAME</string>
+    <string name=\"smb_host_$id\">$FIXTURE_SMB_HOST</string>
+    <int name=\"smb_port_$id\" value=\"$FIXTURE_SMB_PORT\" />
+    <string name=\"smb_share_$id\">$FIXTURE_SHARE_NAME</string>
+    <string name=\"smb_root_path_$id\">$FIXTURE_SECOND_SMB_ROOT_PATH</string>
+    <string name=\"smb_user_$id\">$FIXTURE_SMB_USER</string>
+    <string name=\"smb_password_$id\">$FIXTURE_SMB_PASSWORD</string>
+    <string name=\"smb_domain_$id\">$FIXTURE_SMB_DOMAIN</string>"
+fi
+
 cat > "$prefs" <<XML
 <?xml version='1.0' encoding='utf-8' standalone='yes' ?>
-<map>
+<map>$second_share
     <string name="smb_host">$FIXTURE_SMB_HOST</string>
     <int name="smb_port" value="$FIXTURE_SMB_PORT" />
     <string name="smb_share">$FIXTURE_SHARE_NAME</string>
@@ -120,7 +138,7 @@ step "writing the fixture settings into the app"
 # to the device's shell, so quotes that are not inside the string are eaten before they get there
 "${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'mkdir -p shared_prefs && cat > shared_prefs/Prefs.xml'" < "$prefs"
 
-written="$("${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'cat shared_prefs/Prefs.xml'" | tr -d '\r' | rg -c 'smb_host' || true)"
+written="$("${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'cat shared_prefs/Prefs.xml'" | tr -d '\r' | rg -c '"smb_host"' || true)"
 if [ "$written" != "1" ]; then
     echo "the preferences did not land; run-as may not be allowed on this build" >&2
     exit 1

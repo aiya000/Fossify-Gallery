@@ -94,6 +94,8 @@ import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.smbRootOfPath
+import org.fossify.gallery.helpers.smbConnectionIdOf
+import org.fossify.gallery.extensions.smbLabel
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.RescanOnMobileData
 import org.fossify.gallery.helpers.RescanScope
@@ -532,7 +534,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
                 PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
                 // the root of a share, whichever one it is (#155)
-                smbRootOfPath(mPath) -> getString(R.string.smb)
+                smbRootOfPath(mPath) -> smbLabel(smbConnectionIdOf(mPath) ?: 0)
                 else -> getHumanizedFilename(mPath)
             }
 

@@ -39,9 +39,11 @@ fun placeFolder(
         return FolderPlacement.Refused(it)
     }
 
-    val root = when (storage) {
-        STORAGE_FILTER_PCLOUD -> PCLOUD_PATH_SCHEME
-        STORAGE_FILTER_SMB -> SMB_PATH_SCHEME
+    // a share's root is its own, "smb:" or "smb:2" (#155)
+    val smbConnectionId = smbConnectionIdOfFilter(storage)
+    val root = when {
+        storage == STORAGE_FILTER_PCLOUD -> PCLOUD_PATH_SCHEME
+        smbConnectionId != null -> smbRootOf(smbConnectionId)
         else -> deviceRoot.trimEnd('/')
     }
 

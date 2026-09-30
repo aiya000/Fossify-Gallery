@@ -252,7 +252,7 @@ class RemoteScanService : Service() {
                 // question is whether it wrote at all
                 Log.i(
                     TAG,
-                    "Walked the share: ${result.folderCount} folders, ${result.mediaCount} files, ${result.skippedFolderCount} folders skipped"
+                    "Walked the share: ${result.folderCount} folders, ${result.mediaCount} files, ${result.skippedFolderCount} folders skipped (${connection.root})"
                 )
 
                 when {
