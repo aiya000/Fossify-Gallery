@@ -35,12 +35,12 @@ class FolderPlacementTest {
         assertEquals(FolderPlacement.Regroup(1L), place(source = "smb:/Camera", isCopy = false, storageFilter = STORAGE_FILTER_ALL, groupId = 1L))
     }
 
-    // the share's folder copied with every storage shown is a copy within the share
+    // the share's folder copied with every storage shown is a copy within the share (#154)
     @Test
-    fun `with every storage shown a copy of a share folder is refused`() {
+    fun `with every storage shown a copy of a share folder stays on its share`() {
         assertEquals(
-            FolderPlacement.Refused(TransferRefusal.COPY_WITHIN_SHARE),
-            place(source = "smb:/Camera", storageFilter = STORAGE_FILTER_ALL)
+            FolderPlacement.Transfer("smb:2/Camera (1)", null),
+            place(source = "smb:2/Camera", storageFilter = STORAGE_FILTER_ALL, isTaken = taking("smb:2/Camera"))
         )
     }
 

@@ -662,7 +662,7 @@ class PickDirectoryDialog(
         val adapter = DirectoryAdapter(activity, dirs.clone() as ArrayList<Directory>, null, binding.directoriesGrid, true) {
             val clickedDir = it as Directory
             val path = clickedDir.path
-            // pCloud straight onto the share, or a copy within the share, see TransferRefusal
+            // pCloud straight onto the share, see TransferRefusal
             val refusal = if (isPickingCopyMoveDestination) {
                 transferRefusal(storageFilterOf(sourcePath), storageFilterOf(path), isCopyOperation)
             } else {

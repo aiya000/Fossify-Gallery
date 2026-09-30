@@ -323,7 +323,7 @@ class SmbWriter(private val context: Context) {
     // The rows and the cached copies follow, since what moved is the same bytes under a new path
     fun moveFileTo(path: String, destinationFolder: String): String {
         // Another share is not "within" anything: nothing but a copy of the bytes gets a file
-        // there, and a move is refused before it reaches here (#155)
+        // there, and a move there is SmbTransferService's SHARE_TO_SHARE (#154)
         require(smbConnectionIdOf(path) == smbConnectionIdOf(destinationFolder)) { "$path and $destinationFolder are on different shares" }
         // read before the rows move, so the cached copies can be found under their old name
         val medium = context.mediaDB.getMediumByPath(path)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # #155: two connections to a share are two storages. Each is walked on its own, each has a row of
 # its own in the storage menu, the folder list on one shows its folders and not the other's, and
-# a copy from one share onto the other is turned away with the picker saying why.
+# a copy and a move from one share onto the other carry the bytes across (#154).
 #
 # The two connections are the one fixture share with two roots: the first is pointed at Trips,
 # the second at a folder this script brings (AbSecond, holding Left and Right). A connection is a
@@ -25,9 +25,13 @@ first_label="\\\\$FIXTURE_SMB_HOST\\$FIXTURE_SHARE_NAME\\$FIXTURE_GROUP_PARENT_N
 second_label="$FIXTURE_SECOND_SMB_NAME"
 source_folder="Osaka"
 source_file="video-1.mp4"
+source_on_host="$FIXTURE_SHARE_DIR/$FIXTURE_GROUP_PARENT_NAME/$source_folder/$source_file"
+# where the move from the second share lands, on the first; the fixture counts Trips, so it goes
+moved_on_host="$FIXTURE_SHARE_DIR/$FIXTURE_GROUP_PARENT_NAME/$source_folder/right.jpg"
 
 clean_up() {
     rm -rf "$second_on_host"
+    rm -f "$moved_on_host"
 }
 
 trap clean_up EXIT
@@ -37,6 +41,7 @@ step "putting a second root on the share: $second_root, with Left and Right in i
 mkdir -p "$second_on_host/Left" "$second_on_host/Right"
 cp "$FIXTURE_SHARE_DIR/Screens/image-1.jpg" "$second_on_host/Left/left.jpg"
 cp "$FIXTURE_SHARE_DIR/Screens/image-2.jpg" "$second_on_host/Right/right.jpg"
+right_md5="$(md5sum < "$second_on_host/Right/right.jpg")"
 
 step "seeding two connections: the first at $FIXTURE_GROUP_PARENT_NAME, the second, $second_label, at $second_root"
 FIXTURE_SMB_ROOT_PATH="$FIXTURE_GROUP_PARENT_NAME" \
@@ -120,7 +125,7 @@ else
 fi
 
 ########################################################################################
-step "a copy from one share onto the other is turned away"
+step "a copy from one share onto the other carries the bytes across (#154)"
 ########################################################################################
 
 switch_storage_to "$first_label" "77-back-to-first"
@@ -160,19 +165,86 @@ if ! ui_wait_exact_text "Left" 30 "77-picker-left"; then
 fi
 
 pass "the picker's $second_label chip lists Left"
+logcat_reset
 ui_tap_exact_text "Left" "77-pick-left"
-sleep 5
-if ui_wait_exact_text "Left" 5 "77-picker-still-up"; then
-    pass "the picker stays up rather than taking Left as the copy's destination"
-else
-    fail "the picker went away, as if the copy was handed over"
-    screenshot "77-picker-gone"
+
+if ! wait_for_log "Copied 1 of 1 from share to share" 180 "77-copied"; then
+    fail "the copy onto $second_label never finished"
+    screenshot "77-no-copy"
+    logcat_dump "77-copy" > /dev/null
+    finish
 fi
 
-if [ ! -e "$second_on_host/Left/$source_file" ] && [ -f "$FIXTURE_SHARE_DIR/$FIXTURE_GROUP_PARENT_NAME/$source_folder/$source_file" ]; then
-    pass "and nothing arrived in Left, with $source_file still where it was"
+if [ "$(md5sum < "$second_on_host/Left/$source_file")" = "$(md5sum < "$source_on_host")" ]; then
+    pass "Left on $second_label has $source_file, byte for byte"
 else
-    fail "the copy was carried out, or the source moved"
+    fail "Left on $second_label does not have $source_file as it is on the first share"
+fi
+
+if [ -f "$source_on_host" ]; then
+    pass "and $source_file is still in $source_folder on the first share"
+else
+    fail "a copy took $source_file out of $source_folder"
+fi
+
+for _ in 1 2 3; do
+    in_selection_mode "77-leave-copy" || break
+    "${ADB[@]}" shell input keyevent KEYCODE_BACK
+    sleep 1
+done
+
+########################################################################################
+step "a move from $second_label onto the first share carries the photo and leaves nothing behind"
+########################################################################################
+
+# the storage chip belongs to the folder list, not to a grid inside a folder
+"${ADB[@]}" shell input keyevent KEYCODE_BACK
+sleep 2
+switch_storage_to "$second_label" "77-to-second-again" || finish
+ui_wait_exact_text "Right" 30 "77-second-right-again" || true
+ui_tap_exact_text "Right" "77-open-right"
+sleep 3
+if ! ui_wait_text "right.jpg" 30 "77-right-grid" || ! select_row "right.jpg" "77-select-right"; then
+    fail "right.jpg could not be picked in Right"
+    finish
+fi
+
+tap_action "Move to" "77-move" || finish
+sleep 2
+# the first share's chip sits before the second's; the row is scrolled back to its start
+dump="$(ui_dump "77-move-chips")"
+if bounds="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "All storages" --bounds)"; then
+    read -r _ top _ bottom <<< "$bounds"
+    row_y=$(((top + bottom) / 2))
+    "${ADB[@]}" shell input swipe 150 "$row_y" 950 "$row_y" 400
+    sleep 1
+fi
+
+ui_tap_text "$first_label" "77-move-chip" || finish
+if ! ui_wait_exact_text "$source_folder" 30 "77-move-osaka"; then
+    fail "the picker's chip of the first share does not list $source_folder"
+    finish
+fi
+
+logcat_reset
+ui_tap_exact_text "$source_folder" "77-pick-osaka"
+if ! wait_for_log "Moved 1 of 1 from share to share" 180 "77-moved"; then
+    fail "the move onto the first share never finished"
+    screenshot "77-no-move"
+    logcat_dump "77-move" > /dev/null
+    finish
+fi
+
+if [ "$(md5sum < "$moved_on_host")" = "$right_md5" ]; then
+    pass "$source_folder on the first share has right.jpg, byte for byte"
+else
+    fail "$source_folder on the first share does not have right.jpg as it left $second_label"
+fi
+
+if [ -e "$second_on_host/Right/right.jpg" ]; then
+    fail "right.jpg is still in Right on $second_label; it was copied rather than moved"
+else
+    pass "and it is gone from Right on $second_label"
 fi
 
 finish

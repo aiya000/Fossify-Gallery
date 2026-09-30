@@ -41,6 +41,7 @@ import org.fossify.gallery.helpers.SmbFileCache
 import org.fossify.gallery.helpers.SmbVideoCache
 import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.availableName
+import org.fossify.gallery.helpers.smbConnectionIdOf
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -65,8 +66,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 // all, because the share can put a file in another folder itself -- see SmbClient.moveTo(). It
 // goes through this service all the same, for the progress and for the one-job-at-a-time queue.
 //
-// A copy or a move onto the share starts from a file on the device: pCloud straight onto the
-// share would have to stage the file the way a copy to pCloud does, which is not built (#28).
+// SHARE_TO_SHARE is the rest of what has a share on both sides: a copy within one share, and a
+// copy or a move onto another share. The share has no copy request, and the rename a move within
+// a share is cannot reach another share, so every byte is read off the share and written back
+// (#154).
+//
+// pCloud straight onto the share would have to stage the file the way a copy to pCloud does,
+// which is not built (#28).
 //
 // Every file is one unit of progress. What went wrong with one file does not stop the others:
 // a share drops a connection mid-folder often enough that giving up on the rest would be the
@@ -75,16 +81,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 // screens learn of it through the listeners, because the callback of
 // copyMoveFilesToPickedDestination() never fires for a transfer
 class SmbTransferService : Service() {
-    enum class Kind { TO_DEVICE, TO_PCLOUD, FROM_DEVICE, WITHIN_SHARE }
+    enum class Kind { TO_DEVICE, TO_PCLOUD, FROM_DEVICE, WITHIN_SHARE, SHARE_TO_SHARE }
 
     // For TO_DEVICE and TO_PCLOUD the sourcePaths are pseudo paths on the share and the
     // destination is a folder on the device or on pCloud. FROM_DEVICE is the other way round:
     // the sources are files on the device and the destination is a folder on the share.
-    // WITHIN_SHARE has the share on both sides.
+    // WITHIN_SHARE and SHARE_TO_SHARE have a share on both sides.
     //
     // [isCopy] false leaves nothing behind on the side the files came from. WITHIN_SHARE is
-    // always a move -- a copy within the share would have to read every byte back out and write
-    // it again, and nobody has asked for that
+    // always a move within one share, the rename; a copy there, and anything onto another share,
+    // is SHARE_TO_SHARE
     class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String, val isCopy: Boolean = true)
 
     companion object {
@@ -121,6 +127,11 @@ class SmbTransferService : Service() {
         fun removeListener(listener: () -> Unit) {
             listeners.remove(listener)
         }
+
+        // what a copy or a move from a file of a share into a folder of a share is: the rename
+        // for a move within one share, the bytes carried across for everything else
+        fun kindBetweenShares(source: String, destination: String, isCopy: Boolean): Kind =
+            if (!isCopy && smbConnectionIdOf(source) == smbConnectionIdOf(destination)) Kind.WITHIN_SHARE else Kind.SHARE_TO_SHARE
     }
 
     // why the last file of a run failed, for the result notification
@@ -195,7 +206,7 @@ class SmbTransferService : Service() {
         val newLocalPaths = ArrayList<String>()
 
         for ((index, path) in job.sourcePaths.withIndex()) {
-            showProgress(buildNotification(progressText(job, index, total), index, total))
+            showProgress(buildNotification(progressText(job, index, total), index, total, progressDetail(job)))
             if (!config.isSmbConfigured) {
                 failed += total - index
                 break
@@ -227,6 +238,13 @@ class SmbTransferService : Service() {
                     }
 
                     Kind.WITHIN_SHARE -> writer.moveFileTo(path, job.destination)
+
+                    Kind.SHARE_TO_SHARE -> {
+                        copyOntoShare(path, job.destination)
+                        if (!job.isCopy) {
+                            writer.deleteFiles(listOf(path))
+                        }
+                    }
                 }
                 done++
             } catch (e: PCloudException) {
@@ -254,6 +272,7 @@ class SmbTransferService : Service() {
         val direction = when (job.kind) {
             Kind.FROM_DEVICE -> "onto the share"
             Kind.WITHIN_SHARE -> "within the share"
+            Kind.SHARE_TO_SHARE -> "from share to share"
             else -> "off the share"
         }
 
@@ -301,24 +320,30 @@ class SmbTransferService : Service() {
             }
 
             Kind.FROM_DEVICE -> {
-                // The share has no diff stream, so the only way the cache learns of what was
-                // just written is to walk the folder again. Same rank and same bounded wait as
-                // the pCloud side: what landed stays out of sight until it has run, and a turn
-                // that never comes must not hold up the report
-                val refreshed = CountDownLatch(1)
-                rescanSmbFolders(listOf(job.destination), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
-                    refreshed.countDown()
-                }
-
-                if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
-                    Log.w(TAG, "the refresh of ${job.destination} did not finish in time; the next scan picks it up")
-                }
-
+                rescanShareFolder(job.destination)
                 // the folders on the device the files left; their rows count what is in them
                 if (!job.isCopy) {
                     job.sourcePaths.map { it.getParentPath() }.distinct().forEach { updateDirectoryPath(it) }
                 }
             }
+
+            // the folders of the share the files left were brought up to date by the writer as
+            // it deleted them, the same as a move off the share
+            Kind.SHARE_TO_SHARE -> rescanShareFolder(job.destination)
+        }
+    }
+
+    // The share has no diff stream, so the only way the cache learns of what was just written is
+    // to walk the folder again. Same rank and same bounded wait as the pCloud side: what landed
+    // stays out of sight until it has run, and a turn that never comes must not hold up the report
+    private fun rescanShareFolder(folder: String) {
+        val refreshed = CountDownLatch(1)
+        rescanSmbFolders(listOf(folder), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) {
+            refreshed.countDown()
+        }
+
+        if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
+            Log.w(TAG, "the refresh of $folder did not finish in time; the next scan picks it up")
         }
     }
 
@@ -427,6 +452,27 @@ class SmbTransferService : Service() {
         }
     }
 
+    // Writes a file of a share into a folder of a share, the same share or another, the way
+    // copyFromDevice() writes a file of the device: the folder made first, a free name, nothing
+    // written over. The bytes come down off the share and go straight back up, with nothing
+    // staged on the device -- the share says how long the file is, and readShareFile() refuses
+    // a short read, which create() then takes back off the share.
+    //
+    // The original's modification time is put on the copy, from its row, for the reason
+    // keepShareModified() gives
+    private fun copyOntoShare(path: String, destinationFolder: String) {
+        SmbClient.createFolder(this, destinationFolder)
+        val target = availableName(destinationFolder, path.getFilenameFromPath()) { SmbClient.fileExists(this, it) }
+        SmbClient.create(this, target) { output ->
+            readShareFile(path) { it.copyTo(output) }
+        }
+
+        val modified = mediaDB.getMediumByPath(path)?.modified ?: 0L
+        if (modified > 0) {
+            SmbClient.setModified(this, target, modified)
+        }
+    }
+
     // The device half of a move onto the share, once the copy is through: the file, its MediaStore
     // entry and its cache row. The screen that started the move already asked for whatever storage
     // permission the file's location needs. The same as PCloudTransferService does it
@@ -487,10 +533,20 @@ class SmbTransferService : Service() {
             Kind.TO_PCLOUD -> if (job.isCopy) R.string.smb_copying_to_pcloud else R.string.smb_moving_to_pcloud
             Kind.FROM_DEVICE -> if (job.isCopy) R.string.smb_copying_to_share else R.string.smb_moving_to_share
             Kind.WITHIN_SHARE -> R.string.smb_moving_within_share
+            Kind.SHARE_TO_SHARE -> when {
+                !job.isCopy -> R.string.smb_moving_to_other_share
+                job.sourcePaths.all { smbConnectionIdOf(it) == smbConnectionIdOf(job.destination) } -> R.string.smb_copying_within_share
+                else -> R.string.smb_copying_to_other_share
+            }
         }
 
         return getString(id, done + 1, total)
     }
+
+    // A file carried from share to share takes as long as a download and an upload together,
+    // which a big video makes plain; the notification says why
+    private fun progressDetail(job: Job): String? =
+        if (job.kind == Kind.SHARE_TO_SHARE) getString(R.string.smb_share_to_share_detail) else null
 
     private fun showProgress(notification: Notification) {
         if (isQPlus()) {
@@ -525,10 +581,11 @@ class SmbTransferService : Service() {
         getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
     }
 
-    private fun buildNotification(text: String, done: Int, total: Int): Notification {
+    private fun buildNotification(text: String, done: Int, total: Int, detail: String? = null): Notification {
         return NotificationCompat.Builder(this, ensureChannel())
             .setSmallIcon(R.drawable.ic_storage_vector)
             .setContentTitle(text)
+            .setContentText(detail)
             .setProgress(total, done, total == 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
