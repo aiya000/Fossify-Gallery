@@ -28,6 +28,7 @@
 | 台本で「キーボードが出ているか」を見たら、出ているのに「出ていない」と言われた | `dumpsys input_method` の `mInputShown` は見た目と揺れる。`dumpsys window` の `type=ime ... visible=true` を数秒待って読むようにした | [agents/tests/is-the-keyboard-up.md](./agents/tests/is-the-keyboard-up.md) |
 | 端末を動かすテストで、pCloud にフォルダはできたのに中身が来ない。そのマスだけ流すと緑 | 次の手順の `app_stop`（強制終了）が、前の手順の転送サービスごと消していた。`app_restart_screen` で画面だけ始め直すようにした | [agents/tests/a-force-stop-between-steps-kills-the-transfer.md](./agents/tests/a-force-stop-between-steps-kills-the-transfer.md) |
 | 端末を動かすテストで、あるマスを境に pCloud のマスが全部落ちた。メニューにもピッカーにも pCloud が無い | stub が知らない API（`renamefile`）に 1000 番で答えていた。pCloud の 1000 は「ログインが必要」で、アプリがログアウトしていた。API を足し、知らない API は 5000 にした | [agents/tests/a-stub-refusal-that-signed-the-app-out.md](./agents/tests/a-stub-refusal-that-signed-the-app-out.md) |
+| 台本のチェックが「見つからない」で落ちた。画面にもファイルにもちゃんとある。通ったり落ちたりする | `adb ... \| rg -q` の形で、`rg -q` が先にパイプを閉じて `pipefail` で失敗になっていた。一度変数に受けてから探す | [agents/tests/a-found-match-that-failed-the-check.md](./agents/tests/a-found-match-that-failed-the-check.md) |
 | ある機能が端末にはあって共有（や pCloud）に無い。忘れているのか、わざとなのか分からない | #107 で全部読み直して分けた。わざと違えてあるものは表にした。載っていなければ抜けなので、`MediaStorage` の capability に乗せて直す | [agents/storage/what-each-storage-does-differently-on-purpose.md](./agents/storage/what-each-storage-does-differently-on-purpose.md) |
 
 ### この索引に足すこと

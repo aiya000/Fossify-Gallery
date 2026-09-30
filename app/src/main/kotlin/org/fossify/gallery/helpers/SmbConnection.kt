@@ -49,6 +49,42 @@ data class SmbConnection(
     // "\\host\share\root", how a connection is shown when it has no name of its own
     val address: String
         get() = "\\\\$host\\$share${if (rootPath.isEmpty()) "" else "\\${rootPath.replace('/', '\\')}"}"
+
+    // What saving this over [before] changed, which is what decides what happens to the folders
+    // the gallery has of it. A new host, share or root is another tree, and what was cached of the
+    // old one is of no use; new credentials are the same tree, perhaps readable now; a new name
+    // is only what the menus call it
+    fun changeFrom(before: SmbConnection?): SmbConnectionChange = when {
+        before == null -> SmbConnectionChange.ADDED
+        host != before.host || port != before.port || !share.equals(before.share, ignoreCase = true) ||
+            rootPath.trim('/') != before.rootPath.trim('/') -> SmbConnectionChange.MOVED
+
+        user != before.user || password != before.password || domain != before.domain -> SmbConnectionChange.CREDENTIALS
+        name != before.name -> SmbConnectionChange.RENAMED
+        else -> SmbConnectionChange.NONE
+    }
+}
+
+enum class SmbConnectionChange {
+    // a connection that was not there: walked for the first time
+    ADDED,
+
+    // pointed at another tree: what was cached goes, and the new one is walked
+    MOVED,
+
+    // let in differently: the same tree, walked again in case it can be read now
+    CREDENTIALS,
+
+    // called something else, and nothing to walk
+    RENAMED,
+
+    NONE;
+
+    val forgetsFolders: Boolean
+        get() = this == MOVED
+
+    val walks: Boolean
+        get() = this == ADDED || this == MOVED || this == CREDENTIALS
 }
 
 // "smb:" for the first connection, "smb:<id>" for any other

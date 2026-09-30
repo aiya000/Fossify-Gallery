@@ -125,6 +125,8 @@
     <string name="smb">Network share</string>
     <string name="smb_share">Network share (SMB)</string>
     <string name="smb_not_configured">Not set up</string>
+    <string name="smb_name">Name (optional)</string>
+    <string name="smb_add">Add a network share</string>
     <string name="smb_host">Host name or IP address</string>
     <string name="smb_port">Port</string>
     <string name="smb_share_name">Share name</string>

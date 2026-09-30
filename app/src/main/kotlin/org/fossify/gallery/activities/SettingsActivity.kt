@@ -39,6 +39,9 @@ class SettingsActivity : SimpleActivity() {
         private const val SELECT_EXPORT_SETTINGS_FILE = 6
         private const val SMB_OPTION_EDIT = 1
         private const val SMB_OPTION_FORGET = 2
+
+        // the list of shares has a row per connection, keyed by its id, which is never negative
+        private const val SMB_OPTION_ADD = -1
     }
 
     private var mRecycleBinContentSize = 0L
@@ -269,24 +272,51 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
-    // The row says which share is set up, or that none is. Tapping it opens the settings; when
-    // one is already there, it offers to forget it first, because that is the only way back to
-    // no share at all and its cached folders have to go with it
+    // The row says which shares are set up, or that none is (#155). Tapping it with none opens
+    // the settings of a new one; with some, it lists them with "Add a network share" under them,
+    // and a share picked there offers to be edited or forgotten -- forgetting is the only way
+    // back to fewer shares, and its cached folders have to go with it
     private fun setupSmbShare() {
-        val connection = config.smbConnection(0)
-        // the whole root, not just the share: the folder inside it is as much a part of what is
-        // browsed, and leaving it out reads like the share itself was picked
-        binding.settingsSmbShare.text = connection?.address ?: getString(R.string.smb_not_configured)
+        val connections = config.smbConnections
+        binding.settingsSmbShare.text = when (connections.size) {
+            0 -> getString(R.string.smb_not_configured)
+            // the whole root, not just the share: the folder inside it is as much a part of
+            // what is browsed, and leaving it out reads like the share itself was picked
+            1 -> connections.first().run { if (name.isEmpty()) address else "$name ($address)" }
+            else -> connections.joinToString(", ") { smbLabel(it.id) }
+        }
+
         binding.settingsSmbShareHolder.setOnClickListener {
-            if (connection != null) {
-                showSmbShareOptions(connection.id)
+            if (config.smbConnections.isEmpty()) {
+                addSmbShare()
             } else {
-                SmbShareDialog(this, config.newSmbConnectionId()) { onSmbShareChanged(it) }
+                showSmbShares()
             }
         }
 
         setupSmbRescanPolicy()
         setupSmbVideoCache()
+    }
+
+    private fun addSmbShare() {
+        SmbShareDialog(this, config.newSmbConnectionId()) { id, change -> onSmbShareChanged(id, change) }
+    }
+
+    // every share by what it is called and where it is, and a way to add one more
+    private fun showSmbShares() {
+        val items = config.smbConnections.map { connection ->
+            val label = smbLabel(connection.id)
+            RadioItem(connection.id, if (label == connection.address) label else "$label (${connection.address})")
+        } + RadioItem(SMB_OPTION_ADD, getString(R.string.smb_add))
+
+        RadioGroupDialog(this, ArrayList(items)) {
+            val id = it as Int
+            if (id == SMB_OPTION_ADD) {
+                addSmbShare()
+            } else {
+                showSmbShareOptions(id)
+            }
+        }
     }
 
     // The videos fetched by "download first, then play". They empty themselves a day after they
@@ -325,31 +355,44 @@ class SettingsActivity : SimpleActivity() {
 
         RadioGroupDialog(this, items) {
             if (it as Int == SMB_OPTION_EDIT) {
-                SmbShareDialog(this, connectionId) { onSmbShareChanged(connectionId) }
+                SmbShareDialog(this, connectionId) { id, change -> onSmbShareChanged(id, change) }
             } else {
                 ConfirmationDialog(this, getString(R.string.smb_clear_confirmation)) {
                     config.removeSmbConnection(connectionId)
                     SmbClient.disconnect(smbRootOf(connectionId))
-                    onSmbShareChanged(connectionId)
+                    onSmbShareForgotten(connectionId)
                 }
             }
         }
     }
 
-    // The share that was there is not the one that is there now, so its cached folders are of no
-    // use and are dropped. A share that is still set up is then walked right away, with its
-    // counts toasted: otherwise nothing would be scanned until the folder list was switched to
-    // it and told to rescan, and a share just typed in would look like one that holds nothing.
-    // The other connections' folders are theirs, and stay (#155)
-    private fun onSmbShareChanged(connectionId: Int) {
+    // What a save changed decides what happens to the share's folders, see
+    // SmbConnection.changeFrom(). A share pointed at another tree loses what was cached of the
+    // old one. A share that is new, moved or let in differently is then walked right away, with
+    // its counts toasted: otherwise nothing would be scanned until the folder list was switched
+    // to it and told to rescan, and a share just typed in would look like one that holds
+    // nothing. A new name walks nothing. The other shares' folders are theirs, and stay (#155)
+    private fun onSmbShareChanged(connectionId: Int, change: SmbConnectionChange) {
+        setupSmbShare()
+        updateTextColors(binding.settingsHolder)
+        ensureBackgroundThread {
+            if (change.forgetsFolders) {
+                SmbScanner(this).forgetAll(connectionId)
+            }
+
+            if (change.walks) {
+                toast(R.string.smb_rescanning)
+                rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, connectionIds = listOf(connectionId))
+            }
+        }
+    }
+
+    // a forgotten share takes its folders with it, its recycle bin's rows included
+    private fun onSmbShareForgotten(connectionId: Int) {
         setupSmbShare()
         updateTextColors(binding.settingsHolder)
         ensureBackgroundThread {
             SmbScanner(this).forgetAll(connectionId)
-            if (config.smbConnection(connectionId) != null) {
-                toast(R.string.smb_rescanning)
-                rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, connectionIds = listOf(connectionId))
-            }
         }
     }
 

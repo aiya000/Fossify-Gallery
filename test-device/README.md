@@ -233,6 +233,14 @@ at afterwards.
   turned away, the picker staying up and nothing arriving. The seed writes the second connection
   when `FIXTURE_SECOND_SMB_ROOT_PATH` is set. Red with one share's filter showing every share's
   folders
+- **`78-add-a-share-in-the-settings.sh`** — #155, the settings half: with the fixture's share set
+  up, the settings row lists it with "Add a network share" under it, and a second share is typed
+  into the dialog, a name included -- the fixture share again with a root of its own. What is
+  checked is that it is saved as connection 1 with that name and root, read off the app's
+  preferences; that it, and not the first share, is walked right away; that the storage menu
+  offers it by its name and the first share by its address; that a new name is saved without a
+  walk; and that forgetting it takes its settings out of the preferences and its row out of the
+  menu, the first share becoming "Network share" again. Red with every save walking the share
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage
