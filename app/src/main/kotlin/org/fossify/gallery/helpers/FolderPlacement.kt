@@ -12,9 +12,6 @@ sealed interface FolderPlacement {
     // a new folder at [destination], in the root of the storage, with the media copied or moved
     // into it and the folder put into [groupId]
     data class Transfer(val destination: String, val groupId: Long?) : FolderPlacement
-
-    // a pair of storages turned away on purpose, the same pairs as for a medium
-    data class Refused(val reason: TransferRefusal) : FolderPlacement
 }
 
 // [storageFilter] is what the chips show; with every storage shown there is none picked, and
@@ -33,10 +30,6 @@ fun placeFolder(
     val storage = if (storageFilter == STORAGE_FILTER_ALL) sourceStorage else storageFilter
     if (!isCopy && storage == sourceStorage) {
         return FolderPlacement.Regroup(groupId)
-    }
-
-    transferRefusal(sourceStorage, storage, isCopy)?.let {
-        return FolderPlacement.Refused(it)
     }
 
     // a share's root is its own, "smb:" or "smb:2" (#155)

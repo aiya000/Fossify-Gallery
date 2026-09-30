@@ -69,10 +69,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 // SHARE_TO_SHARE is the rest of what has a share on both sides: a copy within one share, and a
 // copy or a move onto another share. The share has no copy request, and the rename a move within
 // a share is cannot reach another share, so every byte is read off the share and written back
-// (#154).
+// (#154). Which kind a pair is, is transferRouteOf()'s.
 //
-// pCloud straight onto the share would have to stage the file the way a copy to pCloud does,
-// which is not built (#28).
+// pCloud straight onto the share is PCloudTransferService's ONTO_SHARE (#161).
 //
 // Every file is one unit of progress. What went wrong with one file does not stop the others:
 // a share drops a connection mid-folder often enough that giving up on the rest would be the
@@ -127,11 +126,6 @@ class SmbTransferService : Service() {
         fun removeListener(listener: () -> Unit) {
             listeners.remove(listener)
         }
-
-        // what a copy or a move from a file of a share into a folder of a share is: the rename
-        // for a move within one share, the bytes carried across for everything else
-        fun kindBetweenShares(source: String, destination: String, isCopy: Boolean): Kind =
-            if (!isCopy && smbConnectionIdOf(source) == smbConnectionIdOf(destination)) Kind.WITHIN_SHARE else Kind.SHARE_TO_SHARE
     }
 
     // why the last file of a run failed, for the result notification
@@ -546,7 +540,7 @@ class SmbTransferService : Service() {
     // A file carried from share to share takes as long as a download and an upload together,
     // which a big video makes plain; the notification says why
     private fun progressDetail(job: Job): String? =
-        if (job.kind == Kind.SHARE_TO_SHARE) getString(R.string.smb_share_to_share_detail) else null
+        if (job.kind == Kind.SHARE_TO_SHARE) getString(R.string.transfer_through_device_detail) else null
 
     private fun showProgress(notification: Notification) {
         if (isQPlus()) {

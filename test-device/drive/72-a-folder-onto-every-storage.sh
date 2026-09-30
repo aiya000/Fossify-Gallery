@@ -11,7 +11,8 @@
 #   the app's preferences; a copy leaves the source's photo where it was, a move takes it away
 # - a regroup (a move that stays on its storage): nothing turns up anywhere, and the source
 #   itself becomes a member of Trips, or of no group
-# - a refusal: the picker says why, and nothing turns up anywhere
+# - no pair is refused any more: the last ones, a copy within the share and pCloud onto the
+#   share, are carried since #154 and #161
 #
 # Every move gets a source folder of its own, since it uses its source up; the copies and the
 # regroups share one per storage. Trips is given a folder of this device and one of pCloud, and
@@ -44,7 +45,7 @@ requests_log="$RUN_DIR/pcloud-requests.log"
 
 # the folders each storage starts with. The ones named after a move are used up by that move
 device_sources=(DevCopy DevMvCloudTop DevMvCloudGroup DevMvShareTop DevMvShareGroup DevInTrips)
-cloud_sources=(CloudCopy CloudMvDevTop CloudMvDevGroup CloudInTrips)
+cloud_sources=(CloudCopy CloudMvDevTop CloudMvDevGroup CloudMvShareTop CloudMvShareGroup CloudInTrips)
 share_sources=(ShareCopy ShareMvDevTop ShareMvDevGroup ShareMvCloudTop ShareMvCloudGroup)
 
 stub_pid=""
@@ -276,12 +277,12 @@ judge_the_transfers() {
 cell_number=0
 
 # from, to: device / cloud / share. op: copy / move. at: top / group. source: the folder of
-# [from] that is carried. expected: new / regroup / refused. known: an Issue number, for a cell
+# [from] that is carried. expected: new / regroup. known: an Issue number, for a cell
 # that fails because of a bug filed there -- it is reported, not failed, until the Issue is fixed,
 # and says so when it starts to pass
 cell() {
     local from="$1" to="$2" op="$3" at="$4" source="$5" expected="$6" known="${7:-}"
-    local name before arrived waited action refusal_text
+    local name before arrived waited action
     cell_number=$((cell_number + 1))
     name="72-$(printf '%02d' "$cell_number")"
     # FIXTURE_ONLY_CELLS="2 3" drives only those cells, by their number in the table below, while
@@ -377,29 +378,6 @@ cell() {
                 fail "$prefix$source lost its photo to a change of group"
             fi
             ;;
-
-        refused)
-            # pCloud straight onto the share is the one pair turned away; a copy within the share
-            # was too, until #154
-            refusal_text="can only come from this device"
-
-            if ui_wait_text "$refusal_text" 10 "$name-refusal"; then
-                pass "the picker says why it will not"
-            else
-                fail "the picker did not say '$refusal_text'"
-                screenshot "$name-no-refusal"
-            fi
-
-            sleep 3
-            if arrived="$(arrived_folder "$to" "$prefix$source" "$before")"; then
-                fail "$arrived turned up on $(label_of "$to") all the same"
-            else
-                pass "and nothing was carried"
-            fi
-
-            "${ADB[@]}" shell input keyevent KEYCODE_BACK
-            sleep 1
-            ;;
     esac
 
     leave_the_selection
@@ -483,8 +461,8 @@ cell cloud device copy top CloudCopy new
 cell cloud device copy group CloudCopy new
 cell cloud cloud copy top CloudCopy new
 cell cloud cloud copy group CloudCopy new
-cell cloud share copy top CloudCopy refused
-cell cloud share copy group CloudCopy refused
+cell cloud share copy top CloudCopy new
+cell cloud share copy group CloudCopy new
 
 cell share device copy top ShareCopy new
 cell share device copy group ShareCopy new
@@ -500,8 +478,8 @@ cell device share move group DevMvShareGroup new
 
 cell cloud device move top CloudMvDevTop new
 cell cloud device move group CloudMvDevGroup new
-cell cloud share move top CloudCopy refused
-cell cloud share move group CloudCopy refused
+cell cloud share move top CloudMvShareTop new
+cell cloud share move group CloudMvShareGroup new
 
 cell share device move top ShareMvDevTop new
 cell share device move group ShareMvDevGroup new

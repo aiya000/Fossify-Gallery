@@ -11,8 +11,9 @@
 #
 # - carried: the medium turns up in AbTo, byte for byte; a copy leaves it in AbFrom, a move takes
 #   it away
-# - turned away (pCloud onto the share): the picker stays up rather
-#   than taking the folder, and the medium is still in AbFrom and nowhere else
+#
+# Every cell is carried. The last pairs turned away, a copy within the share and pCloud onto the
+# share, are carried since #154 and #161.
 #
 # The cells only hand their transfers over, and what arrived is judged once they have all been
 # driven, against one deadline, the same way 72 does (see test-device/AGENTS.md). The share is
@@ -209,7 +210,7 @@ judge_the_transfers() {
 
 cell_number=0
 
-# from, to: device / cloud / share. op: copy / move. expected: carried / refused
+# from, to: device / cloud / share. op: copy / move. expected: carried
 cell() {
     local from="$1" to="$2" op="$3" expected="$4"
     local name file action
@@ -274,29 +275,6 @@ cell() {
             note "handed over; what arrives is judged once every cell has been driven"
             ;;
 
-        refused)
-            # the refusal is a toast, gone before a dump can be sure to see it
-            # (agents/tests/a-toast-is-gone-before-the-dump.md); the picker still being up is
-            # what says the folder was not taken
-            if ui_wait_exact_text "$to_folder" 5 "$name-still-up"; then
-                pass "the picker stays up rather than taking $to_folder"
-            else
-                fail "the picker went away, as if $to_folder was taken"
-                screenshot "$name-picker-gone"
-            fi
-
-            sleep 3
-            if [ -n "$(md5_on "$to" "$to_folder" "$file")" ]; then
-                fail "$file turned up in $to_folder on $(label_of "$to") all the same"
-            elif [ "$(md5_on "$from" "$from_folder" "$file")" != "${md5_of[$file]}" ]; then
-                fail "$file is gone from $from_folder, though nothing was carried"
-            else
-                pass "and $file is still in $from_folder, and nowhere else"
-            fi
-
-            "${ADB[@]}" shell input keyevent KEYCODE_BACK
-            sleep 1
-            ;;
     esac
 
     leave_the_selection
@@ -304,7 +282,7 @@ cell() {
 
 # --- the storages, and the app ---------------------------------------------------------------
 
-# every cell, in the order they are driven: the refused ones among them are judged on the spot
+# every cell, in the order they are driven
 cells=(
     "device device copy carried"
     "device device move carried"
@@ -316,8 +294,8 @@ cells=(
     "cloud device move carried"
     "cloud cloud copy carried"
     "cloud cloud move carried"
-    "cloud share copy refused"
-    "cloud share move refused"
+    "cloud share copy carried"
+    "cloud share move carried"
     "share device copy carried"
     "share device move carried"
     "share cloud copy carried"

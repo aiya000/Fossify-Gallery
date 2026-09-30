@@ -32,15 +32,18 @@ import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.extensions.rescanPCloudFolders
+import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudFileCache
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RemoteScanScheduler
+import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.availableName
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.CountDownLatch
@@ -58,12 +61,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 // is through, the folders it touched are brought up to date: a pCloud destination is
 // rescanned, a local one is handed to the media scanner and the cache. The screens learn of
 // the end through the listeners, the callback of copyMoveFilesToPickedDestination() never
-// fires for a pCloud transfer
+// fires for a pCloud transfer.
+//
+// ONTO_SHARE takes pCloud's files straight into a folder of a share (#161). Each file passes
+// through the device on its way, streamed from pCloud into the share with nothing kept here, so it
+// takes as long as a download and an upload together
 class PCloudTransferService : Service() {
-    enum class Kind { UPLOAD, DOWNLOAD, WITHIN_PCLOUD }
+    enum class Kind { UPLOAD, DOWNLOAD, WITHIN_PCLOUD, ONTO_SHARE }
 
     // sourcePaths are local paths for an upload and pCloud pseudo paths otherwise; the
-    // destination is a folder of the other kind, or a pCloud folder for WITHIN_PCLOUD
+    // destination is a folder of the other kind, a pCloud folder for WITHIN_PCLOUD, and a folder
+    // of a share for ONTO_SHARE
     class Job(val kind: Kind, val sourcePaths: List<String>, val destination: String, val isCopy: Boolean)
 
     companion object {
@@ -167,7 +175,7 @@ class PCloudTransferService : Service() {
         val newLocalPaths = ArrayList<String>()
 
         for ((index, path) in job.sourcePaths.withIndex()) {
-            showProgress(buildNotification(progressText(job, index, total), index, total))
+            showProgress(buildNotification(progressText(job, index, total), index, total, progressDetail(job)))
             if (!config.isPCloudLoggedIn) {
                 failed += total - index
                 break
@@ -194,6 +202,14 @@ class PCloudTransferService : Service() {
                     } else {
                         writer.moveFileTo(path, job.destination)
                     }
+
+                    // pCloud's own file goes only once the share has the whole of the copy
+                    Kind.ONTO_SHARE -> {
+                        copyOntoShare(path, job.destination)
+                        if (!job.isCopy) {
+                            writer.deleteFiles(listOf(path))
+                        }
+                    }
                 }
                 done++
             } catch (e: PCloudException) {
@@ -216,6 +232,9 @@ class PCloudTransferService : Service() {
         }
 
         settle(job, newLocalPaths)
+        // said once per job, after the destination has been brought up to date, so that it means
+        // "the files are there and the lists would show them"
+        Log.i(TAG, "${if (job.isCopy) "Copied" else "Moved"} $done of $total ${job.kind.name.lowercase()} to ${job.destination}, $failed failed")
         return Pair(done, failed)
     }
 
@@ -244,6 +263,20 @@ class PCloudTransferService : Service() {
                 val folders = if (job.isCopy) listOf(job.destination) else listOf(job.destination) + job.sourcePaths.map { it.getParentPath() }.distinct()
                 rescanPCloudFoldersAndWait(folders)
             }
+
+            // the pCloud folders a move left were brought up to date by the writer as it deleted,
+            // the same as a download that moves
+            Kind.ONTO_SHARE -> rescanShareFolderAndWait(job.destination)
+        }
+    }
+
+    // The share has no diff stream, so the only way the cache learns of what was just written is
+    // to walk the folder again, at the same rank and with the same bounded wait as pCloud's
+    private fun rescanShareFolderAndWait(folder: String) {
+        val refreshed = CountDownLatch(1)
+        rescanSmbFolders(listOf(folder), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_TRANSFER) { refreshed.countDown() }
+        if (!refreshed.await(SCAN_WAIT_MILLIS, TimeUnit.MILLISECONDS)) {
+            Log.w(TAG, "the refresh of $folder did not finish in time; the next scan picks it up")
         }
     }
 
@@ -274,32 +307,52 @@ class PCloudTransferService : Service() {
     private fun download(path: String, destinationFolder: String): String {
         val target = availableName(destinationFolder, path.getFilenameFromPath()) { File(it).exists() }
         val out = getFileOutputStreamSync(target, path.getMimeType()) ?: throw IOException("Could not open $target for writing")
-        out.use { output ->
-            val cached = PCloudFileCache(this).peek(path)
-            if (cached != null) {
-                cached.inputStream().use { it.copyTo(output) }
-            } else {
-                val item = pCloudItemsDB.getItem(path) ?: throw IOException("$path is not in the pCloud cache")
-                val url = PCloudApi.getFileLink(config.pCloudApiHost, config.pCloudAccessToken, item.itemId)
-                PCloudApi.download(url).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("pCloud answered HTTP ${response.code}")
-                    }
+        out.use { writePCloudFile(path, it) }
 
-                    response.body.byteStream().copyTo(output)
-                }
-            }
-        }
-
-        // the modification time is what the gallery sorts by; pCloud's is the upload time
-        mediaDB.getMediaFromPath(path.getParentPath()).firstOrNull { it.path == path }?.let { medium ->
-            if (medium.modified > 0) {
-                File(target).setLastModified(medium.modified)
-            }
-        }
-
+        modifiedOf(path)?.let { File(target).setLastModified(it) }
         return target
     }
+
+    // Writes a file of pCloud into a folder of a share, the way a copy onto the share from the
+    // device writes: the folder made first, a free name, nothing written over, and a write that
+    // broke off taken back off the share by create(). Streamed straight through, nothing kept on
+    // the device; the medium's modification time is put on the copy afterwards
+    private fun copyOntoShare(path: String, destinationFolder: String) {
+        SmbClient.createFolder(this, destinationFolder)
+        val target = availableName(destinationFolder, path.getFilenameFromPath()) { SmbClient.fileExists(this, it) }
+        SmbClient.create(this, target) { writePCloudFile(path, it) }
+        modifiedOf(path)?.let { SmbClient.setModified(this, target, it) }
+    }
+
+    // The file's bytes, from the local copy when the fullscreen view already fetched one, from
+    // pCloud otherwise. A body that ends short of the length pCloud announced is refused rather
+    // than written out as a whole file
+    private fun writePCloudFile(path: String, output: OutputStream) {
+        val cached = PCloudFileCache(this).peek(path)
+        if (cached != null) {
+            cached.inputStream().use { it.copyTo(output) }
+            return
+        }
+
+        val item = pCloudItemsDB.getItem(path) ?: throw IOException("$path is not in the pCloud cache")
+        val url = PCloudApi.getFileLink(config.pCloudApiHost, config.pCloudAccessToken, item.itemId)
+        PCloudApi.download(url).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("pCloud answered HTTP ${response.code}")
+            }
+
+            val expected = response.body.contentLength()
+            val copied = response.body.byteStream().copyTo(output)
+            if (expected >= 0 && copied != expected) {
+                throw IOException("pCloud sent $copied bytes of $expected for $path")
+            }
+        }
+    }
+
+    // the modification time is what the gallery sorts by; pCloud's is the upload time, so the
+    // one the row has is put on a copy instead
+    private fun modifiedOf(path: String): Long? =
+        mediaDB.getMediaFromPath(path.getParentPath()).firstOrNull { it.path == path }?.modified?.takeIf { it > 0 }
 
     // the local half of a move to pCloud, once the upload is through: the file, its
     // MediaStore entry and its cache row. The screen that started the move already asked
@@ -328,10 +381,16 @@ class PCloudTransferService : Service() {
             Kind.UPLOAD -> R.string.pcloud_uploading
             Kind.DOWNLOAD -> R.string.pcloud_downloading
             Kind.WITHIN_PCLOUD -> if (job.isCopy) R.string.pcloud_copying else R.string.pcloud_moving
+            Kind.ONTO_SHARE -> if (job.isCopy) R.string.smb_copying_to_share else R.string.smb_moving_to_share
         }
 
         return getString(id, done + 1, total)
     }
+
+    // A file carried onto a share takes as long as a download and an upload together, which a
+    // big video makes plain; the notification says why
+    private fun progressDetail(job: Job): String? =
+        if (job.kind == Kind.ONTO_SHARE) getString(R.string.transfer_through_device_detail) else null
 
     private fun showProgress(notification: Notification) {
         if (isQPlus()) {
@@ -365,10 +424,11 @@ class PCloudTransferService : Service() {
         getSystemService(NotificationManager::class.java).notify(RESULT_NOTIFICATION_ID, notification)
     }
 
-    private fun buildNotification(text: String, done: Int, total: Int): Notification {
+    private fun buildNotification(text: String, done: Int, total: Int, detail: String? = null): Notification {
         return NotificationCompat.Builder(this, ensureChannel())
             .setSmallIcon(R.drawable.ic_cloud_vector)
             .setContentTitle(text)
+            .setContentText(detail)
             .setProgress(total, done, total == 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

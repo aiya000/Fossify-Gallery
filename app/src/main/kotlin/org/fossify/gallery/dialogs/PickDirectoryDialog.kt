@@ -62,8 +62,6 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.placeFolder
-import org.fossify.gallery.helpers.storageFilterOf
-import org.fossify.gallery.helpers.transferRefusal
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
 import java.io.File
@@ -84,8 +82,8 @@ private const val SNACKBAR_MAX_LINES = 5
  * so that a screen standing on this dialog alone can close itself.
  *
  * [isCopyOperation] says which of the two a copy/move destination is being picked for. It is what
- * tells a folder that can be copied into from one that can be moved into, which is not the same
- * thing on the network share (#28); it means nothing when [isPickingCopyMoveDestination] is off.
+ * tells [placeFolder] whether a folder of the list is copied into a new folder or, staying on its
+ * storage, only changes group; it means nothing when [isPickingCopyMoveDestination] is off.
  *
  * [foldersToPlace] are folders of the folder list being copied or moved. With them, the OK at the
  * top or inside a group takes the folders themselves there, on the storage the chips were
@@ -468,12 +466,6 @@ class PickDirectoryDialog(
             source to placement
         }
 
-        val refusal = placed.firstNotNullOfOrNull { (_, placement) -> (placement as? FolderPlacement.Refused)?.reason }
-        if (refusal != null) {
-            showPickerMessage(refusal.messageId)
-            return true
-        }
-
         val transfers = placed.mapNotNull { (source, placement) -> (placement as? FolderPlacement.Transfer)?.let { source to it } }
         if (transfers.isEmpty()) {
             return false
@@ -662,13 +654,6 @@ class PickDirectoryDialog(
         val adapter = DirectoryAdapter(activity, dirs.clone() as ArrayList<Directory>, null, binding.directoriesGrid, true) {
             val clickedDir = it as Directory
             val path = clickedDir.path
-            // pCloud straight onto the share, see TransferRefusal
-            val refusal = if (isPickingCopyMoveDestination) {
-                transferRefusal(storageFilterOf(sourcePath), storageFilterOf(path), isCopyOperation)
-            } else {
-                null
-            }
-
             if (clickedDir.isGroup()) {
                 val groupId = clickedDir.getGroupId()
                 activity.handleLockedFolderOpening(path) { success ->
@@ -693,9 +678,6 @@ class PickDirectoryDialog(
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
                     activity.toast(org.fossify.commons.R.string.source_and_destination_same)
-                    return@DirectoryAdapter
-                } else if (refusal != null) {
-                    activity.toast(refusal.messageId, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
                     activity.toast(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)
