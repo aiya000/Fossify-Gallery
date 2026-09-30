@@ -222,6 +222,8 @@ class SmbWriter(private val context: Context) {
         failure?.let { throw it }
     }
 
+    // every share's bin: the bins are one bin on screen, and each file goes through the
+    // connection its path is of
     fun emptyRecycleBin() {
         deleteFromRecycleBin(context.mediaDB.getSmbDeletedMedia().map { it.path })
     }
@@ -233,7 +235,7 @@ class SmbWriter(private val context: Context) {
     // the restore that follows it is
     fun restoreDestinationOf(binPath: String): Pair<String, Boolean> {
         val folder = binPath.fromSmbRecycleBinPath().getParentPath()
-        val exists = folder == SMB_PATH_SCHEME || try {
+        val exists = folder == smbRootOfPath(folder) || try {
             SmbClient.folderExists(context, folder)
         } catch (e: Exception) {
             Log.w(TAG, "Could not ask the share whether it still has $folder", e)
@@ -247,8 +249,9 @@ class SmbWriter(private val context: Context) {
     // hold nothing, from the one the medium was in up to the bin itself, which stays. A folder
     // that still holds something ends the walk, and so does one that would not go
     private fun pruneEmptyBinFolders(folder: String) {
+        val bin = "${smbRootOfPath(folder)}/$RECYCLE_BIN_FOLDER_NAME"
         var current = folder
-        while (current != SMB_RECYCLE_BIN && current.isSmbRecycleBinPath()) {
+        while (current != bin && current.isSmbRecycleBinPath()) {
             val removed = try {
                 SmbClient.deleteFolderIfEmpty(context, current)
             } catch (e: Exception) {
@@ -319,6 +322,9 @@ class SmbWriter(private val context: Context) {
     // user picked a folder and not a name, so a collision there is not theirs to be asked about.
     // The rows and the cached copies follow, since what moved is the same bytes under a new path
     fun moveFileTo(path: String, destinationFolder: String): String {
+        // Another share is not "within" anything: nothing but a copy of the bytes gets a file
+        // there, and a move is refused before it reaches here (#155)
+        require(smbConnectionIdOf(path) == smbConnectionIdOf(destinationFolder)) { "$path and $destinationFolder are on different shares" }
         // read before the rows move, so the cached copies can be found under their old name
         val medium = context.mediaDB.getMediumByPath(path)
         val newPath = availableName(destinationFolder, path.getFilenameFromPath()) { SmbClient.fileExists(context, it) }

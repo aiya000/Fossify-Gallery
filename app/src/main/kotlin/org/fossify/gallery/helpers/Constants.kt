@@ -198,12 +198,19 @@ const val PCLOUD_CATEGORY_IMAGE = 1
 const val PCLOUD_CATEGORY_VIDEO = 2
 
 // SMB media is displayed with this pseudo path prefix, the same way pCloud media is, e.g.
-// "smb:/photos/2026/IMG_0001.jpg" for "\\host\photos\2026\IMG_0001.jpg". The share name is the
-// first segment, so one configured host is browsed as one tree and getParentPath() keeps working
+// "smb:/2026/IMG_0001.jpg" for "\\host\photos\<root folder>\2026\IMG_0001.jpg". Neither the
+// share's name nor its root folder is in the path, so pointing the connection at another folder
+// of the same share keeps the paths, and getParentPath() works as on any other path.
+//
+// That is the first connection's shape (#155). Every other connection carries its id after the
+// scheme -- "smb:2/2026/IMG_0001.jpg" -- so every SMB path still starts with "smb:", and what
+// tells a remote medium from a device one needs no list of connections. What picks out one
+// connection's rows is SmbConnection.rowPrefix, never the bare scheme: "smb:" matches them all
 const val SMB_PATH_SCHEME = "smb:"
 const val SMB_PATH_PREFIX = "$SMB_PATH_SCHEME/"
 
-// The bin on the share, see SmbWriter.moveToRecycleBin(). Unlike pCloud's, the folder keeps
+// The first connection's bin, see SmbWriter.moveToRecycleBin(). Each connection has one of its
+// own, at the root of its own share (SmbConnection.recycleBin). Unlike pCloud's, the folder keeps
 // the original layout for real -- "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg" is
 // both the row's path and where the file lies on the share -- since the share has no file ids
 // to find a file by, and a path is all a row can carry. The scanner leaves the folder out
@@ -240,8 +247,16 @@ const val REMOTE_SAVE_DIR = "remote-save"
 // here, so they are swept by age rather than held to a size. See SmbVideoCache
 const val SMB_VIDEO_CACHE_DIR = "smb-videos"
 
-// the share is reached with these; the password is kept in the app's private prefs like the
-// pCloud token is. An empty user name means a guest connection
+// A share is reached with these; the password is kept in the app's private prefs like the
+// pCloud token is. An empty user name means a guest connection.
+//
+// These are the first connection's keys as they are. Every other connection has the same keys
+// with "_<id>" after them, see smbKey() -- so the first one's settings, from before there could
+// be a second (#155), are read where they always were
+const val SMB_CONNECTION_IDS = "smb_connection_ids"
+const val SMB_NEXT_CONNECTION_ID = "smb_next_connection_id"
+// the name the user gave the connection, what its storage is called in the menus
+const val SMB_NAME = "smb_name"
 const val SMB_HOST = "smb_host"
 const val SMB_PORT = "smb_port"
 const val SMB_SHARE = "smb_share"
@@ -420,6 +435,12 @@ const val STORAGE_FILTER_LOCAL = 1
 const val STORAGE_FILTER_PCLOUD = 2
 const val STORAGE_FILTER_ALL = 3
 const val STORAGE_FILTER_SMB = 4
+
+// Every connection to a share but the first is a storage of its own, and its filter value is
+// this plus its id (#155); the first keeps STORAGE_FILTER_SMB, so a stored filter, order and
+// per-storage sorting from before there could be a second still mean what they meant. See
+// smbStorageFilterOf()
+const val STORAGE_FILTER_SMB_CONNECTION_BASE = 100
 
 const val GROUP_BY_NONE = 1
 const val GROUP_BY_LAST_MODIFIED_DAILY = 2

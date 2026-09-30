@@ -640,10 +640,12 @@ class MediaFetcher(val context: Context) {
             )
         }
 
-        if (config.isSmbConfigured && (filter == STORAGE_FILTER_SMB || filter == STORAGE_FILTER_ALL)) {
-            folders.addAll(
-                context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).filter { it != SMB_RECYCLE_BIN && (showHidden || !context.isSmbFolderHidden(it)) }
-            )
+        // the shares on screen, each its own storage (#155): their folders are under their own
+        // root, and their bins are left out the same way pCloud's is
+        context.shownSmbConnectionIds().mapNotNull { config.smbConnection(it) }.forEach { connection ->
+            val paths = context.directoryDB.getPathsWithPrefix(connection.rowPrefix) +
+                listOfNotNull(connection.root.takeIf { context.directoryDB.getDirectoryId(it) != null })
+            folders.addAll(paths.filter { it != connection.recycleBin && (showHidden || !context.isSmbFolderHidden(it)) })
         }
 
         return folders

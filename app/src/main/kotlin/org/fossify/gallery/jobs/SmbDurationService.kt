@@ -142,7 +142,8 @@ class SmbDurationService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Could not read the lengths of the videos on the share", e)
             // the usual failure is a session the server has given up on; dropping the
-            // connection means the next run opens a fresh one instead of failing the same way
+            // connection means the next run opens a fresh one instead of failing the same way;
+            // which share it was is not known here, so every one is dropped
             SmbClient.disconnect()
             showResult(getString(R.string.smb_read_durations_failed))
         } finally {

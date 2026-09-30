@@ -216,6 +216,7 @@
     <string name="smb_move_folder_to_recycle_bin_confirmation">%1$s の中のメディアをごみ箱に移動して、フォルダを削除しますか？ メディアはネットワーク共有に残り、30 日間このアプリから復元できます。</string>
     <string name="smb_no_remote_copy_to_share">ネットワーク共有へコピーできるのは、今のところこの端末のファイルだけです。</string>
     <string name="smb_no_copy_within_share">ネットワーク共有のファイルやフォルダを、共有の中でコピーすることはまだできません。移動を使ってください。</string>
+    <string name="smb_no_transfer_between_shares">あるネットワーク共有から別のネットワーク共有へ、ファイルやフォルダをコピー・移動することはまだできません。</string>
     <string name="smb_transfer_channel">ネットワーク共有のコピー</string>
     <string name="smb_transfer_started">コピーを開始しました。進み具合は通知に表示されます</string>
     <string name="smb_move_started">移動を開始しました。進み具合は通知に表示されます</string>

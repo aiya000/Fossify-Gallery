@@ -1323,9 +1323,15 @@ sealed class MediaStorage(protected val context: Context) {
         }
     }
 
-    class Smb(context: Context) : MediaStorage(context) {
-        override fun holds(path: String) = path.isSmbPath()
+    // One share, [connectionId] the connection it is (#155). Two shares are two storages: a
+    // selection across them is a mixed one, and a move between them is not a move within one
+    class Smb(context: Context, val connectionId: Int) : MediaStorage(context) {
+        override fun holds(path: String) = smbConnectionIdOf(path) == connectionId
         override val isRemote = true
+
+        // the pseudo path of the share's root folder, "smb:" or "smb:2"
+        val root: String
+            get() = smbRootOf(connectionId)
 
         override val canRenameSeveral = false
         override val canFixDateTaken = false
@@ -1383,7 +1389,8 @@ sealed class MediaStorage(protected val context: Context) {
 
         // every pair is the share's service's: off the share onto the device or pCloud, and a
         // move within the share, where no bytes travel at all. There is no copy within the
-        // share, it would be carried out as a move (#150)
+        // share, it would be carried out as a move (#150), and nothing onto another share, which
+        // would have to carry the bytes across (#155)
         override fun copyMoveTo(
             activity: BaseSimpleActivity,
             fileDirItems: ArrayList<FileDirItem>,
@@ -1393,15 +1400,16 @@ sealed class MediaStorage(protected val context: Context) {
             onQueued: (() -> Unit)?,
             onDone: (destination: String) -> Unit
         ) {
+            val refusal = transferRefusal(storageFilterOf(source), storageFilterOf(destination), isCopy)
+            if (refusal != null) {
+                activity.toast(refusal.messageId, Toast.LENGTH_LONG)
+                return
+            }
+
             val kind = when (of(context, destination)) {
                 is Device -> SmbTransferService.Kind.TO_DEVICE
                 is PCloud -> SmbTransferService.Kind.TO_PCLOUD
-                is Smb -> if (isCopy) {
-                    activity.toast(TransferRefusal.COPY_WITHIN_SHARE.messageId, Toast.LENGTH_LONG)
-                    return
-                } else {
-                    SmbTransferService.Kind.WITHIN_SHARE
-                }
+                is Smb -> SmbTransferService.Kind.WITHIN_SHARE
             }
 
             enqueueSmbTransfer(activity, kind, fileDirItems, source, destination, isCopy, onQueued)
@@ -1410,7 +1418,7 @@ sealed class MediaStorage(protected val context: Context) {
         // the app's own bin on the share, a folder in the root that keeps the original layout,
         // see SMB_RECYCLE_BIN; the writer moves in and out of it with the rename request, no
         // bytes travelling, and carries the rows and the cached copies along
-        override fun isInRecycleBin(path: String) = path.isSmbRecycleBinPath()
+        override fun isInRecycleBin(path: String) = holds(path) && path.isSmbRecycleBinPath()
 
         override fun restoreDestinationOf(binPath: String) = SmbWriter(context).restoreDestinationOf(binPath)
 
@@ -1420,15 +1428,17 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // nothing in the bin means nothing to ask the share, and no share to ask
+        // nothing in the bin means nothing to ask the share, and no share to ask. Only this
+        // share's bin: every other share empties its own
         override fun emptyBin(activity: BaseSimpleActivity, onDone: (emptied: Boolean) -> Unit) {
             ensureBackgroundThread {
-                if (context.mediaDB.getSmbDeletedMedia().isEmpty()) {
+                val binPaths = context.mediaDB.getSmbDeletedMedia().map { it.path }.filter { holds(it) }
+                if (binPaths.isEmpty()) {
                     activity.runOnUiThread { onDone(true) }
                     return@ensureBackgroundThread
                 }
 
-                context.writeToShare({ emptyRecycleBin() }) { emptied ->
+                context.writeToShare({ deleteFromRecycleBin(binPaths) }) { emptied ->
                     activity.runOnUiThread { onDone(emptied) }
                 }
             }
@@ -1436,13 +1446,13 @@ sealed class MediaStorage(protected val context: Context) {
 
         // one small request per expired medium; a share that is off today is tried tomorrow
         override fun sweepBin(olderThan: Long) {
-            if (!context.config.isSmbConfigured) {
+            if (context.config.smbConnection(connectionId) == null) {
                 return
             }
 
-            val old = context.mediaDB.getOldSmbRecycleBinItems(olderThan)
+            val old = context.mediaDB.getOldSmbRecycleBinItems(olderThan).map { it.path }.filter { holds(it) }
             if (old.isNotEmpty()) {
-                SmbWriter(context).deleteFromRecycleBin(old.map { it.path })
+                SmbWriter(context).deleteFromRecycleBin(old)
             }
         }
 
@@ -1607,9 +1617,15 @@ sealed class MediaStorage(protected val context: Context) {
     companion object {
         fun of(context: Context, path: String): MediaStorage = when {
             path.isPCloudPath() -> PCloud(context)
-            path.isSmbPath() -> Smb(context)
+            path.isSmbPath() -> Smb(context, smbConnectionIdOf(path) ?: 0)
             else -> Device(context)
         }
+
+        // Every storage there is: the device, pCloud, and each share that is set up. What goes
+        // through each storage in turn -- emptying the bin, the daily sweep -- walks this, so a
+        // share added later is not one somebody forgot to list
+        fun all(context: Context): List<MediaStorage> =
+            listOf(Device(context), PCloud(context)) + context.config.smbConnections.map { Smb(context, it.id) }
 
         // the one storage every path of a selection is on, or null when the selection is empty
         // or mixes storages -- a mixed selection is offered nothing that goes through a storage

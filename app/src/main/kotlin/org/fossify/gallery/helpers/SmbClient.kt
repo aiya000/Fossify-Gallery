@@ -19,15 +19,20 @@ import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.toSmbRemotePath
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.EnumSet
 import java.util.concurrent.TimeUnit
 
-// The one way to the configured SMB share. A connection is opened when it is first needed and
+// The one way to the configured SMB shares. A connection is opened when it is first needed and
 // kept for the next caller: a scan, the grid's thumbnails and the viewer all go through here,
 // and opening a session per file would cost a handshake each time.
+//
+// There is one live connection per SmbConnection (#155), and which one a call goes to is read
+// off the pseudo path it is given -- "smb:/a" is the first connection's, "smb:2/a" the second's
+// -- so a caller that holds a path never has to know there is more than one share.
 //
 // Everything in here blocks and talks to the network, so none of it may be called on the main
 // thread. A share that is not reachable has to fail fast rather than hold the folder list, so
@@ -45,13 +50,17 @@ object SmbClient {
 
     private val lock = Any()
 
-    private var client: SMBClient? = null
-    private var connection: Connection? = null
-    private var session: Session? = null
-    private var share: DiskShare? = null
+    // one live connection per connection id. What it was opened with is kept with it, and a
+    // settings change is noticed by comparing that
+    private class Live(
+        val client: SMBClient,
+        val connection: Connection,
+        val session: Session,
+        val share: DiskShare,
+        val openedWith: Credentials
+    )
 
-    // what the live connection was opened with; a settings change is noticed by comparing it
-    private var openedWith: Credentials? = null
+    private val live = HashMap<Int, Live>()
 
     private data class Credentials(
         val host: String, val port: Int, val shareName: String, val user: String, val password: String, val domain: String
@@ -74,31 +83,34 @@ object SmbClient {
         override fun close() = file.close()
     }
 
-    // Answers the share, connecting if there is no live one. Throws an IOException when the
-    // share cannot be reached and IllegalStateException when nothing is configured
-    private fun connectedShare(context: Context): DiskShare {
-        val config = context.config
-        if (!config.isSmbConfigured) {
-            throw IllegalStateException("No SMB share is configured")
-        }
+    // the connection the pseudo path is of. Throws IllegalStateException when it is not one that
+    // is set up -- a path of a connection that has been removed, or nothing configured at all
+    private fun connectionOf(context: Context, path: String): SmbConnection =
+        context.config.smbConnectionOf(path) ?: throw IllegalStateException("No SMB share is configured for $path")
 
+    // Answers the share of the connection the pseudo path is of, connecting if there is no live
+    // one. Throws an IOException when the share cannot be reached and IllegalStateException when
+    // nothing is configured for the path
+    private fun connectedShare(context: Context, path: String): DiskShare = connectedShare(connectionOf(context, path))
+
+    private fun connectedShare(smbConnection: SmbConnection): DiskShare {
         val wanted = Credentials(
-            host = config.smbHost,
-            port = config.smbPort,
-            shareName = config.smbShare,
-            user = config.smbUser,
-            password = config.smbPassword,
-            domain = config.smbDomain
+            host = smbConnection.host,
+            port = smbConnection.port,
+            shareName = smbConnection.share,
+            user = smbConnection.user,
+            password = smbConnection.password,
+            domain = smbConnection.domain
         )
 
         synchronized(lock) {
-            val live = share
-            if (live != null && live.isConnected && wanted == openedWith) {
-                return live
+            val current = live[smbConnection.id]
+            if (current != null && current.share.isConnected && wanted == current.openedWith) {
+                return current.share
             }
 
-            disconnectLocked()
-            return connectLocked(wanted)
+            disconnectLocked(smbConnection.id)
+            return connectLocked(smbConnection.id, wanted)
         }
     }
 
@@ -106,7 +118,7 @@ object SmbClient {
     // of a protocol the user cannot see, and which of the three steps it came from is most of
     // the answer: reaching the host, being let in, and being given the share are three different
     // things to fix. A toast is cut short and is gone once it is read, so this goes to the log
-    private fun connectLocked(credentials: Credentials): DiskShare {
+    private fun connectLocked(id: Int, credentials: Credentials): DiskShare {
         val client = SMBClient(smbConfig)
         var step = "connect to ${credentials.host}:${credentials.port}"
         try {
@@ -131,11 +143,7 @@ object SmbClient {
             val share = session.connectShare(credentials.shareName) as? DiskShare
                 ?: throw IOException("${credentials.shareName} is not a disk share")
 
-            this.client = client
-            this.connection = connection
-            this.session = session
-            this.share = share
-            openedWith = credentials
+            live[id] = Live(client, connection, session, share, credentials)
             Log.i(TAG, "Connected to \\\\${credentials.host}\\${credentials.shareName}")
             return share
         } catch (e: Exception) {
@@ -146,36 +154,43 @@ object SmbClient {
         }
     }
 
-    private fun disconnectLocked() {
+    private fun disconnectLocked(id: Int) {
+        val current = live.remove(id) ?: return
         // closed outermost last: closing the client tears the rest down anyway, the individual
         // closes are what send the protocol's own goodbyes
-        runCatching { share?.close() }
-        runCatching { session?.close() }
-        runCatching { connection?.close() }
-        runCatching { client?.close() }
-        share = null
-        session = null
-        connection = null
-        client = null
-        openedWith = null
+        runCatching { current.share.close() }
+        runCatching { current.session.close() }
+        runCatching { current.connection.close() }
+        runCatching { current.client.close() }
     }
 
-    // drops the connection, so that the next call opens a fresh one. Called when the settings
-    // change and when a read failed in a way that says the session is gone
+    // drops every connection, so that the next call opens a fresh one. Called when a read failed
+    // in a way that says a session is gone and there is no path to say which
     fun disconnect() {
-        synchronized(lock) { disconnectLocked() }
+        synchronized(lock) { live.keys.toList().forEach { disconnectLocked(it) } }
     }
 
-    // whether a live connection to the share is still standing. A listing that failed means one
-    // thing while it is -- that one folder could not be read -- and quite another once it is
-    // not: the share itself has gone, and nothing further can be read from it either
-    fun isConnected(): Boolean = synchronized(lock) { share?.isConnected == true }
+    // drops the connection the pseudo path is of, the same way. Called when its settings change
+    // and when a read of it failed in a way that says the session is gone; the other shares'
+    // connections have nothing to do with either
+    fun disconnect(path: String) {
+        val id = smbConnectionIdOf(path) ?: return
+        synchronized(lock) { disconnectLocked(id) }
+    }
+
+    // whether a live connection to the share the path is of is still standing. A listing that
+    // failed means one thing while it is -- that one folder could not be read -- and quite
+    // another once it is not: the share itself has gone, and nothing further can be read from it
+    fun isConnected(path: String): Boolean {
+        val id = smbConnectionIdOf(path) ?: return false
+        return synchronized(lock) { live[id]?.share?.isConnected == true }
+    }
 
     // Opens a connection and lists the root, for the settings screen's test button. Throws what
     // went wrong, its message is what the user is shown
-    fun test(context: Context) {
-        val share = connectedShare(context)
-        val root = toSharePath(context, SMB_PATH_SCHEME)
+    fun test(smbConnection: SmbConnection) {
+        val share = connectedShare(smbConnection)
+        val root = toSharePath(smbConnection, smbConnection.root)
         try {
             share.list(root)
         } catch (e: Exception) {
@@ -189,7 +204,7 @@ object SmbClient {
     // the entries of one folder, "." and ".." and hidden system entries left out. The path is a
     // pseudo path, "smb:" for the root
     fun list(context: Context, path: String): List<Entry> {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         return share.list(toSharePath(context, path))
             .filter { it.fileName != "." && it.fileName != ".." }
             .map { it.toEntry() }
@@ -197,7 +212,7 @@ object SmbClient {
 
     // the file behind a pseudo path, open for reading. The caller closes it
     fun open(context: Context, path: String): OpenFile {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         val file = share.openFile(
             toSharePath(context, path),
             EnumSet.of(AccessMask.GENERIC_READ),
@@ -213,12 +228,12 @@ object SmbClient {
     // whether the share has a file at the pseudo path. A folder there answers false, the way
     // File.isFile does, and so does a path whose parent folder is not there either
     fun fileExists(context: Context, path: String): Boolean {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         return share.fileExists(toSharePath(context, path))
     }
 
     fun folderExists(context: Context, path: String): Boolean {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         return share.folderExists(toSharePath(context, path))
     }
 
@@ -228,7 +243,7 @@ object SmbClient {
     // nested path fails when a folder in the middle is missing, so it is walked segment by
     // segment
     fun createFolder(context: Context, path: String) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         var walked = ""
         for (segment in toSharePath(context, path).split(SEPARATOR).filter { it.isNotEmpty() }) {
             walked = if (walked.isEmpty()) segment else "$walked$SEPARATOR$segment"
@@ -246,7 +261,7 @@ object SmbClient {
     // keeps a file a write broke off in the middle, and nothing afterwards would tell it from
     // a whole one -- the same reason the copy off the share discards its half-written files
     fun create(context: Context, path: String, write: (OutputStream) -> Unit) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         val sharePath = toSharePath(context, path)
         val file = share.openFile(
             sharePath,
@@ -271,7 +286,7 @@ object SmbClient {
     // copy that landed here and now would sort to the top of the folder instead of where the
     // original belongs
     fun setModified(context: Context, path: String, millis: Long) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         // only the write time is being set; the other three say so with DONT_SET, and 0
         // attributes leaves the file's own alone
         val information = FileBasicInformation(
@@ -292,7 +307,7 @@ object SmbClient {
     // dropped between the request and its answer, two screens deleting the same medium -- into
     // an error about something that has already happened
     fun delete(context: Context, path: String) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         try {
             share.rm(toSharePath(context, path))
         } catch (e: SMBApiException) {
@@ -308,7 +323,7 @@ object SmbClient {
     // caller's rows are rebuilt from a walk of the share afterwards, not from the assumption
     // that this went all the way through
     fun deleteFolder(context: Context, path: String) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         try {
             share.rmdir(toSharePath(context, path), true)
         } catch (e: SMBApiException) {
@@ -322,7 +337,7 @@ object SmbClient {
     // folders the recycle bin's layout leaves behind once what was in them is restored or gone
     // for good: a folder with something still in it is not an error here, it is the answer
     fun deleteFolderIfEmpty(context: Context, path: String): Boolean {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         return try {
             share.rmdir(toSharePath(context, path), false)
             true
@@ -357,7 +372,7 @@ object SmbClient {
     // a name it believed to be free, and one taken since is a collision, not a request to replace
     // what is there
     fun rename(context: Context, path: String, newName: String) {
-        val share = connectedShare(context)
+        val share = connectedShare(context, path)
         val sharePath = toSharePath(context, path)
         val newSharePath = renamedSiblingPath(sharePath, newName, SEPARATOR)
         val entry = share.open(
@@ -387,9 +402,13 @@ object SmbClient {
     // about.
     //
     // The destination folder has to be there already. Nothing here makes it, because everything
-    // that moves within the share moves into a folder the user picked out of the folder list
+    // that moves within the share moves into a folder the user picked out of the folder list.
+    //
+    // Both paths have to be of the one connection: a rename cannot take a file to another share,
+    // and what reached here with two is a caller that did not ask TransferRefusal first
     fun moveTo(context: Context, path: String, newPath: String) {
-        val share = connectedShare(context)
+        require(smbConnectionIdOf(path) == smbConnectionIdOf(newPath)) { "$path and $newPath are on different shares" }
+        val share = connectedShare(context, path)
         val entry = share.open(
             toSharePath(context, path),
             EnumSet.of(AccessMask.DELETE),
@@ -415,9 +434,11 @@ object SmbClient {
     // "smb:/2026/IMG_0001.jpg" -> "<root>\2026\IMG_0001.jpg", the path inside the share. The
     // configured root folder is prepended here and nowhere else, so that the pseudo paths stay
     // the same if it is ever changed to another folder of the same share
-    private fun toSharePath(context: Context, path: String): String {
-        val relative = path.removePrefix(SMB_PATH_SCHEME).trim('/')
-        val root = context.config.smbRootPath
+    private fun toSharePath(context: Context, path: String) = toSharePath(connectionOf(context, path), path)
+
+    private fun toSharePath(smbConnection: SmbConnection, path: String): String {
+        val relative = path.toSmbRemotePath().trim('/')
+        val root = smbConnection.rootPath
         val joined = when {
             root.isEmpty() -> relative
             relative.isEmpty() -> root

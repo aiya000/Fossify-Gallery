@@ -200,7 +200,7 @@ class SmbDownloadService : Service() {
             Log.w(TAG, "Could not download $path from the share", e)
             // the usual failure is a session the server has given up on; dropping the connection
             // means the next video opens a fresh one instead of failing the same way
-            SmbClient.disconnect()
+            SmbClient.disconnect(path)
             null
         }
     }

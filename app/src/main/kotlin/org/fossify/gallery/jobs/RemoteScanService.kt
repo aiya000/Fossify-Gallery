@@ -24,7 +24,7 @@ import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudScanAbortedException
 import org.fossify.gallery.helpers.PCloudScanner
 import org.fossify.gallery.helpers.RemoteScanScheduler
-import org.fossify.gallery.helpers.SMB_PATH_PREFIX
+import org.fossify.gallery.extensions.toSmbRemotePath
 import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbScanAbortedException
 import org.fossify.gallery.helpers.SmbScanner
@@ -214,7 +214,9 @@ class RemoteScanService : Service() {
     }
 
     private fun runSmb(request: RemoteScanScheduler.Request): Boolean {
-        if (!config.isSmbConfigured) {
+        // a connection removed while its request waited has nothing left to walk
+        val connection = config.smbConnection(request.connectionId)
+        if (connection == null) {
             request.onDone?.invoke()
             return false
         }
@@ -230,7 +232,7 @@ class RemoteScanService : Service() {
         var wrote = false
         try {
             if (request.newFoldersOnly) {
-                val result = scanner.scanNewFolders { newFolders, _, path -> showNewFoldersProgress(newFolders, path) }
+                val result = scanner.scanNewFolders(connection) { newFolders, _, path -> showNewFoldersProgress(newFolders, path) }
                 Log.i(
                     TAG,
                     "Found ${result.folderCount} new folders on the share, ${result.mediaCount} files, ${result.skippedFolderCount} folders skipped"
@@ -244,7 +246,7 @@ class RemoteScanService : Service() {
                     request.reportCounts -> showResult(getString(R.string.smb_new_folders_done, result.folderCount, result.mediaCount))
                 }
             } else if (request.isWholeStorage) {
-                val result = scanner.scanAll { folders, media, path -> showProgress(folders, media, path) }
+                val result = scanner.scanAll(connection) { folders, media, path -> showProgress(folders, media, path) }
                 // a scan that went through says so even when the counts were not asked for. How
                 // one ended is otherwise only visible in what it wrote, which is no help when the
                 // question is whether it wrote at all
@@ -287,7 +289,7 @@ class RemoteScanService : Service() {
             Log.w(TAG, "A scan of the network share failed", e)
             // the most common failure is a session the server has given up on; dropping the
             // connection means the next scan opens a fresh one instead of failing the same way
-            SmbClient.disconnect()
+            SmbClient.disconnect(connection.root)
             showResult(getString(R.string.smb_scan_failed))
         } finally {
             SmbScanner.finish()
@@ -378,7 +380,7 @@ class RemoteScanService : Service() {
                 // which folder it is in is what says it is moving; the counts hold still for a
                 // while when it is walking through folders that hold no media
                 if (folder != null) {
-                    setContentText(folder.removePrefix(SMB_PATH_PREFIX))
+                    setContentText(folder.toSmbRemotePath())
                 }
             }
             .build()

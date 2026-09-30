@@ -6,8 +6,10 @@ import org.fossify.commons.helpers.NOMEDIA
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
+import org.fossify.gallery.helpers.RECYCLE_BIN_FOLDER_NAME
 import org.fossify.gallery.helpers.SMB_PATH_SCHEME
-import org.fossify.gallery.helpers.SMB_RECYCLE_BIN
+import org.fossify.gallery.helpers.smbRootOf
+import org.fossify.gallery.helpers.smbRootOfPath
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -32,25 +34,30 @@ fun String.toPCloudRecycleBinPath() = "$PCLOUD_RECYCLE_BIN${removePrefix(PCLOUD_
 // and back: the path the medium had before it went into the bin
 fun String.fromPCloudRecycleBinPath() = "$PCLOUD_PATH_SCHEME${removePrefix(PCLOUD_RECYCLE_BIN)}"
 
-// SMB media carries a pseudo path too, see SMB_PATH_PREFIX
+// SMB media carries a pseudo path too, see SMB_PATH_PREFIX. Every connection's does (#155)
 fun String.isSmbPath() = startsWith(SMB_PATH_SCHEME)
 
-// a medium in the app's recycle bin on the share, see SMB_RECYCLE_BIN. The bin folder itself
-// is not one of them
-fun String.isSmbRecycleBinPath() = startsWith("$SMB_RECYCLE_BIN/")
+// the recycle bin folder of the connection this path is of, see SmbConnection.recycleBin
+private fun String.smbRecycleBin() = "${smbRootOfPath(this)}/$RECYCLE_BIN_FOLDER_NAME"
 
-// "smb:/Trips/Osaka/IMG_0001.jpg" -> "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg"
-fun String.toSmbRecycleBinPath() = "$SMB_RECYCLE_BIN${removePrefix(SMB_PATH_SCHEME)}"
+// a medium in the app's recycle bin on its share, see SMB_RECYCLE_BIN. The bin folder itself
+// is not one of them
+fun String.isSmbRecycleBinPath() = isSmbPath() && startsWith("${smbRecycleBin()}/")
+
+// "smb:/Trips/Osaka/IMG_0001.jpg" -> "smb:/.gallery-recycle-bin/Trips/Osaka/IMG_0001.jpg", and
+// the same within the connection "smb:2/..." is of
+fun String.toSmbRecycleBinPath() = "${smbRecycleBin()}${removePrefix(smbRootOfPath(this))}"
 
 // and back: the path the medium had before it went into the bin
-fun String.fromSmbRecycleBinPath() = "$SMB_PATH_SCHEME${removePrefix(SMB_RECYCLE_BIN)}"
+fun String.fromSmbRecycleBinPath() = "${smbRootOfPath(this)}${removePrefix(smbRecycleBin())}"
 
-// "smb:/photos/2026/IMG_0001.jpg" -> "photos/2026/IMG_0001.jpg", the path inside the share as
-// smbj wants it, without a leading separator. The root "smb:" becomes ""
-fun String.toSmbRemotePath() = if (isSmbPath()) removePrefix(SMB_PATH_SCHEME).trimStart('/') else this
+// "smb:/photos/2026/IMG_0001.jpg" -> "photos/2026/IMG_0001.jpg", the path inside the
+// connection's root, without a leading separator; "smb:2/photos" is "photos" the same way. The
+// root "smb:" or "smb:2" becomes ""
+fun String.toSmbRemotePath() = if (isSmbPath()) removePrefix(smbRootOfPath(this)).trimStart('/') else this
 
-// the other way round, "" -> "smb:"
-fun String.toSmbPseudoPath() = "$SMB_PATH_SCHEME${if (isEmpty()) "" else "/${trim('/')}"}"
+// the other way round, "" -> "smb:", in the connection [connectionId]
+fun String.toSmbPseudoPath(connectionId: Int = 0) = "${smbRootOf(connectionId)}${if (isEmpty()) "" else "/${trim('/')}"}"
 
 // a medium that is not on this device: there is no file behind it until one is fetched. The
 // menu gating and the viewer ask this rather than naming one storage

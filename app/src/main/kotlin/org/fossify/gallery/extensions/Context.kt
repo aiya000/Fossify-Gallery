@@ -109,13 +109,16 @@ import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SHOW_ALL
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.StorageOrder
 import org.fossify.gallery.helpers.SmbWriter
+import org.fossify.gallery.helpers.smbConnectionIdOf
+import org.fossify.gallery.helpers.smbConnectionIdOfFilter
+import org.fossify.gallery.helpers.smbRootOfPath
+import java.util.concurrent.atomic.AtomicInteger
 import org.fossify.gallery.helpers.THUMBNAIL_FADE_DURATION_MS
 import org.fossify.gallery.helpers.ThumbnailPolicy
 import org.fossify.gallery.helpers.TYPE_GIFS
@@ -717,10 +720,21 @@ fun Context.getPathLocation(path: String): Int {
 // means local storage, so the list is never left empty by a filter nothing can satisfy
 fun Context.effectiveStorageFilter(): Int {
     val filter = config.storageFilter
+    val smbConnectionId = smbConnectionIdOfFilter(filter)
     return when {
         filter == STORAGE_FILTER_PCLOUD && !config.isPCloudLoggedIn -> STORAGE_FILTER_LOCAL
-        filter == STORAGE_FILTER_SMB && !config.isSmbConfigured -> STORAGE_FILTER_LOCAL
+        smbConnectionId != null && config.smbConnection(smbConnectionId) == null -> STORAGE_FILTER_LOCAL
         else -> filter
+    }
+}
+
+// The shares the folder list is showing: every one there is under "All storages", the one
+// picked when a share is, none otherwise (#155)
+fun Context.shownSmbConnectionIds(): List<Int> {
+    val filter = effectiveStorageFilter()
+    return when (filter) {
+        STORAGE_FILTER_ALL -> config.smbConnections.map { it.id }
+        else -> listOfNotNull(smbConnectionIdOfFilter(filter))
     }
 }
 
@@ -747,7 +761,7 @@ fun Context.storageLabel(storageFilter: Int) = getString(
 // and is not one. A remote path is shown as its storage's name followed by the folders under it
 fun Context.humanizeAnyPath(path: String): String = when {
     path.isPCloudPath() -> getString(R.string.pcloud) + path.removePrefix(PCLOUD_PATH_SCHEME)
-    path.isSmbPath() -> getString(R.string.smb) + path.removePrefix(SMB_PATH_SCHEME)
+    path.isSmbPath() -> getString(R.string.smb) + path.removePrefix(smbRootOfPath(path))
     else -> humanizePath(path)
 }
 
@@ -762,12 +776,13 @@ fun Context.isShownByStorageFilter(directory: Directory): Boolean {
         // a storage that is no longer set up shows nothing whatever the filter says, so a cache
         // left behind by signing out or by clearing the share does not reappear
         isPCloud && !config.isPCloudLoggedIn -> false
-        isSmb && !config.isSmbConfigured -> false
-        else -> when (effectiveStorageFilter()) {
+        isSmb && config.smbConnectionOf(path) == null -> false
+        else -> when (val filter = effectiveStorageFilter()) {
             STORAGE_FILTER_ALL -> true
             STORAGE_FILTER_PCLOUD -> isPCloud
-            STORAGE_FILTER_SMB -> isSmb
-            else -> !isPCloud && !isSmb
+            STORAGE_FILTER_LOCAL -> !isPCloud && !isSmb
+            // one share: the folders of that connection, and not another's
+            else -> isSmb && smbConnectionIdOf(path) == smbConnectionIdOfFilter(filter)
         }
     }
 }
@@ -832,21 +847,25 @@ fun Context.rescanPCloudFolders(paths: List<String>, reportCounts: Boolean, prio
 // in a notification that outlives the screen.
 //
 // Nothing is handed back here. A screen that wants its folders again once the queue is through
-// adds itself to RemoteScanService.addListener()
-fun Context.rescanSmb(reportCounts: Boolean, priority: Int) {
-    if (!config.isSmbConfigured) {
-        return
-    }
-
-    RemoteScanScheduler.submit(
-        this,
-        RemoteScanScheduler.Request(
-            storage = RemoteScanScheduler.Storage.SMB,
-            priority = priority,
-            reportCounts = reportCounts
+// adds itself to RemoteScanService.addListener().
+//
+// [connectionIds] are the shares to walk, each on its own (#155); null is every one there is
+fun Context.rescanSmb(reportCounts: Boolean, priority: Int, connectionIds: Collection<Int>? = null) {
+    smbConnectionsAmong(connectionIds).forEach { connection ->
+        RemoteScanScheduler.submit(
+            this,
+            RemoteScanScheduler.Request(
+                storage = RemoteScanScheduler.Storage.SMB,
+                priority = priority,
+                reportCounts = reportCounts,
+                connectionId = connection.id
+            )
         )
-    )
+    }
 }
+
+// the connections set up among [ids], or all of them for null
+private fun Context.smbConnectionsAmong(ids: Collection<Int>?) = config.smbConnections.filter { ids == null || it.id in ids }
 
 // "Find new folders" (#127): the folders of a remote storage that this app has no row for yet,
 // found and put in the folder list without the full rescan a share of a thousand folders needs.
@@ -854,20 +873,19 @@ fun Context.rescanSmb(reportCounts: Boolean, priority: Int) {
 // its diff. Queued like every scan, ranked with the menu's rescans, and like them never asked
 // of the network policy. The share's result reaches the screen through the service's
 // listeners, pCloud's through [onDone]
-fun Context.findNewSmbFolders(priority: Int) {
-    if (!config.isSmbConfigured) {
-        return
-    }
-
-    RemoteScanScheduler.submit(
-        this,
-        RemoteScanScheduler.Request(
-            storage = RemoteScanScheduler.Storage.SMB,
-            priority = priority,
-            reportCounts = true,
-            newFoldersOnly = true
+fun Context.findNewSmbFolders(priority: Int, connectionIds: Collection<Int>? = null) {
+    smbConnectionsAmong(connectionIds).forEach { connection ->
+        RemoteScanScheduler.submit(
+            this,
+            RemoteScanScheduler.Request(
+                storage = RemoteScanScheduler.Storage.SMB,
+                priority = priority,
+                reportCounts = true,
+                newFoldersOnly = true,
+                connectionId = connection.id
+            )
         )
-    )
+    }
 }
 
 fun Context.findNewPCloudFolders(priority: Int, onDone: () -> Unit = {}) {
@@ -890,23 +908,35 @@ fun Context.findNewPCloudFolders(priority: Int, onDone: () -> Unit = {}) {
 
 // Refreshes the given folders of the share one by one, non-recursively; the counts toast sums
 // them up. Queued like every other scan, so it waits behind a walk of the whole share instead of
-// being dropped while one runs
+// being dropped while one runs.
+//
+// Folders of several shares make a request per share (#155), and [onDone] runs once, after the
+// last of them. A folder of a share that is not set up is passed over
 fun Context.rescanSmbFolders(paths: List<String>, reportCounts: Boolean, priority: Int, onDone: () -> Unit = {}) {
-    if (paths.isEmpty() || !config.isSmbConfigured) {
+    val byConnection = paths.groupBy { smbConnectionIdOf(it) }.filterKeys { it != null && config.smbConnection(it) != null }
+    if (byConnection.isEmpty()) {
         onDone()
         return
     }
 
-    RemoteScanScheduler.submit(
-        this,
-        RemoteScanScheduler.Request(
-            storage = RemoteScanScheduler.Storage.SMB,
-            priority = priority,
-            reportCounts = reportCounts,
-            folders = paths,
-            onDone = onDone
+    val left = AtomicInteger(byConnection.size)
+    byConnection.forEach { (connectionId, folders) ->
+        RemoteScanScheduler.submit(
+            this,
+            RemoteScanScheduler.Request(
+                storage = RemoteScanScheduler.Storage.SMB,
+                priority = priority,
+                reportCounts = reportCounts,
+                folders = folders,
+                connectionId = connectionId!!,
+                onDone = {
+                    if (left.decrementAndGet() == 0) {
+                        onDone()
+                    }
+                }
+            )
         )
-    )
+    }
 }
 
 // Rebuilds one remote folder's row from the media rows left in it, the way a scan builds it, or
@@ -1260,7 +1290,7 @@ fun Context.getCachedDirectories(
         filteredDirectories = filteredDirectories.filter {
             val storageIsSetUp = when {
                 it.path.isPCloudPath() -> config.isPCloudLoggedIn
-                it.path.isSmbPath() -> config.isSmbConfigured
+                it.path.isSmbPath() -> config.smbConnectionOf(it.path) != null
                 else -> true
             }
 

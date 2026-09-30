@@ -17,10 +17,12 @@ class MediaTransferTableTest(
     private val op: Op,
     private val expected: TransferRefusal?
 ) {
+    // two shares, each a storage of its own (#155): the first connection's paths and another's
     enum class Storage(val path: String) {
         DEVICE("/storage/emulated/0/Pictures/Outbox"),
         PCLOUD("pcloud:/Outbox"),
-        SHARE("smb:/Outbox")
+        SHARE("smb:/Outbox"),
+        OTHER_SHARE("smb:2/Outbox")
     }
 
     enum class Op { COPY, MOVE }
@@ -38,6 +40,8 @@ class MediaTransferTableTest(
             cell(Storage.DEVICE, Storage.PCLOUD, Op.MOVE, carried)
             cell(Storage.DEVICE, Storage.SHARE, Op.COPY, carried)
             cell(Storage.DEVICE, Storage.SHARE, Op.MOVE, carried)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.COPY, carried)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.MOVE, carried)
 
             cell(Storage.PCLOUD, Storage.DEVICE, Op.COPY, carried)
             cell(Storage.PCLOUD, Storage.DEVICE, Op.MOVE, carried)
@@ -45,6 +49,8 @@ class MediaTransferTableTest(
             cell(Storage.PCLOUD, Storage.PCLOUD, Op.MOVE, carried)
             cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, TransferRefusal.PCLOUD_ONTO_SHARE)
             cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, TransferRefusal.PCLOUD_ONTO_SHARE)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.PCLOUD_ONTO_SHARE)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, TransferRefusal.PCLOUD_ONTO_SHARE)
 
             cell(Storage.SHARE, Storage.DEVICE, Op.COPY, carried)
             cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, carried)
@@ -53,6 +59,18 @@ class MediaTransferTableTest(
             // #150: it used to be carried out as a move, the original gone from where it was
             cell(Storage.SHARE, Storage.SHARE, Op.COPY, TransferRefusal.COPY_WITHIN_SHARE)
             cell(Storage.SHARE, Storage.SHARE, Op.MOVE, carried)
+            // #155: the rename a move within a share is cannot reach another share
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.BETWEEN_SHARES)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, TransferRefusal.BETWEEN_SHARES)
+
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, carried)
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, carried)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, carried)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, carried)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, TransferRefusal.BETWEEN_SHARES)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, TransferRefusal.BETWEEN_SHARES)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.COPY_WITHIN_SHARE)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, carried)
         }
 
         @JvmStatic

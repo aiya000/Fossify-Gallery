@@ -273,19 +273,15 @@ class SettingsActivity : SimpleActivity() {
     // one is already there, it offers to forget it first, because that is the only way back to
     // no share at all and its cached folders have to go with it
     private fun setupSmbShare() {
-        val isConfigured = config.isSmbConfigured
+        val connection = config.smbConnection(0)
         // the whole root, not just the share: the folder inside it is as much a part of what is
         // browsed, and leaving it out reads like the share itself was picked
-        binding.settingsSmbShare.text = if (isConfigured) {
-            "\\\\${config.smbHost}\\${config.smbShare}" + config.smbRootPath.let { if (it.isEmpty()) "" else "\\${it.replace('/', '\\')}" }
-        } else {
-            getString(R.string.smb_not_configured)
-        }
+        binding.settingsSmbShare.text = connection?.address ?: getString(R.string.smb_not_configured)
         binding.settingsSmbShareHolder.setOnClickListener {
-            if (isConfigured) {
-                showSmbShareOptions()
+            if (connection != null) {
+                showSmbShareOptions(connection.id)
             } else {
-                SmbShareDialog(this) { onSmbShareChanged() }
+                SmbShareDialog(this, config.newSmbConnectionId()) { onSmbShareChanged(it) }
             }
         }
 
@@ -321,7 +317,7 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
-    private fun showSmbShareOptions() {
+    private fun showSmbShareOptions(connectionId: Int) {
         val items = arrayListOf(
             RadioItem(SMB_OPTION_EDIT, getString(R.string.smb_share)),
             RadioItem(SMB_OPTION_FORGET, getString(R.string.smb_clear))
@@ -329,12 +325,12 @@ class SettingsActivity : SimpleActivity() {
 
         RadioGroupDialog(this, items) {
             if (it as Int == SMB_OPTION_EDIT) {
-                SmbShareDialog(this) { onSmbShareChanged() }
+                SmbShareDialog(this, connectionId) { onSmbShareChanged(connectionId) }
             } else {
                 ConfirmationDialog(this, getString(R.string.smb_clear_confirmation)) {
-                    config.clearSmbShare()
-                    SmbClient.disconnect()
-                    onSmbShareChanged()
+                    config.removeSmbConnection(connectionId)
+                    SmbClient.disconnect(smbRootOf(connectionId))
+                    onSmbShareChanged(connectionId)
                 }
             }
         }
@@ -343,15 +339,16 @@ class SettingsActivity : SimpleActivity() {
     // The share that was there is not the one that is there now, so its cached folders are of no
     // use and are dropped. A share that is still set up is then walked right away, with its
     // counts toasted: otherwise nothing would be scanned until the folder list was switched to
-    // it and told to rescan, and a share just typed in would look like one that holds nothing
-    private fun onSmbShareChanged() {
+    // it and told to rescan, and a share just typed in would look like one that holds nothing.
+    // The other connections' folders are theirs, and stay (#155)
+    private fun onSmbShareChanged(connectionId: Int) {
         setupSmbShare()
         updateTextColors(binding.settingsHolder)
         ensureBackgroundThread {
-            SmbScanner(this).forgetAll()
-            if (config.isSmbConfigured) {
+            SmbScanner(this).forgetAll(connectionId)
+            if (config.smbConnection(connectionId) != null) {
                 toast(R.string.smb_rescanning)
-                rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL)
+                rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, connectionIds = listOf(connectionId))
             }
         }
     }

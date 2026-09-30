@@ -93,7 +93,7 @@ import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.smbRootOfPath
 import org.fossify.gallery.helpers.PCloudSyncPolicy
 import org.fossify.gallery.helpers.RescanOnMobileData
 import org.fossify.gallery.helpers.RescanScope
@@ -398,9 +398,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             findItem(R.id.create_new_folder).isVisible =
                 !mShowAll && mPath != RECYCLE_BIN && mPath != FAVORITES
                     && (!mPath.isPCloudPath() || config.isPCloudLoggedIn)
-                    && (!mPath.isSmbPath() || config.isSmbConfigured)
+                    && (!mPath.isSmbPath() || config.smbConnectionOf(mPath) != null)
             findItem(R.id.rescan_pcloud_folder).isVisible = mPath.isPCloudPath() && config.isPCloudLoggedIn
-            findItem(R.id.rescan_smb_folder).isVisible = mPath.isSmbPath() && config.isSmbConfigured
+            findItem(R.id.rescan_smb_folder).isVisible = config.smbConnectionOf(mPath) != null
             // offered on every folder, not only on one of the share: a folder does not always
             // say which storage it is on, and an item that comes and goes for a reason nobody
             // can see is worse than one that reports it had nothing to read
@@ -531,7 +531,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
                 config.OTGPath -> getString(org.fossify.commons.R.string.usb)
                 PCLOUD_PATH_SCHEME -> getString(R.string.pcloud)
-                SMB_PATH_SCHEME -> getString(R.string.smb)
+                // the root of a share, whichever one it is (#155)
+                smbRootOfPath(mPath) -> getString(R.string.smb)
                 else -> getHumanizedFilename(mPath)
             }
 
@@ -762,7 +763,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             mPath.isPCloudPath() && config.isPCloudLoggedIn ->
                 rescanPCloudFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
 
-            mPath.isSmbPath() && config.isSmbConfigured ->
+            config.smbConnectionOf(mPath) != null ->
                 rescanSmbFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
 
             else -> getMedia()
@@ -819,7 +820,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // one folder was last walked, and a single listing is one request, so it is not worth a
     // column of its own -- the whole-share interval is what holds the scans back
     private fun rescanSmbFolderIfDue() {
-        if (mDidRescanSmbFolder || !mPath.isSmbPath() || !config.isSmbConfigured) {
+        if (mDidRescanSmbFolder || config.smbConnectionOf(mPath) == null) {
             return
         }
 
