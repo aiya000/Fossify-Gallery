@@ -379,11 +379,9 @@ cell() {
             ;;
 
         refused)
-            if [ "$from" = "cloud" ]; then
-                refusal_text="can only come from this device"
-            else
-                refusal_text="cannot be copied within the share"
-            fi
+            # pCloud straight onto the share is the one pair turned away; a copy within the share
+            # was too, until #154
+            refusal_text="can only come from this device"
 
             if ui_wait_text "$refusal_text" 10 "$name-refusal"; then
                 pass "the picker says why it will not"
@@ -492,8 +490,8 @@ cell share device copy top ShareCopy new
 cell share device copy group ShareCopy new
 cell share cloud copy top ShareCopy new
 cell share cloud copy group ShareCopy new
-cell share share copy top ShareCopy refused
-cell share share copy group ShareCopy refused
+cell share share copy top ShareCopy new
+cell share share copy group ShareCopy new
 
 cell device cloud move top DevMvCloudTop new
 cell device cloud move group DevMvCloudGroup new

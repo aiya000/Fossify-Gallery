@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # #28: a medium can be moved with the share on either side -- into another folder of the share,
-# off the share onto this device, and from this device onto the share.
+# off the share onto this device, and from this device onto the share. Before those, a copy into
+# another folder of the share, which reads the bytes and writes them back (#154).
 #
 # The two are not the same operation wearing different clothes, which is why both are here.
 #
@@ -37,9 +38,10 @@ away_from="$FIXTURE_SHARE_DIR/$FIXTURE_MOVE_FOLDER/$FIXTURE_MOVE_AWAY_FILE"
 away_to="$FIXTURE_LOCAL_DESTINATION_DIR/$FIXTURE_MOVE_AWAY_FILE"
 onto_from="$FIXTURE_DEVICE_SOURCE_DIR/$FIXTURE_MOVE_ONTO_FILE"
 onto_to="$FIXTURE_SHARE_DIR/$FIXTURE_MOVE_FOLDER/$FIXTURE_MOVE_ONTO_FILE"
+copied_to="$FIXTURE_SHARE_DIR/$FIXTURE_MOVE_DESTINATION/$FIXTURE_MOVE_AWAY_FILE"
 
 clean_the_share() {
-    rm -f "$moved_from" "$moved_to" "$away_from" "$onto_to"
+    rm -f "$moved_from" "$moved_to" "$away_from" "$onto_to" "$copied_to"
     "${ADB[@]}" shell "rm -f '$away_to' '$onto_from'" > /dev/null 2>&1 || true
 }
 
@@ -141,14 +143,16 @@ if ! ui_wait_text "$FIXTURE_MOVE_FILE" 60 "95-grid"; then
 fi
 
 ########################################################################################
-step "a copy of $FIXTURE_MOVE_FILE into $FIXTURE_MOVE_DESTINATION is turned away (#150)"
+step "copying $FIXTURE_MOVE_AWAY_FILE into $FIXTURE_MOVE_DESTINATION, within the share (#154)"
 ########################################################################################
 
-# The share has no copy within itself, and the service carried one out as a move: the original
-# left the folder it was copied from. The picker turns the folder away now, with a toast that is
-# gone before a dump can be sure to see it (agents/tests/a-toast-is-gone-before-the-dump.md), so
-# the witnesses are the picker still being up, and the share: nothing arrived, nothing left
-if ! select_row "$FIXTURE_MOVE_FILE" "95-select-copy"; then
+# The share has no copy within itself. The service once carried a copy out as the rename a move
+# is, and the original left the folder it was copied from (#150); then the picker turned the
+# folder away. Now the bytes are read off the share and written back, so the witnesses are the
+# share: the copy is there byte for byte with the original's modification time, and the original
+# has not moved. It is the medium the later move takes off the share, so that the move within
+# the share below lands on a name nothing else has
+if ! select_row "$FIXTURE_MOVE_AWAY_FILE" "95-select-copy"; then
     screenshot "95-not-selected-copy"
     finish
 fi
@@ -163,27 +167,41 @@ if ! ui_wait_exact_text "$FIXTURE_MOVE_DESTINATION" 30 "95-copy-picker"; then
 fi
 
 ui_tap_exact_text "$FIXTURE_MOVE_DESTINATION" "95-pick-copy-folder"
-sleep 5
-if ui_wait_exact_text "$FIXTURE_MOVE_DESTINATION" 5 "95-copy-picker-still-up"; then
-    pass "the picker stays up rather than taking $FIXTURE_MOVE_DESTINATION as the copy's destination"
-else
-    fail "the picker went away, as if the copy was handed over"
-    screenshot "95-copy-picker-gone"
-fi
 
-if [ -f "$moved_from" ] && [ ! -f "$moved_to" ]; then
-    pass "and $FIXTURE_MOVE_FILE is still in $FIXTURE_MOVE_FOLDER, with nothing in $FIXTURE_MOVE_DESTINATION"
-else
-    fail "the copy was carried out: $FIXTURE_MOVE_FOLDER has it: $([ -f "$moved_from" ] && echo yes || echo no), $FIXTURE_MOVE_DESTINATION has it: $([ -f "$moved_to" ] && echo yes || echo no)"
+if ! wait_for_log "Copied 1 of 1 from share to share" 180 "95-copy-within"; then
+    fail "the copy within the share never finished"
+    screenshot "95-no-copy-within"
+    logcat_dump "95-copy-within" > /dev/null
     finish
 fi
 
 capture_log "95-copy-within"
-refute_log "within the share" "the share was asked for nothing"
+refute_log "Moved . of . within the share" "a copy was not carried out as a move"
 
-# the picker first: while it is up, a dump holds only its window and no selection to see
-"${ADB[@]}" shell input keyevent KEYCODE_BACK
-sleep 1
+if [ -f "$copied_to" ] && [ "$(md5sum < "$copied_to")" = "$away_md5" ]; then
+    pass "$FIXTURE_MOVE_DESTINATION/$FIXTURE_MOVE_AWAY_FILE is on the share, byte for byte"
+else
+    fail "$FIXTURE_MOVE_DESTINATION/$FIXTURE_MOVE_AWAY_FILE is missing or not the medium that was copied"
+    ls -l "$FIXTURE_SHARE_DIR/$FIXTURE_MOVE_DESTINATION" | sed 's/^/     /'
+    finish
+fi
+
+if [ -f "$away_from" ] && [ "$(md5sum < "$away_from")" = "$away_md5" ]; then
+    pass "and $FIXTURE_MOVE_FOLDER/$FIXTURE_MOVE_AWAY_FILE is still where it was"
+else
+    fail "a copy took $FIXTURE_MOVE_AWAY_FILE out of $FIXTURE_MOVE_FOLDER"
+    finish
+fi
+
+# the gallery sorts by it: a copy stamped with the time it was written sorts to the top instead
+# of beside the original
+if [ "$(stat -c %Y "$copied_to")" = "$(stat -c %Y "$away_from")" ]; then
+    pass "and the copy has the original's modification time"
+else
+    fail "the copy's modification time is $(stat -c %y "$copied_to"), the original's $(stat -c %y "$away_from")"
+fi
+
+# the selection first, if the copy left one standing
 for _ in 1 2 3; do
     in_selection_mode "95-leave-copy" || break
     "${ADB[@]}" shell input keyevent KEYCODE_BACK
@@ -282,6 +300,14 @@ if ui_wait_text "$FIXTURE_MOVE_FILE" 30 "95-destination-grid"; then
 else
     fail "$FIXTURE_MOVE_DESTINATION does not show $FIXTURE_MOVE_FILE, though the share has it there"
     screenshot "95-destination-stale"
+fi
+
+# the copy's row came with the walk of the destination the copy asked for
+if ui_wait_text "$FIXTURE_MOVE_AWAY_FILE" 10 "95-destination-grid-copy"; then
+    pass "and the copy of $FIXTURE_MOVE_AWAY_FILE made before"
+else
+    fail "$FIXTURE_MOVE_DESTINATION does not show the copy of $FIXTURE_MOVE_AWAY_FILE"
+    screenshot "95-destination-no-copy"
 fi
 
 capture_log "95-move-within-rows"

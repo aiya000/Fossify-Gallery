@@ -9,7 +9,7 @@ import org.junit.runners.Parameterized
 // storage it is on, the storage of the folder tapped, and copy or move. Each cell says whether
 // it is carried out or turned away, so that a pair nobody decided on cannot hide.
 //
-// The same two refusals stand for a folder of the folder list, see FolderPlacementTableTest
+// The same refusal stands for a folder of the folder list, see FolderPlacementTableTest
 @RunWith(Parameterized::class)
 class MediaTransferTableTest(
     private val from: Storage,
@@ -56,20 +56,20 @@ class MediaTransferTableTest(
             cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, carried)
             cell(Storage.SHARE, Storage.PCLOUD, Op.COPY, carried)
             cell(Storage.SHARE, Storage.PCLOUD, Op.MOVE, carried)
-            // #150: it used to be carried out as a move, the original gone from where it was
-            cell(Storage.SHARE, Storage.SHARE, Op.COPY, TransferRefusal.COPY_WITHIN_SHARE)
+            // #154: a copy within a share and anything onto another share carry the bytes
+            // across; refused before that (#150, #155). SmbTransferKindTest has which is which
+            cell(Storage.SHARE, Storage.SHARE, Op.COPY, carried)
             cell(Storage.SHARE, Storage.SHARE, Op.MOVE, carried)
-            // #155: the rename a move within a share is cannot reach another share
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.BETWEEN_SHARES)
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, TransferRefusal.BETWEEN_SHARES)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, carried)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, carried)
 
             cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, carried)
             cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, carried)
             cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, carried)
             cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, carried)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, TransferRefusal.BETWEEN_SHARES)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, TransferRefusal.BETWEEN_SHARES)
-            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.COPY_WITHIN_SHARE)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, carried)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, carried)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, carried)
             cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, carried)
         }
 

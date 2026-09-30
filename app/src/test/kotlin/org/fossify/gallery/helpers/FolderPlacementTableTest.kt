@@ -52,8 +52,6 @@ class FolderPlacementTableTest(
             }
 
             val pcloudOntoShare = Outcome.Refused(TransferRefusal.PCLOUD_ONTO_SHARE)
-            val copyWithinShare = Outcome.Refused(TransferRefusal.COPY_WITHIN_SHARE)
-            val betweenShares = Outcome.Refused(TransferRefusal.BETWEEN_SHARES)
 
             cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, Outcome.Regroup)
@@ -77,18 +75,18 @@ class FolderPlacementTableTest(
             cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.PCLOUD, Op.COPY, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.PCLOUD, Op.MOVE, Outcome.NewFolder)
-            cell(Storage.SHARE, Storage.SHARE, Op.COPY, copyWithinShare)
+            cell(Storage.SHARE, Storage.SHARE, Op.COPY, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.SHARE, Op.MOVE, Outcome.Regroup)
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, betweenShares)
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, betweenShares)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, Outcome.NewFolder)
 
             cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
             cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, Outcome.NewFolder)
             cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, Outcome.NewFolder)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, betweenShares)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, betweenShares)
-            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, copyWithinShare)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, Outcome.NewFolder)
             cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, Outcome.Regroup)
         }
 

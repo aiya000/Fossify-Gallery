@@ -175,8 +175,8 @@ at afterwards.
   `fixture/share`, the pCloud stub's directory or `/sdcard/Pictures`; inside Trips it has to be a
   member of Trips, read off the app's preferences with `run-as`; a copy leaves the source's photo
   and a move takes it. A move that stays on its storage carries nothing and only changes the
-  source's group; pCloud onto the share, and a copy within the share, are refused with the
-  picker saying why and nothing arriving. Every move has a source folder of its own, since it
+  source's group; pCloud onto the share is refused with the picker saying why and nothing
+  arriving. A copy within the share makes a new folder like any other (#154). Every move has a source folder of its own, since it
   uses it up; Trips is given a folder of this device and one of pCloud so that it is in the
   picker on every chip. It walks the share once, so it is long: about five minutes of walk and
   half a minute or so per cell. It replaced two scripts that drove five of these cells between
@@ -194,8 +194,8 @@ at afterwards.
   its own, named after the cell and with bytes of its own, from `AbFrom` into `AbTo`, so an
   arrival is told apart by its name and read byte for byte off `fixture/share`, the pCloud stub's
   directory or `/sdcard/Pictures`; a copy leaves the source and a move takes it. pCloud onto the
-  share, and a copy within the share (#150), are refused: the picker stays up and the medium stays
-  where it was. Judged all at once against one deadline, like `72`, after one walk of the share:
+  share is refused: the picker stays up and the medium stays where it was. A copy within the share
+  is carried like any other, the bytes read off and written back (#154; refused after #150). Judged all at once against one deadline, like `72`, after one walk of the share:
   about five minutes of walk and a minute per cell, 25 minutes in all.
   `FIXTURE_ONLY_CELLS="3 4"` drives only those cells. What `50`, `60`, `70` and `95` pin besides
   the pair -- modification times, numbering, the requests pCloud is sent, rows that follow a move
@@ -229,8 +229,9 @@ at afterwards.
   whole share takes five minutes. A rescan walks each share on its own, read off the two
   "Walked the share" lines, which name the root they walked; the storage menu has a row for
   each, the named one by its name and the other by its address; each share's list shows its own
-  folders and not the other's, "All storages" both; and a copy from one share onto the other is
-  turned away, the picker staying up and nothing arriving. The seed writes the second connection
+  folders and not the other's, "All storages" both; and a copy from one share onto the other,
+  then a move back the other way, carry the file across byte for byte, the move leaving nothing
+  behind (#154). The seed writes the second connection
   when `FIXTURE_SECOND_SMB_ROOT_PATH` is set. Red with one share's filter showing every share's
   folders
 - **`78-add-a-share-in-the-settings.sh`** — #155, the settings half: with the fixture's share set

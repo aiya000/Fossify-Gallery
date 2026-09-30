@@ -11,7 +11,7 @@
 #
 # - carried: the medium turns up in AbTo, byte for byte; a copy leaves it in AbFrom, a move takes
 #   it away
-# - turned away (pCloud onto the share, a copy within the share): the picker stays up rather
+# - turned away (pCloud onto the share): the picker stays up rather
 #   than taking the folder, and the medium is still in AbFrom and nowhere else
 #
 # The cells only hand their transfers over, and what arrived is judged once they have all been
@@ -322,7 +322,7 @@ cells=(
     "share device move carried"
     "share cloud copy carried"
     "share cloud move carried"
-    "share share copy refused"
+    "share share copy carried"
     "share share move carried"
 )
 

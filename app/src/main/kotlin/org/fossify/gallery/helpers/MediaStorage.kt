@@ -313,7 +313,7 @@ sealed class MediaStorage(protected val context: Context) {
 
         when (kind) {
             // nothing of the device is touched, so there is nothing to ask for
-            SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.WITHIN_SHARE -> enqueue()
+            SmbTransferService.Kind.TO_PCLOUD, SmbTransferService.Kind.WITHIN_SHARE, SmbTransferService.Kind.SHARE_TO_SHARE -> enqueue()
 
             // what a copy onto the share reads is media the app already lists; a move also
             // deletes those files afterwards, which is what the storage permissions are wanted for
@@ -1387,10 +1387,9 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // every pair is the share's service's: off the share onto the device or pCloud, and a
-        // move within the share, where no bytes travel at all. There is no copy within the
-        // share, it would be carried out as a move (#150), and nothing onto another share, which
-        // would have to carry the bytes across (#155)
+        // every pair is the share's service's: off the share onto the device or pCloud, a move
+        // within the share, where no bytes travel at all, and a copy within the share or
+        // anything onto another share, where every byte is read off and written back (#154)
         override fun copyMoveTo(
             activity: BaseSimpleActivity,
             fileDirItems: ArrayList<FileDirItem>,
@@ -1409,7 +1408,7 @@ sealed class MediaStorage(protected val context: Context) {
             val kind = when (of(context, destination)) {
                 is Device -> SmbTransferService.Kind.TO_DEVICE
                 is PCloud -> SmbTransferService.Kind.TO_PCLOUD
-                is Smb -> SmbTransferService.Kind.WITHIN_SHARE
+                is Smb -> SmbTransferService.kindBetweenShares(source, destination, isCopy)
             }
 
             enqueueSmbTransfer(activity, kind, fileDirItems, source, destination, isCopy, onQueued)
