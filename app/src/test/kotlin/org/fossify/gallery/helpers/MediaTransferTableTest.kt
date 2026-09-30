@@ -1,21 +1,25 @@
 package org.fossify.gallery.helpers
 
+import org.fossify.gallery.jobs.PCloudTransferService
+import org.fossify.gallery.jobs.SmbTransferService
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
 // Every cell of a medium copied or moved into a folder with the destination picker (#140): the
-// storage it is on, the storage of the folder tapped, and copy or move. Each cell says whether
-// it is carried out or turned away, so that a pair nobody decided on cannot hide.
+// storage it is on, the storage of the folder tapped, and copy or move. Each cell says what
+// carries it, so that a pair nobody decided on cannot hide. Every pair is carried now: the last
+// ones turned away were a copy within a share (#150), anything between two shares (#155) and
+// pCloud onto a share (#28), carried since #154 and #161.
 //
-// The same refusal stands for a folder of the folder list, see FolderPlacementTableTest
+// A folder of the folder list goes the same way once FolderPlacementTableTest has placed it
 @RunWith(Parameterized::class)
 class MediaTransferTableTest(
     private val from: Storage,
     private val to: Storage,
     private val op: Op,
-    private val expected: TransferRefusal?
+    private val expected: TransferRoute
 ) {
     // two shares, each a storage of its own (#155): the first connection's paths and another's
     enum class Storage(val path: String) {
@@ -28,54 +32,69 @@ class MediaTransferTableTest(
     enum class Op { COPY, MOVE }
 
     companion object {
-        private val table: List<Array<Any?>> = buildList {
-            fun cell(from: Storage, to: Storage, op: Op, expected: TransferRefusal?) {
+        private val table: List<Array<Any>> = buildList {
+            fun cell(from: Storage, to: Storage, op: Op, expected: TransferRoute) {
                 add(arrayOf(from, to, op, expected))
             }
 
-            val carried: TransferRefusal? = null
-            cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, carried)
-            cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, carried)
-            cell(Storage.DEVICE, Storage.PCLOUD, Op.COPY, carried)
-            cell(Storage.DEVICE, Storage.PCLOUD, Op.MOVE, carried)
-            cell(Storage.DEVICE, Storage.SHARE, Op.COPY, carried)
-            cell(Storage.DEVICE, Storage.SHARE, Op.MOVE, carried)
-            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.COPY, carried)
-            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.MOVE, carried)
+            val onDevice = TransferRoute.OnDevice
+            fun pCloud(kind: PCloudTransferService.Kind) = TransferRoute.ByPCloud(kind)
+            fun share(kind: SmbTransferService.Kind) = TransferRoute.ByShare(kind)
+            val upload = pCloud(PCloudTransferService.Kind.UPLOAD)
+            val download = pCloud(PCloudTransferService.Kind.DOWNLOAD)
+            val withinPCloud = pCloud(PCloudTransferService.Kind.WITHIN_PCLOUD)
+            val pCloudOntoShare = pCloud(PCloudTransferService.Kind.ONTO_SHARE)
+            val fromDevice = share(SmbTransferService.Kind.FROM_DEVICE)
+            val toDevice = share(SmbTransferService.Kind.TO_DEVICE)
+            val toPCloud = share(SmbTransferService.Kind.TO_PCLOUD)
+            // the rename, one request and no bytes
+            val withinShare = share(SmbTransferService.Kind.WITHIN_SHARE)
+            // every byte read off a share and written back
+            val shareToShare = share(SmbTransferService.Kind.SHARE_TO_SHARE)
 
-            cell(Storage.PCLOUD, Storage.DEVICE, Op.COPY, carried)
-            cell(Storage.PCLOUD, Storage.DEVICE, Op.MOVE, carried)
-            cell(Storage.PCLOUD, Storage.PCLOUD, Op.COPY, carried)
-            cell(Storage.PCLOUD, Storage.PCLOUD, Op.MOVE, carried)
-            cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, TransferRefusal.PCLOUD_ONTO_SHARE)
-            cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, TransferRefusal.PCLOUD_ONTO_SHARE)
-            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, TransferRefusal.PCLOUD_ONTO_SHARE)
-            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, TransferRefusal.PCLOUD_ONTO_SHARE)
+            cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, onDevice)
+            cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, onDevice)
+            cell(Storage.DEVICE, Storage.PCLOUD, Op.COPY, upload)
+            cell(Storage.DEVICE, Storage.PCLOUD, Op.MOVE, upload)
+            cell(Storage.DEVICE, Storage.SHARE, Op.COPY, fromDevice)
+            cell(Storage.DEVICE, Storage.SHARE, Op.MOVE, fromDevice)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.COPY, fromDevice)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.MOVE, fromDevice)
 
-            cell(Storage.SHARE, Storage.DEVICE, Op.COPY, carried)
-            cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, carried)
-            cell(Storage.SHARE, Storage.PCLOUD, Op.COPY, carried)
-            cell(Storage.SHARE, Storage.PCLOUD, Op.MOVE, carried)
-            // #154: a copy within a share and anything onto another share carry the bytes
-            // across; refused before that (#150, #155). SmbTransferKindTest has which is which
-            cell(Storage.SHARE, Storage.SHARE, Op.COPY, carried)
-            cell(Storage.SHARE, Storage.SHARE, Op.MOVE, carried)
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, carried)
-            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, carried)
+            cell(Storage.PCLOUD, Storage.DEVICE, Op.COPY, download)
+            cell(Storage.PCLOUD, Storage.DEVICE, Op.MOVE, download)
+            cell(Storage.PCLOUD, Storage.PCLOUD, Op.COPY, withinPCloud)
+            cell(Storage.PCLOUD, Storage.PCLOUD, Op.MOVE, withinPCloud)
+            // #161: refused before, the user had to go through the device
+            cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, pCloudOntoShare)
+            cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, pCloudOntoShare)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, pCloudOntoShare)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, pCloudOntoShare)
 
-            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, carried)
-            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, carried)
-            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, carried)
-            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, carried)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, carried)
-            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, carried)
-            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, carried)
-            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, carried)
+            cell(Storage.SHARE, Storage.DEVICE, Op.COPY, toDevice)
+            cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, toDevice)
+            cell(Storage.SHARE, Storage.PCLOUD, Op.COPY, toPCloud)
+            cell(Storage.SHARE, Storage.PCLOUD, Op.MOVE, toPCloud)
+            // #150: a copy carried out as the rename took the original away
+            cell(Storage.SHARE, Storage.SHARE, Op.COPY, shareToShare)
+            cell(Storage.SHARE, Storage.SHARE, Op.MOVE, withinShare)
+            // #155: the rename cannot reach another share
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, shareToShare)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, shareToShare)
+
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, toDevice)
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, toDevice)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, toPCloud)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, toPCloud)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, shareToShare)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, shareToShare)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, shareToShare)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, withinShare)
         }
 
         @JvmStatic
         @Parameterized.Parameters(name = "{0} to {1}, {2}: {3}")
-        fun cells(): List<Array<Any?>> = table
+        fun cells(): List<Array<Any>> = table
     }
 
     // the table itself has every cell, once
@@ -86,7 +105,7 @@ class MediaTransferTableTest(
     }
 
     @Test
-    fun `the pair is carried out or turned away as the table says`() {
-        assertEquals(expected, transferRefusal(storageFilterOf(from.path), storageFilterOf(to.path), op == Op.COPY))
+    fun `the pair is carried as the table says`() {
+        assertEquals(expected, transferRouteOf(from.path, to.path, op == Op.COPY))
     }
 }

@@ -191,8 +191,11 @@ sealed class MediaStorage(protected val context: Context) {
     // with a remote storage on either side goes to a service and never calls it -- nothing has
     // moved when this returns -- and [onQueued] fires instead once the job is with the service,
     // several permission dialogs later. A caller whose only business was the transfer waits for
-    // that. A pair that cannot be done (see TransferRefusal) says so and stops
-    abstract fun copyMoveTo(
+    // that. Which of them carries a pair is transferRouteOf()'s, the same for every storage.
+    //
+    // Between two folders of the device the commons copy does it, once the source folder may be
+    // written to; everything else is a job for the pCloud or the share service
+    fun copyMoveTo(
         activity: BaseSimpleActivity,
         fileDirItems: ArrayList<FileDirItem>,
         source: String,
@@ -200,9 +203,21 @@ sealed class MediaStorage(protected val context: Context) {
         isCopy: Boolean,
         onQueued: (() -> Unit)?,
         onDone: (destination: String) -> Unit
-    )
+    ) {
+        when (val route = transferRouteOf(source, destination, isCopy)) {
+            TransferRoute.OnDevice -> activity.handleSAFDialog(source) { granted ->
+                if (granted) {
+                    activity.copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopy, true, context.config.shouldShowHidden, onDone)
+                }
+            }
 
-    // Queues a transfer between the device and pCloud, or within pCloud, once the storage
+            is TransferRoute.ByPCloud -> enqueuePCloudTransfer(activity, route.kind, fileDirItems, source, destination, isCopy, onQueued)
+            is TransferRoute.ByShare -> enqueueSmbTransfer(activity, route.kind, fileDirItems, source, destination, isCopy, onQueued)
+        }
+    }
+
+    // Queues a transfer between the device and pCloud, within pCloud, or from pCloud onto a
+    // share, once the storage
     // permissions the device's side needs are in: a move away from the device deletes the
     // sources afterwards, a download writes into the destination. The notification permission
     // is asked for so that the progress can be seen; the transfer runs without it too
@@ -265,6 +280,13 @@ sealed class MediaStorage(protected val context: Context) {
             }
 
             PCloudTransferService.Kind.WITHIN_PCLOUD -> enqueue()
+
+            // nothing of the device is touched, the file only passes through it on its way
+            PCloudTransferService.Kind.ONTO_SHARE -> if (context.config.isSmbConfigured) {
+                enqueue()
+            } else {
+                activity.toast(R.string.smb_not_configured)
+            }
         }
     }
 
@@ -745,29 +767,6 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // between two folders of the device the commons copy does it, once the source folder
-        // may be written to; a remote destination is an upload for its service
-        override fun copyMoveTo(
-            activity: BaseSimpleActivity,
-            fileDirItems: ArrayList<FileDirItem>,
-            source: String,
-            destination: String,
-            isCopy: Boolean,
-            onQueued: (() -> Unit)?,
-            onDone: (destination: String) -> Unit
-        ) {
-            when (of(context, destination)) {
-                is Device -> activity.handleSAFDialog(source) { granted ->
-                    if (granted) {
-                        activity.copyMoveFilesTo(fileDirItems, source.trimEnd('/'), destination, isCopy, true, context.config.shouldShowHidden, onDone)
-                    }
-                }
-
-                is PCloud -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.UPLOAD, fileDirItems, source, destination, isCopy, onQueued)
-                is Smb -> enqueueSmbTransfer(activity, SmbTransferService.Kind.FROM_DEVICE, fileDirItems, source, destination, isCopy, onQueued)
-            }
-        }
-
         // The bin is the app's own files directory, with each file kept under its full original
         // path; the rows name it with RECYCLE_BIN in place of that directory, and the bin's
         // listing hands them out with the directory put back, which is what a path here is
@@ -1131,24 +1130,6 @@ sealed class MediaStorage(protected val context: Context) {
             }
         }
 
-        // every pair is the pCloud service's, downloading, uploading or moving within the
-        // account; the share is the one it cannot reach
-        override fun copyMoveTo(
-            activity: BaseSimpleActivity,
-            fileDirItems: ArrayList<FileDirItem>,
-            source: String,
-            destination: String,
-            isCopy: Boolean,
-            onQueued: (() -> Unit)?,
-            onDone: (destination: String) -> Unit
-        ) {
-            when (of(context, destination)) {
-                is Device -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.DOWNLOAD, fileDirItems, source, destination, isCopy, onQueued)
-                is PCloud -> enqueuePCloudTransfer(activity, PCloudTransferService.Kind.WITHIN_PCLOUD, fileDirItems, source, destination, isCopy, onQueued)
-                is Smb -> activity.toast(TransferRefusal.PCLOUD_ONTO_SHARE.messageId, Toast.LENGTH_LONG)
-            }
-        }
-
         // the app's own bin on pCloud, a folder in the root, see PCLOUD_RECYCLE_BIN; the writer
         // moves in and out of it by file id and carries the rows along
         override fun isInRecycleBin(path: String) = path.isPCloudRecycleBinPath()
@@ -1385,33 +1366,6 @@ sealed class MediaStorage(protected val context: Context) {
                     activity.runOnUiThread { onDone(newPath.takeIf { made }) }
                 }
             }
-        }
-
-        // every pair is the share's service's: off the share onto the device or pCloud, a move
-        // within the share, where no bytes travel at all, and a copy within the share or
-        // anything onto another share, where every byte is read off and written back (#154)
-        override fun copyMoveTo(
-            activity: BaseSimpleActivity,
-            fileDirItems: ArrayList<FileDirItem>,
-            source: String,
-            destination: String,
-            isCopy: Boolean,
-            onQueued: (() -> Unit)?,
-            onDone: (destination: String) -> Unit
-        ) {
-            val refusal = transferRefusal(storageFilterOf(source), storageFilterOf(destination), isCopy)
-            if (refusal != null) {
-                activity.toast(refusal.messageId, Toast.LENGTH_LONG)
-                return
-            }
-
-            val kind = when (of(context, destination)) {
-                is Device -> SmbTransferService.Kind.TO_DEVICE
-                is PCloud -> SmbTransferService.Kind.TO_PCLOUD
-                is Smb -> SmbTransferService.kindBetweenShares(source, destination, isCopy)
-            }
-
-            enqueueSmbTransfer(activity, kind, fileDirItems, source, destination, isCopy, onQueued)
         }
 
         // the app's own bin on the share, a folder in the root that keeps the original layout,

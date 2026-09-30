@@ -39,7 +39,6 @@ class FolderPlacementTableTest(
         // itself, as Outbox (1)
         data object NewFolder : Outcome
         data object Regroup : Outcome
-        data class Refused(val reason: TransferRefusal) : Outcome
     }
 
     companion object {
@@ -50,8 +49,6 @@ class FolderPlacementTableTest(
             fun cell(from: Storage, to: Storage, op: Op, outcome: Outcome) {
                 At.entries.forEach { at -> add(arrayOf(from, to, op, at, outcome)) }
             }
-
-            val pcloudOntoShare = Outcome.Refused(TransferRefusal.PCLOUD_ONTO_SHARE)
 
             cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, Outcome.Regroup)
@@ -66,10 +63,10 @@ class FolderPlacementTableTest(
             cell(Storage.PCLOUD, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
             cell(Storage.PCLOUD, Storage.PCLOUD, Op.COPY, Outcome.NewFolder)
             cell(Storage.PCLOUD, Storage.PCLOUD, Op.MOVE, Outcome.Regroup)
-            cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, pcloudOntoShare)
-            cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, pcloudOntoShare)
-            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, pcloudOntoShare)
-            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, pcloudOntoShare)
+            cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, Outcome.NewFolder)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, Outcome.NewFolder)
 
             cell(Storage.SHARE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
@@ -120,7 +117,6 @@ class FolderPlacementTableTest(
             }
 
             Outcome.Regroup -> FolderPlacement.Regroup(at.groupId)
-            is Outcome.Refused -> FolderPlacement.Refused(expected.reason)
         }
 
         assertEquals(want, placement)

@@ -21,7 +21,6 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
 import com.bumptech.glide.Glide
@@ -58,7 +57,6 @@ import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
 import org.fossify.gallery.helpers.storageFilterOf
-import org.fossify.gallery.helpers.transferRefusal
 import org.fossify.gallery.models.DateTaken
 import java.io.*
 import java.text.SimpleDateFormat
@@ -485,14 +483,6 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
         onFoldersPlaced = onFoldersPlaced,
         onCancelled = onCancelled
     ) { destination ->
-        // the picker turns these folders away when they are tapped; "Other folder" can still
-        // hand one back
-        val refusal = transferRefusal(storageFilterOf(source), storageFilterOf(destination), isCopyOperation)
-        if (refusal != null) {
-            toast(refusal.messageId, Toast.LENGTH_LONG)
-            return@PickDirectoryDialog
-        }
-
         MediaStorage.of(this, source).copyMoveTo(this, fileDirItems, source, destination, isCopyOperation, onPCloudTransferQueued, callback)
     }
 }

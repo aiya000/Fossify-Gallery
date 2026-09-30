@@ -175,8 +175,8 @@ at afterwards.
   `fixture/share`, the pCloud stub's directory or `/sdcard/Pictures`; inside Trips it has to be a
   member of Trips, read off the app's preferences with `run-as`; a copy leaves the source's photo
   and a move takes it. A move that stays on its storage carries nothing and only changes the
-  source's group; pCloud onto the share is refused with the picker saying why and nothing
-  arriving. A copy within the share makes a new folder like any other (#154). Every move has a source folder of its own, since it
+  source's group. No pair is refused: a copy within the share and pCloud onto the share make a
+  new folder like any other (#154, #161). Every move has a source folder of its own, since it
   uses it up; Trips is given a folder of this device and one of pCloud so that it is in the
   picker on every chip. It walks the share once, so it is long: about five minutes of walk and
   half a minute or so per cell. It replaced two scripts that drove five of these cells between
@@ -193,9 +193,10 @@ at afterwards.
   the storage of the folder tapped, and copy or move -- 18 cells. Every cell carries a medium of
   its own, named after the cell and with bytes of its own, from `AbFrom` into `AbTo`, so an
   arrival is told apart by its name and read byte for byte off `fixture/share`, the pCloud stub's
-  directory or `/sdcard/Pictures`; a copy leaves the source and a move takes it. pCloud onto the
-  share is refused: the picker stays up and the medium stays where it was. A copy within the share
-  is carried like any other, the bytes read off and written back (#154; refused after #150). Judged all at once against one deadline, like `72`, after one walk of the share:
+  directory or `/sdcard/Pictures`; a copy leaves the source and a move takes it. Every cell is
+  carried: a copy within the share and pCloud onto the share, once refused, go through the device
+  with the bytes read off and written back (#154, #161). Judged all at once against one deadline,
+  like `72`, after one walk of the share:
   about five minutes of walk and a minute per cell, 25 minutes in all.
   `FIXTURE_ONLY_CELLS="3 4"` drives only those cells. What `50`, `60`, `70` and `95` pin besides
   the pair -- modification times, numbering, the requests pCloud is sent, rows that follow a move
