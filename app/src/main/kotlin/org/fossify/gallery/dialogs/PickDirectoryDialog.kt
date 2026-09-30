@@ -55,11 +55,12 @@ import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.helpers.FolderPlacement
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.smbConnectionIdOf
+import org.fossify.gallery.helpers.smbConnectionIdOfFilter
+import org.fossify.gallery.helpers.smbRootOf
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
-import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.placeFolder
 import org.fossify.gallery.helpers.storageFilterOf
 import org.fossify.gallery.helpers.transferRefusal
@@ -366,8 +367,9 @@ class PickDirectoryDialog(
         return when {
             !narrowsStorage || directory.areFavorites() || directory.isRecycleBin() || directory.isGroup() -> true
             storageFilter == STORAGE_FILTER_PCLOUD -> path.isPCloudPath()
-            storageFilter == STORAGE_FILTER_SMB -> path.isSmbPath()
             storageFilter == STORAGE_FILTER_LOCAL -> !path.isPCloudPath() && !path.isSmbPath()
+            // one share's chip, its folders and not another share's (#155)
+            smbConnectionIdOfFilter(storageFilter) != null -> smbConnectionIdOf(path) == smbConnectionIdOfFilter(storageFilter)
             else -> true
         }
     }
@@ -575,11 +577,14 @@ class PickDirectoryDialog(
             // a last destination on a remote storage is gone back to only while that storage
             // is set up and may be offered; one on the device is what the default below knows
             val lastCopyPathOnPCloud = lastCopyPath.isPCloudPath() && config.isPCloudLoggedIn && !localDestinationOnly
-            val lastCopyPathOnSmb = lastCopyPath.isSmbPath() && config.isSmbConfigured && !localDestinationOnly
+            val lastCopyPathOnSmb = config.smbConnectionOf(lastCopyPath) != null && !localDestinationOnly
+            // the share the chips are showing, when they show one
+            val chipShare = smbConnectionIdOfFilter(storageFilter)
             // the picker opens on the storage the chips are showing, at the last destination there
             val startPath = when {
                 showStorageChips && storageFilter == STORAGE_FILTER_PCLOUD -> if (lastCopyPathOnPCloud) lastCopyPath else PCLOUD_PATH_SCHEME
-                showStorageChips && storageFilter == STORAGE_FILTER_SMB -> if (lastCopyPathOnSmb) lastCopyPath else SMB_PATH_SCHEME
+                showStorageChips && chipShare != null ->
+                    if (lastCopyPathOnSmb && smbConnectionIdOf(lastCopyPath) == chipShare) lastCopyPath else smbRootOf(chipShare)
                 showStorageChips && storageFilter == STORAGE_FILTER_LOCAL -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)
                 lastCopyPathOnPCloud || lastCopyPathOnSmb -> lastCopyPath
                 else -> activity.getDefaultCopyDestinationPath(showHidden, sourcePath)

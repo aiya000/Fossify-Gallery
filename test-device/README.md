@@ -222,6 +222,17 @@ at afterwards.
   listed" cannot pass on a picker that lists nothing. Asked of the list as it opens and of its
   search. The folders it brings sort ahead of the share's, so a wrong one is the first row. Red
   with the chips no longer putting away the groups whose folders are all on another storage
+- **`77-two-shares-two-storages.sh`** — #155: two connections to a share are two storages. The
+  fixture share is connected to twice, with two roots -- Trips for the first, and a folder the
+  script brings, holding Left and Right, for the second, which is given a name -- since a root is
+  as much a part of a connection as a host, and two small roots are walked in a second where the
+  whole share takes five minutes. A rescan walks each share on its own, read off the two
+  "Walked the share" lines, which name the root they walked; the storage menu has a row for
+  each, the named one by its name and the other by its address; each share's list shows its own
+  folders and not the other's, "All storages" both; and a copy from one share onto the other is
+  turned away, the picker staying up and nothing arriving. The seed writes the second connection
+  when `FIXTURE_SECOND_SMB_ROOT_PATH` is set. Red with one share's filter showing every share's
+  folders
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage

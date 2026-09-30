@@ -1590,7 +1590,7 @@ class SettingsActivity : SimpleActivity() {
                 SMB_HIDDEN_FOLDERS -> config.addSmbHiddenFolders(parseExportedHiddenFolders(value.toString()))
                 SHOW_HIDDEN_MEDIA -> config.showHiddenMedia = value.toBoolean()
                 FILE_LOADING_PRIORITY -> config.fileLoadingPriority = value.toInt()
-                STORAGE_ORDER -> config.storageOrder = StorageOrder.parse(value.toString())
+                STORAGE_ORDER -> config.storageOrder = StorageOrder.parse(value.toString(), config.smbConnections.map { it.storageFilter })
                 AUTOPLAY_VIDEOS -> config.autoplayVideos = value.toBoolean()
                 REMEMBER_LAST_VIDEO_POSITION -> config.rememberLastVideoPosition = value.toBoolean()
                 LOOP_VIDEOS -> config.loopVideos = value.toBoolean()

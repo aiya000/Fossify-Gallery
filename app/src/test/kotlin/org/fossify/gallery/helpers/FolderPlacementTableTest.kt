@@ -24,7 +24,10 @@ class FolderPlacementTableTest(
     enum class Storage(val filter: Int, val folder: String, val root: String) {
         DEVICE(STORAGE_FILTER_LOCAL, "$DEVICE_ROOT/Outbox", DEVICE_ROOT),
         PCLOUD(STORAGE_FILTER_PCLOUD, "pcloud:/Outbox", "pcloud:"),
-        SHARE(STORAGE_FILTER_SMB, "smb:/Outbox", "smb:")
+        SHARE(STORAGE_FILTER_SMB, "smb:/Outbox", "smb:"),
+
+        // a second share, a storage of its own (#155)
+        OTHER_SHARE(smbStorageFilterOf(2), "smb:2/Outbox", "smb:2")
     }
 
     enum class Op { COPY, MOVE }
@@ -50,6 +53,7 @@ class FolderPlacementTableTest(
 
             val pcloudOntoShare = Outcome.Refused(TransferRefusal.PCLOUD_ONTO_SHARE)
             val copyWithinShare = Outcome.Refused(TransferRefusal.COPY_WITHIN_SHARE)
+            val betweenShares = Outcome.Refused(TransferRefusal.BETWEEN_SHARES)
 
             cell(Storage.DEVICE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.DEVICE, Op.MOVE, Outcome.Regroup)
@@ -57,6 +61,8 @@ class FolderPlacementTableTest(
             cell(Storage.DEVICE, Storage.PCLOUD, Op.MOVE, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.SHARE, Op.COPY, Outcome.NewFolder)
             cell(Storage.DEVICE, Storage.SHARE, Op.MOVE, Outcome.NewFolder)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.DEVICE, Storage.OTHER_SHARE, Op.MOVE, Outcome.NewFolder)
 
             cell(Storage.PCLOUD, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.PCLOUD, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
@@ -64,6 +70,8 @@ class FolderPlacementTableTest(
             cell(Storage.PCLOUD, Storage.PCLOUD, Op.MOVE, Outcome.Regroup)
             cell(Storage.PCLOUD, Storage.SHARE, Op.COPY, pcloudOntoShare)
             cell(Storage.PCLOUD, Storage.SHARE, Op.MOVE, pcloudOntoShare)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.COPY, pcloudOntoShare)
+            cell(Storage.PCLOUD, Storage.OTHER_SHARE, Op.MOVE, pcloudOntoShare)
 
             cell(Storage.SHARE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
@@ -71,6 +79,17 @@ class FolderPlacementTableTest(
             cell(Storage.SHARE, Storage.PCLOUD, Op.MOVE, Outcome.NewFolder)
             cell(Storage.SHARE, Storage.SHARE, Op.COPY, copyWithinShare)
             cell(Storage.SHARE, Storage.SHARE, Op.MOVE, Outcome.Regroup)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.COPY, betweenShares)
+            cell(Storage.SHARE, Storage.OTHER_SHARE, Op.MOVE, betweenShares)
+
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.COPY, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.DEVICE, Op.MOVE, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.COPY, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.PCLOUD, Op.MOVE, Outcome.NewFolder)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.COPY, betweenShares)
+            cell(Storage.OTHER_SHARE, Storage.SHARE, Op.MOVE, betweenShares)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.COPY, copyWithinShare)
+            cell(Storage.OTHER_SHARE, Storage.OTHER_SHARE, Op.MOVE, Outcome.Regroup)
         }
 
         @JvmStatic

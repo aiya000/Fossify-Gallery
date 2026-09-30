@@ -284,9 +284,10 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(STORAGE_FILTER, STORAGE_FILTER_LOCAL)
         set(storageFilter) = prefs.edit().putInt(STORAGE_FILTER, storageFilter).apply()
 
-    // the order the storages stand in, all four of them whether set up or not; see StorageOrder
+    // the order the storages stand in, the four of StorageOrder.DEFAULT whether set up or not,
+    // and every share that is; see StorageOrder
     var storageOrder: List<Int>
-        get() = StorageOrder.parse(prefs.getString(STORAGE_ORDER, null))
+        get() = StorageOrder.parse(prefs.getString(STORAGE_ORDER, null), smbConnections.map { it.storageFilter })
         set(storageOrder) = prefs.edit().putString(STORAGE_ORDER, StorageOrder.serialize(storageOrder)).apply()
 
     // the network is never touched for pCloud unless one of these says so, the list always
