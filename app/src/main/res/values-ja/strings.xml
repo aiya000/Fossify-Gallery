@@ -126,6 +126,8 @@
     <string name="smb">ネットワーク共有</string>
     <string name="smb_share">ネットワーク共有（SMB）</string>
     <string name="smb_not_configured">設定されていません</string>
+    <string name="smb_name">名前（任意）</string>
+    <string name="smb_add">ネットワーク共有を追加</string>
     <string name="smb_host">ホスト名または IP アドレス</string>
     <string name="smb_port">ポート</string>
     <string name="smb_share_name">共有名</string>

@@ -85,6 +85,38 @@ class SmbConnectionTest {
         assertEquals("${SMB_HOST}_2", smbKey(SMB_HOST, 2))
     }
 
+    // What a save changed decides what happens to the folders the gallery has of the share: a
+    // new name costs nothing, new credentials a walk, another tree the cache and a walk
+    @Test
+    fun `what a save changed is what it does to the share's folders`() {
+        assertEquals(SmbConnectionChange.ADDED, second.changeFrom(null))
+        assertEquals(SmbConnectionChange.NONE, second.changeFrom(second))
+        assertEquals(SmbConnectionChange.RENAMED, second.copy(name = "PC").changeFrom(second))
+        assertEquals(SmbConnectionChange.CREDENTIALS, second.copy(user = "me", password = "secret").changeFrom(second))
+        assertEquals(SmbConnectionChange.MOVED, second.copy(host = "nas").changeFrom(second))
+        assertEquals(SmbConnectionChange.MOVED, second.copy(port = 139).changeFrom(second))
+        assertEquals(SmbConnectionChange.MOVED, second.copy(share = "videos").changeFrom(second))
+        assertEquals(SmbConnectionChange.MOVED, second.copy(rootPath = "Camera").changeFrom(second))
+
+        // a name given along with a move is still a move
+        assertEquals(SmbConnectionChange.MOVED, second.copy(name = "PC", rootPath = "").changeFrom(second))
+
+        // the share's name is not case sensitive on the server, and a root is the same root with
+        // or without a separator around it
+        assertEquals(SmbConnectionChange.NONE, second.copy(share = "Pictures", rootPath = "/Camera/2026/").changeFrom(second))
+    }
+
+    @Test
+    fun `only a move forgets the folders, and a new name walks nothing`() {
+        assertTrue(SmbConnectionChange.MOVED.forgetsFolders)
+        assertFalse(SmbConnectionChange.CREDENTIALS.forgetsFolders)
+        assertFalse(SmbConnectionChange.ADDED.forgetsFolders)
+        assertTrue(SmbConnectionChange.ADDED.walks)
+        assertTrue(SmbConnectionChange.CREDENTIALS.walks)
+        assertFalse(SmbConnectionChange.RENAMED.walks)
+        assertFalse(SmbConnectionChange.NONE.walks)
+    }
+
     @Test
     fun `a connection is shown by its address when it has no name`() {
         assertEquals("\\\\nas\\photos", first.address)
