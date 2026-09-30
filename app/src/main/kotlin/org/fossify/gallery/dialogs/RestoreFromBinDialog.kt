@@ -11,8 +11,9 @@ import org.fossify.gallery.R
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
-import org.fossify.gallery.helpers.SMB_RECYCLE_BIN
+import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.helpers.RECYCLE_BIN_FOLDER_NAME
+import org.fossify.gallery.helpers.smbRootOfPath
 
 // Asks before media come back out of the recycle bin, and says where they will land: the
 // folder they were deleted from, which is made again when the storage no longer has it. With
@@ -68,11 +69,12 @@ class RestoreFromBinDialog(
         val root = when (storage) {
             is MediaStorage.Device -> activity.internalStoragePath
             is MediaStorage.PCloud -> PCLOUD_PATH_SCHEME
-            is MediaStorage.Smb -> SMB_PATH_SCHEME
+            is MediaStorage.Smb -> storage.root
         }
 
         FolderPickerDialog(activity, root, showHidden = false, showFAB = true, canAddShowHiddenButton = false) { picked ->
-            val isABin = picked == PCLOUD_RECYCLE_BIN || picked == SMB_RECYCLE_BIN || storage.isInRecycleBin(picked)
+            val smbBin = "${smbRootOfPath(picked)}/$RECYCLE_BIN_FOLDER_NAME"
+            val isABin = picked == PCLOUD_RECYCLE_BIN || (picked.isSmbPath() && picked == smbBin) || storage.isInRecycleBin(picked)
             if (!storage.holds(picked) || isABin) {
                 activity.toast(R.string.restore_pick_same_storage_folder)
                 return@FolderPickerDialog

@@ -118,6 +118,7 @@ import org.fossify.gallery.extensions.rescanPCloud
 import org.fossify.gallery.extensions.rescanPCloudFolders
 import org.fossify.gallery.extensions.rescanSmb
 import org.fossify.gallery.extensions.rescanSmbFolders
+import org.fossify.gallery.extensions.shownSmbConnectionIds
 import org.fossify.gallery.extensions.launchAbout
 import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
@@ -158,11 +159,10 @@ import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
-import org.fossify.gallery.helpers.SMB_PATH_SCHEME
+import org.fossify.gallery.helpers.smbConnectionIdOfFilter
 import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
-import org.fossify.gallery.helpers.STORAGE_FILTER_SMB
 import org.fossify.gallery.helpers.SmbSyncPolicy
 import org.fossify.gallery.helpers.SmbVideoCache
 import org.fossify.gallery.helpers.TYPE_SVGS
@@ -900,8 +900,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             RemoteScanScheduler.leftBehind(RemoteScanScheduler.Storage.PCLOUD)
         }
 
-        if (!isSmbShown()) {
-            RemoteScanScheduler.leftBehind(RemoteScanScheduler.Storage.SMB)
+        // every share is its own storage, so the one left behind may be one of several (#155)
+        val shownSmb = shownSmbConnectionIds()
+        config.smbConnections.filter { it.id !in shownSmb }.forEach {
+            RemoteScanScheduler.leftBehind(RemoteScanScheduler.Storage.SMB, it.id)
         }
 
         // the cache is on screen right away; a rescan, when the settings ask for one,
@@ -954,11 +956,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             else -> RescanVerdict.SKIP
         }
 
+        // The shares on screen are walked each on its own (#155). A pull asks all of them; the
+        // switch only those the rescan interval has come round for
         val smbPolicy = SmbSyncPolicy(this)
+        val shownSmb = shownSmbConnectionIds()
+        val dueSmb = shownSmb.filter { smbPolicy.isFullScanDue(it) }
+        scans.smbConnectionIds = if (event == RemoteRefresh.PULL) shownSmb else dueSmb
         val smb = when {
-            !isSmbShown() || scans.smbFolders?.isEmpty() == true -> RescanVerdict.SKIP
+            shownSmb.isEmpty() || scans.smbFolders?.isEmpty() == true -> RescanVerdict.SKIP
             event == RemoteRefresh.PULL -> smbPolicy.rescanOnPullToRefresh
-            smbPolicy.isFullScanDue() -> smbPolicy.rescanOnStorageSwitch
+            dueSmb.isNotEmpty() -> smbPolicy.rescanOnStorageSwitch
             else -> RescanVerdict.SKIP
         }
 
@@ -982,10 +989,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val smbFolders = groupFolders?.filter { it.isSmbPath() }
         val scope = if (groupFolders == null) RescanScope.WHOLE else RescanScope.GROUP
 
+        // the shares a walk of the whole storage goes to, see startRemoteScans()
+        var smbConnectionIds: List<Int> = emptyList()
+
         // the share's result reaches the list through the service's listener, whichever it was
         fun startSmb() {
             if (smbFolders == null) {
-                rescanSmb(reportCounts = false, priority = priority)
+                rescanSmb(reportCounts = false, priority = priority, connectionIds = smbConnectionIds)
             } else {
                 rescanSmbFolders(smbFolders, reportCounts = false, priority = priority)
             }
@@ -1044,10 +1054,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         return pCloud && ranAtOnce
     }
 
-    private fun storageIconRes(storageFilter: Int) = when (storageFilter) {
-        STORAGE_FILTER_PCLOUD -> R.drawable.ic_cloud_vector
-        STORAGE_FILTER_SMB -> R.drawable.ic_storage_vector
-        STORAGE_FILTER_ALL -> R.drawable.ic_devices_vector
+    private fun storageIconRes(storageFilter: Int) = when {
+        storageFilter == STORAGE_FILTER_PCLOUD -> R.drawable.ic_cloud_vector
+        smbConnectionIdOfFilter(storageFilter) != null -> R.drawable.ic_storage_vector
+        storageFilter == STORAGE_FILTER_ALL -> R.drawable.ic_devices_vector
         else -> R.drawable.ic_smartphone_vector
     }
 
@@ -1246,9 +1256,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         it == STORAGE_FILTER_PCLOUD || it == STORAGE_FILTER_ALL
     }
 
-    private fun isSmbShown() = config.isSmbConfigured && effectiveStorageFilter().let {
-        it == STORAGE_FILTER_SMB || it == STORAGE_FILTER_ALL
-    }
 
     // A pull refreshes the remote storages on screen too, each one only if its settings say so --
     // the share's says no by default, because the gesture is an easy one to make while scrolling
@@ -1346,8 +1353,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         val smbPolicy = SmbSyncPolicy(this)
-        if (smbPolicy.rescanOnLaunch && config.isSmbConfigured && smbPolicy.isFullScanDue()) {
-            rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO)
+        if (smbPolicy.rescanOnLaunch) {
+            val due = config.smbConnections.map { it.id }.filter { smbPolicy.isFullScanDue(it) }
+            if (due.isNotEmpty()) {
+                rescanSmb(reportCounts = false, priority = RemoteScanScheduler.PRIORITY_AUTO, connectionIds = due)
+            }
         }
 
         sweepDownloadedSmbVideos()
@@ -1521,9 +1531,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }
         }
 
+        // the share on screen, when it is one; its root is its own (#155)
+        val smbConnection = smbConnectionIdOfFilter(effectiveStorageFilter())?.let { config.smbConnection(it) }
         val remoteRoot = when {
             config.isPCloudLoggedIn && config.storageFilter == STORAGE_FILTER_PCLOUD -> PCLOUD_PATH_SCHEME
-            config.isSmbConfigured && config.storageFilter == STORAGE_FILTER_SMB -> SMB_PATH_SCHEME
+            smbConnection != null -> smbConnection.root
             else -> null
         }
 
@@ -2378,14 +2390,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     // once a day, what has been in the recycle bin for a month goes for good, on each of the
-    // three storages through that storage; what fails today is tried again tomorrow
+    // storages through that storage; what fails today is tried again tomorrow
     private fun checkRecycleBinItems() {
         if (config.useRecycleBin && config.lastBinCheck < System.currentTimeMillis() - DAY_SECONDS * 1000) {
             config.lastBinCheck = System.currentTimeMillis()
             Handler().postDelayed({
                 ensureBackgroundThread {
                     val olderThan = System.currentTimeMillis() - MONTH_MILLISECONDS
-                    listOf(MediaStorage.Device(this), MediaStorage.PCloud(this), MediaStorage.Smb(this)).forEach { storage ->
+                    MediaStorage.all(this).forEach { storage ->
                         try {
                             storage.sweepBin(olderThan)
                         } catch (e: Exception) {

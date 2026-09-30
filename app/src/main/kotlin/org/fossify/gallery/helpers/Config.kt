@@ -371,53 +371,98 @@ class Config(context: Context) : BaseConfig(context) {
             .apply()
     }
 
-    // The SMB share the gallery browses, typed in by hand: there is no discovery of hosts yet.
-    // Only one share is configured at a time, its name being the first segment of every
-    // "smb:" pseudo path, so a second one can be added later without moving the paths
-    var smbHost: String
-        get() = prefs.getString(SMB_HOST, "")!!
-        set(smbHost) = prefs.edit().putString(SMB_HOST, smbHost).apply()
+    // The SMB shares the gallery browses, typed in by hand: there is no discovery of hosts yet.
+    // Each is a connection of its own (#155), see SmbConnection; the first one's settings are
+    // kept under the keys the single share had, and every other one's under the same keys with
+    // its id after them, see smbKey().
+    //
+    // A connection counts as set up once there is somewhere to connect to; a guest share wants
+    // no user name. The first one is there when its keys are, which is what makes a share set
+    // up before there could be a second one the first connection without anything moved; the
+    // ids of the others are listed in SMB_CONNECTION_IDS
+    val smbConnections: List<SmbConnection>
+        get() = (listOf(0) + smbExtraConnectionIds).mapNotNull { smbConnection(it) }
 
-    var smbPort: Int
-        get() = prefs.getInt(SMB_PORT, SMB_DEFAULT_PORT)
-        set(smbPort) = prefs.edit().putInt(SMB_PORT, smbPort).apply()
+    fun smbConnection(id: Int): SmbConnection? {
+        if (id != 0 && id !in smbExtraConnectionIds) {
+            return null
+        }
 
-    var smbShare: String
-        get() = prefs.getString(SMB_SHARE, "")!!
-        set(smbShare) = prefs.edit().putString(SMB_SHARE, smbShare).apply()
+        return SmbConnection(
+            id = id,
+            name = prefs.getString(smbKey(SMB_NAME, id), "")!!,
+            host = prefs.getString(smbKey(SMB_HOST, id), "")!!,
+            port = prefs.getInt(smbKey(SMB_PORT, id), SMB_DEFAULT_PORT),
+            share = prefs.getString(smbKey(SMB_SHARE, id), "")!!,
+            rootPath = prefs.getString(smbKey(SMB_ROOT_PATH, id), "")!!,
+            user = prefs.getString(smbKey(SMB_USER, id), "")!!,
+            password = prefs.getString(smbKey(SMB_PASSWORD, id), "")!!,
+            domain = prefs.getString(smbKey(SMB_DOMAIN, id), "")!!
+        ).takeIf { it.isConfigured }
+    }
 
-    // the folder inside the share that "smb:/" stands for, without surrounding separators
-    var smbRootPath: String
-        get() = prefs.getString(SMB_ROOT_PATH, "")!!
-        set(smbRootPath) = prefs.edit().putString(SMB_ROOT_PATH, smbRootPath.trim('/', '\\')).apply()
+    // the connection a pseudo path is of, null when it is none, or one that is not set up
+    fun smbConnectionOf(path: String): SmbConnection? = smbConnectionIdOf(path)?.let { smbConnection(it) }
 
-    var smbUser: String
-        get() = prefs.getString(SMB_USER, "")!!
-        set(smbUser) = prefs.edit().putString(SMB_USER, smbUser).apply()
-
-    var smbPassword: String
-        get() = prefs.getString(SMB_PASSWORD, "")!!
-        set(smbPassword) = prefs.edit().putString(SMB_PASSWORD, smbPassword).apply()
-
-    var smbDomain: String
-        get() = prefs.getString(SMB_DOMAIN, "")!!
-        set(smbDomain) = prefs.edit().putString(SMB_DOMAIN, smbDomain).apply()
-
-    // a host and a share are all that is needed; a guest share wants no user name
     val isSmbConfigured: Boolean
-        get() = smbHost.isNotEmpty() && smbShare.isNotEmpty()
+        get() = smbConnections.isNotEmpty()
 
-    fun clearSmbShare() {
-        prefs.edit()
-            .remove(SMB_HOST)
-            .remove(SMB_PORT)
-            .remove(SMB_SHARE)
-            .remove(SMB_ROOT_PATH)
-            .remove(SMB_USER)
-            .remove(SMB_PASSWORD)
-            .remove(SMB_DOMAIN)
-            .remove(SMB_LAST_FULL_SCAN_AT)
-            .apply()
+    private val smbExtraConnectionIds: List<Int>
+        get() = prefs.getString(SMB_CONNECTION_IDS, "")!!.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it > 0 }.distinct()
+
+    // The id a connection made now is given: the first connection's, while there is none, and
+    // otherwise one no connection has had before
+    fun newSmbConnectionId(): Int {
+        if (smbConnection(0) == null) {
+            return 0
+        }
+
+        val used = smbExtraConnectionIds.maxOrNull() ?: 0
+        return maxOf(prefs.getInt(SMB_NEXT_CONNECTION_ID, 1), used + 1)
+    }
+
+    // writes the connection under its id, a new one included. The root folder is kept without
+    // the separators around it
+    fun saveSmbConnection(connection: SmbConnection) {
+        val id = connection.id
+        val extraIds = smbExtraConnectionIds
+        val editor = prefs.edit()
+            .putString(smbKey(SMB_NAME, id), connection.name)
+            .putString(smbKey(SMB_HOST, id), connection.host)
+            .putInt(smbKey(SMB_PORT, id), connection.port)
+            .putString(smbKey(SMB_SHARE, id), connection.share)
+            .putString(smbKey(SMB_ROOT_PATH, id), connection.rootPath.trim('/', '\\'))
+            .putString(smbKey(SMB_USER, id), connection.user)
+            .putString(smbKey(SMB_PASSWORD, id), connection.password)
+            .putString(smbKey(SMB_DOMAIN, id), connection.domain)
+
+        if (id != 0 && id !in extraIds) {
+            editor.putString(SMB_CONNECTION_IDS, (extraIds + id).joinToString(","))
+            editor.putInt(SMB_NEXT_CONNECTION_ID, maxOf(prefs.getInt(SMB_NEXT_CONNECTION_ID, 1), id + 1))
+        }
+
+        editor.apply()
+    }
+
+    // forgets the connection's settings and when it was last walked; its rows are the caller's
+    // to drop, see SmbScanner.forgetAll()
+    fun removeSmbConnection(id: Int) {
+        val editor = prefs.edit()
+            .remove(smbKey(SMB_NAME, id))
+            .remove(smbKey(SMB_HOST, id))
+            .remove(smbKey(SMB_PORT, id))
+            .remove(smbKey(SMB_SHARE, id))
+            .remove(smbKey(SMB_ROOT_PATH, id))
+            .remove(smbKey(SMB_USER, id))
+            .remove(smbKey(SMB_PASSWORD, id))
+            .remove(smbKey(SMB_DOMAIN, id))
+            .remove(smbKey(SMB_LAST_FULL_SCAN_AT, id))
+
+        if (id != 0) {
+            editor.putString(SMB_CONNECTION_IDS, (smbExtraConnectionIds - id).joinToString(","))
+        }
+
+        editor.apply()
     }
 
     var smbRescanOnLaunch: Boolean
@@ -448,9 +493,11 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt(SMB_RESCAN_INTERVAL_MINUTES, 0)
         set(smbRescanIntervalMinutes) = prefs.edit().putInt(SMB_RESCAN_INTERVAL_MINUTES, smbRescanIntervalMinutes).apply()
 
-    var smbLastFullScanAt: Long
-        get() = prefs.getLong(SMB_LAST_FULL_SCAN_AT, 0L)
-        set(smbLastFullScanAt) = prefs.edit().putLong(SMB_LAST_FULL_SCAN_AT, smbLastFullScanAt).apply()
+    // when the connection's share was last walked whole, for the rescan interval; each connection
+    // is walked on its own, so each keeps its own
+    fun smbLastFullScanAt(connectionId: Int): Long = prefs.getLong(smbKey(SMB_LAST_FULL_SCAN_AT, connectionId), 0L)
+
+    fun setSmbLastFullScanAt(connectionId: Int, millis: Long) = prefs.edit().putLong(smbKey(SMB_LAST_FULL_SCAN_AT, connectionId), millis).apply()
 
     var dirColumnCnt: Int
         get() = prefs.getInt(getDirectoryColumnsField(), getDefaultDirectoryColumnCount())

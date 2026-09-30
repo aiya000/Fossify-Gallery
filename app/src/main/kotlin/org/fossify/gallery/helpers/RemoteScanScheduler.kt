@@ -56,7 +56,11 @@ object RemoteScanScheduler {
     //
     // [newFoldersOnly] is "Find new folders" (#127): the whole storage walked for the folders
     // the cache has no row for, and only those read; a known folder is neither re-read nor
-    // dropped. It is a whole-storage request, but not the same work as a rescan
+    // dropped. It is a whole-storage request, but not the same work as a rescan.
+    //
+    // [connectionId] is which share an SMB request is for (#155): each connection is walked on
+    // its own, and [folders] are all of that one connection. pCloud has one account and leaves
+    // it at 0
     class Request(
         val storage: Storage,
         val priority: Int,
@@ -64,15 +68,17 @@ object RemoteScanScheduler {
         val folders: List<String> = emptyList(),
         val full: Boolean = false,
         val newFoldersOnly: Boolean = false,
+        val connectionId: Int = 0,
         val onDone: (() -> Unit)? = null,
     ) {
         val isWholeStorage get() = folders.isEmpty()
 
         // two whole-storage requests for the same storage ask for the same work, so a second one
         // is not worth queueing behind the first -- it only has to make sure the first is not
-        // ranked below what the newcomer was asking for
+        // ranked below what the newcomer was asking for. Two shares are two storages
         fun isSameWorkAs(other: Request) =
-            storage == other.storage && isWholeStorage && other.isWholeStorage && full == other.full && newFoldersOnly == other.newFoldersOnly
+            storage == other.storage && connectionId == other.connectionId && isWholeStorage && other.isWholeStorage &&
+                full == other.full && newFoldersOnly == other.newFoldersOnly
     }
 
     private val lock = Any()
@@ -115,6 +121,7 @@ object RemoteScanScheduler {
                             folders = existing.folders,
                             full = existing.full,
                             newFoldersOnly = existing.newFoldersOnly,
+                            connectionId = existing.connectionId,
                             onDone = existing.onDone
                         )
                     )
@@ -165,12 +172,17 @@ object RemoteScanScheduler {
     // The folder list has left this storage behind, so a scan of it is of no use to the list any
     // more. It is called off only when the switch outranks it, which is the whole of rule 1: the
     // settings' automatic scan goes, and a walk the user asked for by hand stays. A sideways drag
-    // is the easiest gesture in the app to make by accident, and a share takes minutes to walk
-    fun leftBehind(storage: Storage) {
+    // is the easiest gesture in the app to make by accident, and a share takes minutes to walk.
+    //
+    // [connectionId] names the one share left behind; null is every one of them, which is what
+    // leaving pCloud or a list that shows no share at all means
+    fun leftBehind(storage: Storage, connectionId: Int? = null) {
+        fun isLeft(request: Request) = request.storage == storage && (connectionId == null || request.connectionId == connectionId)
+
         synchronized(lock) {
-            queue.removeAll { it.storage == storage && it.priority < PRIORITY_SWITCH }
+            queue.removeAll { isLeft(it) && it.priority < PRIORITY_SWITCH }
             val current = running
-            if (current != null && current.storage == storage && current.priority < PRIORITY_SWITCH) {
+            if (current != null && isLeft(current) && current.priority < PRIORITY_SWITCH) {
                 Log.i(TAG, "the list left ${current.storage} behind; calling off its ${describe(current)}")
                 abortScan(storage)
             }
@@ -189,6 +201,10 @@ object RemoteScanScheduler {
 
     private fun describe(request: Request) = buildString {
         append(request.storage)
+        if (request.storage == Storage.SMB && request.connectionId != 0) {
+            append(" ${request.connectionId}")
+        }
+
         append(if (request.isWholeStorage) " whole" else " ${request.folders.size} folders")
         if (request.newFoldersOnly) {
             append(", new folders only")

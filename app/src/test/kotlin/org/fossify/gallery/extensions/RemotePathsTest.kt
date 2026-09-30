@@ -57,6 +57,30 @@ class RemotePathsTest {
         assertEquals("smb:", "".toSmbPseudoPath())
     }
 
+    // Another connection's paths carry its id (#155). They are share paths all the same, and
+    // what is inside them is the path inside that connection's root
+    @Test
+    fun `another share's path is a share path, and its id is not part of the path inside`() {
+        assertTrue("smb:2/pictures/IMG_0001.jpg".isSmbPath())
+        assertTrue("smb:2/pictures".isRemotePath())
+        assertEquals("pictures/IMG_0001.jpg", "smb:2/pictures/IMG_0001.jpg".toSmbRemotePath())
+        assertEquals("", "smb:2".toSmbRemotePath())
+        assertEquals("smb:2/pictures/IMG_0001.jpg", "pictures/IMG_0001.jpg".toSmbPseudoPath(2))
+        assertEquals("smb:2", "".toSmbPseudoPath(2))
+    }
+
+    // each share has its bin in its own root, and a medium goes into the one of its own share
+    @Test
+    fun `a medium goes into the bin of its own share and comes back out of it`() {
+        assertEquals("smb:/.gallery-recycle-bin/Trips/a.jpg", "smb:/Trips/a.jpg".toSmbRecycleBinPath())
+        assertEquals("smb:2/.gallery-recycle-bin/Trips/a.jpg", "smb:2/Trips/a.jpg".toSmbRecycleBinPath())
+        assertEquals("smb:2/Trips/a.jpg", "smb:2/.gallery-recycle-bin/Trips/a.jpg".fromSmbRecycleBinPath())
+        assertTrue("smb:2/.gallery-recycle-bin/Trips/a.jpg".isSmbRecycleBinPath())
+        assertFalse("smb:2/Trips/a.jpg".isSmbRecycleBinPath())
+        // the bin folder itself is not a medium in it
+        assertFalse("smb:2/.gallery-recycle-bin".isSmbRecycleBinPath())
+    }
+
     // a path that is already a real one is handed back untouched, so a caller does not have to
     // ask twice
     @Test

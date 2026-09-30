@@ -86,22 +86,23 @@ class SmbScanner(private val context: Context) {
         }
     }
 
-    // Walks the whole share and replaces the SMB rows with what it found. Blocks and talks to
-    // the network, so call it off the main thread.
+    // Walks the whole share of [connection] and replaces its rows with what it found; the other
+    // connections' rows are not this walk's to touch (#155). Blocks and talks to the network, so
+    // call it off the main thread.
     //
     // onProgress is called as each folder is left behind, with what the walk holds so far and
     // the folder it has just come out of. A share has no count to work towards -- what is in it
     // is only known once it has all been walked -- so this is the only thing that can tell the
     // user a scan is moving rather than stuck. It runs on the scanning thread: keep it quick,
     // and do not touch a view from it
-    fun scanAll(onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
+    fun scanAll(connection: SmbConnection, onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
         val media = ArrayList<Medium>()
         val directories = ArrayList<Directory>()
         val collector = Collector(media, directories, onProgress)
-        collector.collect(SMB_PATH_SCHEME, 0)
+        collector.collect(connection.root, 0)
 
-        store(media, directories, collector.skippedPaths)
-        context.config.smbLastFullScanAt = System.currentTimeMillis()
+        store(connection, media, directories, collector.skippedPaths)
+        context.config.setSmbLastFullScanAt(connection.id, System.currentTimeMillis())
         return Result(directories.size, media.size, collector.skippedPaths.size)
     }
 
@@ -133,8 +134,11 @@ class SmbScanner(private val context: Context) {
     //
     // The counts are the new folders and their media. smbLastFullScanAt is not moved: this was
     // not a walk that could have dropped anything, so the automatic scans are still owed one
-    fun scanNewFolders(onProgress: (newFolderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
-        val known = context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).toHashSet()
+    fun scanNewFolders(
+        connection: SmbConnection,
+        onProgress: (newFolderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }
+    ): Result {
+        val known = directoryPathsOf(connection).toHashSet()
         val media = ArrayList<Medium>()
         val directories = ArrayList<Directory>()
         val collector = Collector(media, directories)
@@ -148,7 +152,7 @@ class SmbScanner(private val context: Context) {
                 listWithOneRetry(path)
             } catch (e: Exception) {
                 throwIfAborted()
-                if (depth == 0 || !SmbClient.isConnected()) {
+                if (depth == 0 || !SmbClient.isConnected(path)) {
                     throw e
                 }
 
@@ -177,7 +181,7 @@ class SmbScanner(private val context: Context) {
             entries.filter { it.isFolder && !isRecycleBinFolder(path, it) }.forEach { walk(childPathOf(path, it.name), depth + 1) }
         }
 
-        walk(SMB_PATH_SCHEME, 0)
+        walk(connection.root, 0)
         return Result(newFolderCount, mediaCount, skippedPaths.size)
     }
 
@@ -194,7 +198,7 @@ class SmbScanner(private val context: Context) {
     // its rows are SmbWriter's, not a listing's, and a medium in it is deleted, not in a folder
     // called ".gallery-recycle-bin". See SMB_RECYCLE_BIN
     private fun isRecycleBinFolder(parentPath: String, entry: SmbClient.Entry) =
-        parentPath == SMB_PATH_SCHEME && entry.isFolder && entry.name == RECYCLE_BIN_FOLDER_NAME
+        parentPath == smbRootOfPath(parentPath) && entry.isFolder && entry.name == RECYCLE_BIN_FOLDER_NAME
 
     // Lists a folder, and asks a second time over a fresh connection when the first ask was cut
     // short by the connection going away. A share that has been walked for a while loses one
@@ -209,18 +213,26 @@ class SmbScanner(private val context: Context) {
             SmbClient.list(context, path)
         } catch (e: Exception) {
             throwIfAborted()
-            if (SmbClient.isConnected()) {
+            if (SmbClient.isConnected(path)) {
                 throw e
             }
 
             Log.w(TAG, "Listing \"$path\" of the share again over a new connection", e)
-            SmbClient.disconnect()
+            SmbClient.disconnect(path)
             SmbClient.list(context, path)
         }
     }
 
-    private fun childPathOf(parentPath: String, name: String) =
-        if (parentPath == SMB_PATH_SCHEME) "$SMB_PATH_PREFIX$name" else "$parentPath/$name"
+    // a root, "smb:" or "smb:2", takes the separator after it like any other folder does
+    private fun childPathOf(parentPath: String, name: String) = "$parentPath/$name"
+
+    // The folder rows of one connection: everything under its root, and the root itself, which
+    // has a row when media lie in it directly. Not the bare scheme, which would be every
+    // connection's
+    private fun directoryPathsOf(connection: SmbConnection): List<String> {
+        val under = context.directoryDB.getPathsWithPrefix(connection.rowPrefix)
+        return if (context.directoryDB.getDirectoryId(connection.root) != null) under + connection.root else under
+    }
 
     private fun getMediaType(name: String) = when {
         name.isImageFast() -> TYPE_IMAGES
@@ -265,7 +277,7 @@ class SmbScanner(private val context: Context) {
                 // to skip over -- and neither is any folder whose listing left no connection
                 // standing. Walking on without one skips every folder that is left, and the
                 // scan then reports an empty share rather than an unreachable one
-                if (depth == 0 || !SmbClient.isConnected()) {
+                if (depth == 0 || !SmbClient.isConnected(path)) {
                     throw e
                 }
 
@@ -338,10 +350,10 @@ class SmbScanner(private val context: Context) {
     // of a scan. Rows the share no longer has are dropped one by one: a NOT IN over thousands of
     // paths would trip SQLite's argument limit. The rows of the recycle bin are not a listing's
     // to drop, the walk never holds them
-    private fun store(media: List<Medium>, directories: List<Directory>, skippedPaths: Set<String>) {
+    private fun store(connection: SmbConnection, media: List<Medium>, directories: List<Directory>, skippedPaths: Set<String>) {
         GalleryDatabase.getInstance(context).runInTransaction {
             val keptMediaPaths = media.map { it.path }.toHashSet()
-            context.mediaDB.getPathsWithPrefix(SMB_PATH_SCHEME)
+            context.mediaDB.getPathsWithPrefix(connection.rowPrefix)
                 .filter { it !in keptMediaPaths && !it.isSmbRecycleBinPath() && !isUnderSkipped(it, skippedPaths) }
                 .forEach { path ->
                     context.mediaDB.deleteMediumPath(path)
@@ -349,7 +361,7 @@ class SmbScanner(private val context: Context) {
                 }
 
             val keptDirectoryPaths = directories.map { it.path }.toHashSet()
-            context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME)
+            directoryPathsOf(connection)
                 .filter { it !in keptDirectoryPaths && !isUnderSkipped(it, skippedPaths) }
                 .forEach { path -> context.directoryDB.deleteDirPath(path) }
 
@@ -424,15 +436,19 @@ class SmbScanner(private val context: Context) {
         context.config.updateSmbHiddenFolderPaths(oldPath, newPath)
     }
 
-    // drops every SMB row there is, for a share that was unconfigured or pointed somewhere else
-    fun forgetAll() {
+    // drops every row of the connection [connectionId], for one that was removed or pointed at
+    // something else; the rows of the recycle bin go with them, the bin being on that share
+    fun forgetAll(connectionId: Int) {
+        val root = smbRootOf(connectionId)
+        val rowPrefix = "$root/"
         GalleryDatabase.getInstance(context).runInTransaction {
-            context.mediaDB.getPathsWithPrefix(SMB_PATH_SCHEME).forEach { path ->
+            context.mediaDB.getPathsWithPrefix(rowPrefix).forEach { path ->
                 context.mediaDB.deleteMediumPath(path)
                 context.favoritesDB.deleteFavoritePath(path)
             }
 
-            context.directoryDB.getPathsWithPrefix(SMB_PATH_SCHEME).forEach { context.directoryDB.deleteDirPath(it) }
+            context.directoryDB.getPathsWithPrefix(rowPrefix).forEach { context.directoryDB.deleteDirPath(it) }
+            context.directoryDB.deleteDirPath(root)
         }
     }
 }

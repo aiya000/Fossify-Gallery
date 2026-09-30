@@ -42,13 +42,14 @@ class SmbSyncPolicy(private val context: Context) {
         }
 
     // an automatic rescan is held back until the interval has passed since the share was last
-    // walked. An interval of 0 disables the throttle. A manual rescan never asks this
-    fun isFullScanDue(now: Long = System.currentTimeMillis()): Boolean {
+    // walked. An interval of 0 disables the throttle. A manual rescan never asks this. The
+    // settings are every share's, the time each one was last walked its own (#155)
+    fun isFullScanDue(connectionId: Int, now: Long = System.currentTimeMillis()): Boolean {
         val intervalMinutes = config.smbRescanIntervalMinutes
         if (intervalMinutes <= 0) {
             return true
         }
 
-        return now - config.smbLastFullScanAt >= intervalMinutes * 60_000L
+        return now - config.smbLastFullScanAt(connectionId) >= intervalMinutes * 60_000L
     }
 }

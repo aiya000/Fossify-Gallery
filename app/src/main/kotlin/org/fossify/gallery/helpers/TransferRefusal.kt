@@ -12,25 +12,42 @@ enum class TransferRefusal {
 
     // the share has no copy within itself: SmbTransferService would carry it out as a move, and
     // the original would be gone from where the user left it (#150)
-    COPY_WITHIN_SHARE;
+    COPY_WITHIN_SHARE,
+
+    // one share to another, a copy or a move alike: the rename a move within a share is cannot
+    // reach another share, and carrying the bytes across is the streaming copy #154 is about (#155)
+    BETWEEN_SHARES;
 
     // what the picker says, or the toast when the refusal comes later
     val messageId: Int
         get() = when (this) {
             PCLOUD_ONTO_SHARE -> R.string.smb_no_remote_copy_to_share
             COPY_WITHIN_SHARE -> R.string.smb_no_copy_within_share
+            BETWEEN_SHARES -> R.string.smb_no_transfer_between_shares
         }
 }
 
-// [sourceStorage] and [destinationStorage] are STORAGE_FILTER_* values, see storageFilterOf()
-fun transferRefusal(sourceStorage: Int, destinationStorage: Int, isCopy: Boolean): TransferRefusal? = when {
-    sourceStorage == STORAGE_FILTER_PCLOUD && destinationStorage == STORAGE_FILTER_SMB -> TransferRefusal.PCLOUD_ONTO_SHARE
-    isCopy && sourceStorage == STORAGE_FILTER_SMB && destinationStorage == STORAGE_FILTER_SMB -> TransferRefusal.COPY_WITHIN_SHARE
-    else -> null
+// [sourceStorage] and [destinationStorage] are STORAGE_FILTER_* values, see storageFilterOf();
+// each share has one of its own
+fun transferRefusal(sourceStorage: Int, destinationStorage: Int, isCopy: Boolean): TransferRefusal? {
+    val sourceShare = smbConnectionIdOfFilter(sourceStorage)
+    val destinationShare = smbConnectionIdOfFilter(destinationStorage)
+    return when {
+        sourceStorage == STORAGE_FILTER_PCLOUD && destinationShare != null -> TransferRefusal.PCLOUD_ONTO_SHARE
+        sourceShare != null && destinationShare != null && sourceShare != destinationShare -> TransferRefusal.BETWEEN_SHARES
+        isCopy && sourceShare != null && sourceShare == destinationShare -> TransferRefusal.COPY_WITHIN_SHARE
+        else -> null
+    }
 }
 
-fun storageFilterOf(path: String) = when {
-    path.startsWith(PCLOUD_PATH_SCHEME) -> STORAGE_FILTER_PCLOUD
-    path.startsWith(SMB_PATH_SCHEME) -> STORAGE_FILTER_SMB
-    else -> STORAGE_FILTER_LOCAL
+fun storageFilterOf(path: String): Int {
+    val smbConnectionId = smbConnectionIdOf(path)
+    return when {
+        path.startsWith(PCLOUD_PATH_SCHEME) -> STORAGE_FILTER_PCLOUD
+        smbConnectionId != null -> smbStorageFilterOf(smbConnectionId)
+        // an SMB path whose id is not written the way smbRootOf() writes it is no connection's;
+        // it is still not the device's, and the first share is the one that would own it
+        path.startsWith(SMB_PATH_SCHEME) -> STORAGE_FILTER_SMB
+        else -> STORAGE_FILTER_LOCAL
+    }
 }

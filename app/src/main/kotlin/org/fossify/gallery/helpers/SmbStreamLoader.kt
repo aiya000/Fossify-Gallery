@@ -71,8 +71,8 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         private var source = DataSource.REMOTE
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
-            if (!context.config.isSmbConfigured) {
-                callback.onLoadFailed(IllegalStateException("No SMB share is configured"))
+            if (context.config.smbConnectionOf(path) == null) {
+                callback.onLoadFailed(IllegalStateException("No SMB share is configured for $path"))
                 return
             }
 

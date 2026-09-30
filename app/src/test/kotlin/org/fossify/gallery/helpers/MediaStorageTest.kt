@@ -55,6 +55,32 @@ class MediaStorageTest {
         assertNull(MediaStorage.ofAll(context, emptyList()))
     }
 
+    // Each share is a storage of its own (#155): it holds its own paths and not another share's,
+    // and a selection across two shares is a mixed one
+    @Test
+    fun `two shares are two storages`() {
+        val other = MediaStorage.of(context, "smb:2/Screens/a.jpg")
+        assertTrue(other is MediaStorage.Smb)
+        assertEquals(2, (other as MediaStorage.Smb).connectionId)
+        assertEquals("smb:2", other.root)
+        assertEquals(0, (smb as MediaStorage.Smb).connectionId)
+
+        assertTrue(other.holds("smb:2/Trips/b.jpg"))
+        assertFalse(other.holds("smb:/Trips/b.jpg"))
+        assertFalse(smb.holds("smb:2/Trips/b.jpg"))
+
+        assertNull(MediaStorage.ofAll(context, listOf("smb:/Screens/a.jpg", "smb:2/Screens/a.jpg")))
+    }
+
+    // a share's bin is its own: a medium in another share's bin is not in this one's
+    @Test
+    fun `a share's bin holds its own media only`() {
+        val other = MediaStorage.of(context, "smb:2/Screens/a.jpg")
+        assertTrue(other.isInRecycleBin("smb:2/.gallery-recycle-bin/Screens/a.jpg"))
+        assertFalse(other.isInRecycleBin("smb:/.gallery-recycle-bin/Screens/a.jpg"))
+        assertFalse(smb.isInRecycleBin("smb:2/.gallery-recycle-bin/Screens/a.jpg"))
+    }
+
     @Test
     fun `only the device is not remote`() {
         assertFalse(device.isRemote)

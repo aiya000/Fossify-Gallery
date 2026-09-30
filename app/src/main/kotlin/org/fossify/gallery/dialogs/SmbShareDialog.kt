@@ -13,28 +13,31 @@ import org.fossify.gallery.databinding.DialogSmbShareBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.SMB_DEFAULT_PORT
 import org.fossify.gallery.helpers.SmbClient
+import org.fossify.gallery.helpers.SmbConnection
+import org.fossify.gallery.helpers.smbRootOf
 
-// Where the SMB share is typed in: host, port, share name, an optional folder inside it, and
+// Where one SMB share is typed in: host, port, share name, an optional folder inside it, and
 // the credentials. There is no discovery of hosts on the network, so everything comes from
-// here.
+// here. [connectionId] is the connection being edited, or the id a new one is to have (#155).
 //
 // The test button connects with what is in the fields right now, without saving them: it is
 // there so that a share can be corrected before the gallery starts walking it. Saving writes
-// the fields to the config and hands them back, and the caller is the one that decides what
+// the fields to the config and hands the id back, and the caller is the one that decides what
 // to do with a share that has moved
-class SmbShareDialog(val activity: BaseSimpleActivity, val callback: () -> Unit) {
+class SmbShareDialog(val activity: BaseSimpleActivity, private val connectionId: Int, val callback: (connectionId: Int) -> Unit) {
     private val config = activity.config
     private val binding = DialogSmbShareBinding.inflate(activity.layoutInflater)
 
     init {
+        val connection = config.smbConnection(connectionId)
         binding.apply {
-            smbHost.setText(config.smbHost)
-            smbPort.setText(config.smbPort.toString())
-            smbShareName.setText(config.smbShare)
-            smbRootPath.setText(config.smbRootPath)
-            smbUser.setText(config.smbUser)
-            smbPassword.setText(config.smbPassword)
-            smbDomain.setText(config.smbDomain)
+            smbHost.setText(connection?.host.orEmpty())
+            smbPort.setText((connection?.port ?: SMB_DEFAULT_PORT).toString())
+            smbShareName.setText(connection?.share.orEmpty())
+            smbRootPath.setText(connection?.rootPath.orEmpty())
+            smbUser.setText(connection?.user.orEmpty())
+            smbPassword.setText(connection?.password.orEmpty())
+            smbDomain.setText(connection?.domain.orEmpty())
             smbTestConnection.setOnClickListener { testConnection() }
         }
 
@@ -51,7 +54,7 @@ class SmbShareDialog(val activity: BaseSimpleActivity, val callback: () -> Unit)
 
                         save()
                         alertDialog.dismiss()
-                        callback()
+                        callback(connectionId)
                     }
                 }
             }
@@ -59,57 +62,61 @@ class SmbShareDialog(val activity: BaseSimpleActivity, val callback: () -> Unit)
 
     private fun hasHostAndShare() = binding.smbHost.value.trim().isNotEmpty() && binding.smbShareName.value.trim().isNotEmpty()
 
-    // Saves what is in the fields and connects with it, off the main thread. The settings have
-    // to be saved first because SmbClient reads them rather than taking them as arguments; a
-    // test of a share that turns out to be wrong therefore leaves the wrong one saved, which is
-    // the same as what pressing OK on it would have done
+    // Connects with what is in the fields, off the main thread, and leaves the saved settings as
+    // they were: a test of a share that turns out to be wrong is not a reason to lose the one
+    // that worked
     private fun testConnection() {
         if (!hasHostAndShare()) {
             activity.toast(R.string.smb_host_required)
             return
         }
 
-        save()
+        val connection = typedConnection()
         activity.toast(R.string.smb_connecting)
         ensureBackgroundThread {
             try {
-                SmbClient.test(activity)
+                SmbClient.test(connection)
                 activity.toast(R.string.smb_connection_ok)
             } catch (e: Exception) {
                 // SmbClient logs which step failed and with what; the toast is cut short by the
                 // length of a status name, so it says only that something went wrong
-                SmbClient.disconnect()
                 activity.showErrorToast(e)
+            } finally {
+                // what was tested is not what is saved, and the next call has to connect with
+                // the settings rather than find this connection standing
+                SmbClient.disconnect(smbRootOf(connectionId))
             }
         }
     }
 
+    // What the fields say, as a connection. A share name typed with a path after it
+    // ("photos/2026") is split here: only the first segment is a share, the rest is a folder
+    // inside it, and a server answers a connect to "photos/2026" with a share that does not exist
+    // rather than with anything useful
+    private fun typedConnection(): SmbConnection = binding.run {
+        val typedShare = smbShareName.value.trim().replace('\\', '/').trim('/')
+        val share = typedShare.substringBefore('/')
+        val folderInTypedShare = typedShare.substringAfter('/', "")
+        val typedFolder = smbRootPath.value.trim().replace('\\', '/').trim('/')
+
+        SmbConnection(
+            id = connectionId,
+            name = config.smbConnection(connectionId)?.name.orEmpty(),
+            host = smbHost.value.trim(),
+            port = smbPort.value.trim().toIntOrNull() ?: SMB_DEFAULT_PORT,
+            share = share,
+            rootPath = listOf(folderInTypedShare, typedFolder).filter { it.isNotEmpty() }.joinToString("/"),
+            user = smbUser.value.trim(),
+            password = smbPassword.value,
+            domain = smbDomain.value.trim()
+        )
+    }
+
     // A new host or share means the cached folders belong to something else; dropping the
-    // connection is what makes the next call pick the new settings up.
-    //
-    // A share name typed with a path after it ("photos/2026") is split here: only the first
-    // segment is a share, the rest is a folder inside it, and a server answers a connect to
-    // "photos/2026" with a share that does not exist rather than with anything useful
+    // connection is what makes the next call pick the new settings up
     private fun save() {
-        binding.apply {
-            val typedShare = smbShareName.value.trim().replace('\\', '/').trim('/')
-            val share = typedShare.substringBefore('/')
-            val folderInTypedShare = typedShare.substringAfter('/', "")
-            val typedFolder = smbRootPath.value.trim().replace('\\', '/').trim('/')
-
-            config.smbHost = smbHost.value.trim()
-            config.smbPort = smbPort.value.trim().toIntOrNull() ?: SMB_DEFAULT_PORT
-            config.smbShare = share
-            config.smbRootPath = listOf(folderInTypedShare, typedFolder).filter { it.isNotEmpty() }.joinToString("/")
-            config.smbUser = smbUser.value.trim()
-            config.smbPassword = smbPassword.value
-            config.smbDomain = smbDomain.value.trim()
-
-            // what was saved is not always what was typed, so the fields are put back in step
-            smbShareName.setText(config.smbShare)
-            smbRootPath.setText(config.smbRootPath)
-        }
-
-        SmbClient.disconnect()
+        val connection = typedConnection()
+        config.saveSmbConnection(connection)
+        SmbClient.disconnect(connection.root)
     }
 }

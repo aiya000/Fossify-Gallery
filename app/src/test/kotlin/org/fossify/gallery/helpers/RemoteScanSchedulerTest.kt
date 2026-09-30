@@ -64,6 +64,32 @@ class RemoteScanSchedulerTest {
         assertEquals(listOf(Storage.SMB), calledOff)
     }
 
+    // Each share is walked on its own (#155): leaving one share behind calls off its automatic
+    // scan and leaves another share's alone, which the list may still be showing
+    @Test
+    fun `leaving one share behind calls off that share's scan only`() {
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO, connectionId = 2))
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO, connectionId = 3))
+        startNext()
+
+        RemoteScanScheduler.leftBehind(Storage.SMB, connectionId = 3)
+        assertTrue("the running scan is of the share still on screen", calledOff.isEmpty())
+        assertFalse("the share left behind has nothing queued any more", RemoteScanScheduler.hasWork())
+
+        RemoteScanScheduler.leftBehind(Storage.SMB, connectionId = 2)
+        assertEquals(listOf(Storage.SMB), calledOff)
+    }
+
+    // two shares walked whole are two pieces of work, not one asked for twice
+    @Test
+    fun `a walk of one share is not the same work as a walk of another`() {
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL, connectionId = 0))
+        RemoteScanScheduler.enqueue(Request(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL, connectionId = 2))
+
+        assertEquals(0, startNext()?.connectionId)
+        assertEquals(2, startNext()?.connectionId)
+    }
+
     // Rule 1-b, the one that changed in #77: a walk the user asked for by hand survives a swipe.
     // By hand: rescan from the menu, swipe away, and the notification has to stay
     @Test

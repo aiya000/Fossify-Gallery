@@ -219,6 +219,7 @@
     <string name="smb_already_exists">The network share already has a file or folder with that name</string>
     <string name="smb_no_remote_copy_to_share">A copy onto the network share can only come from this device, for now.</string>
     <string name="smb_no_copy_within_share">Files and folders of the network share cannot be copied within the share yet. Move them instead.</string>
+    <string name="smb_no_transfer_between_shares">Files and folders cannot be copied or moved from one network share to another yet.</string>
     <string name="smb_transfer_channel">Network share copies</string>
     <string name="smb_transfer_started">Copying started, the notification shows its progress</string>
     <string name="smb_move_started">Moving started, the notification shows its progress</string>

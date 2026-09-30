@@ -662,11 +662,11 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, destinat
 }
 
 // The one recycle bin emptied: each storage deletes for good what is in its own bin, one after
-// the other, and the bin's tile goes once all three are through. A storage that could not
-// empty its bin has said so; the tile stays for what it still holds, and [callback] runs only
-// when everything went
+// the other, and the bin's tile goes once all of them are through -- every share has a bin of
+// its own (#155). A storage that could not empty its bin has said so; the tile stays for what it
+// still holds, and [callback] runs only when everything went
 fun BaseSimpleActivity.emptyTheRecycleBin(callback: (() -> Unit)? = null) {
-    val storages = listOf(MediaStorage.Device(this), MediaStorage.PCloud(this), MediaStorage.Smb(this))
+    val storages = MediaStorage.all(this)
     fun emptyFrom(index: Int) {
         if (index == storages.size) {
             ensureBackgroundThread {
@@ -701,7 +701,8 @@ fun BaseSimpleActivity.restoreFromRecycleBin(paths: List<String>, onDone: () -> 
         val (folder, exists) = MediaStorage.of(this, paths.first()).restoreDestinationOf(paths.first())
         runOnUiThread {
             RestoreFromBinDialog(this, storage, paths.size, folder, !exists) { destination ->
-                val byStorage = paths.groupBy { MediaStorage.of(this, it).javaClass }.values.toList()
+                // one group per storage, and each share is a storage of its own
+                val byStorage = paths.groupBy { storageFilterOf(it) }.values.toList()
                 fun restoreFrom(index: Int) {
                     if (index == byStorage.size) {
                         onDone()
