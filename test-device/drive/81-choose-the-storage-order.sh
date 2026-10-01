@@ -46,6 +46,7 @@ dialog_order() {
 step "the settings offer the storage order, in the default order"
 tap_action "Settings" "81-settings" || finish
 sleep 2
+open_settings_tab "81-settings" "Storage" "Other" || finish
 ui_tap_exact_text "Storage order" "81-settings-row" || { screenshot "81-no-row"; finish; }
 sleep 1
 
