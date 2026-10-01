@@ -32,11 +32,13 @@ def centre_of(node):
     return (left + right) // 2, (top + bottom) // 2
 
 
-def matches(node, text, resource_id, exact):
+def matches(node, text, resource_id, exact, ignore_case=False):
     if resource_id is not None:
         return node.get("resource-id", "").endswith(resource_id)
 
     haystacks = (node.get("text", ""), node.get("content-desc", ""))
+    if exact and ignore_case:
+        return any(value.lower() == text.lower() for value in haystacks)
     if exact:
         return any(value == text for value in haystacks)
     return any(text.lower() in value.lower() for value in haystacks if value)
@@ -48,6 +50,14 @@ def main():
     parser.add_argument("--text")
     parser.add_argument("--resource-id")
     parser.add_argument("--exact", action="store_true")
+    parser.add_argument(
+        "--ignore-case",
+        action="store_true",
+        help=(
+            "with --exact, the whole label in any case. A tab's title may be drawn in capitals "
+            "whatever the string says, depending on the theme"
+        ),
+    )
     parser.add_argument(
         "--last",
         action="store_true",
@@ -122,13 +132,13 @@ def main():
 
     if args.is_checked:
         for node in tree.iter("node"):
-            if matches(node, args.text, args.resource_id, args.exact):
+            if matches(node, args.text, args.resource_id, args.exact, args.ignore_case):
                 return 0 if node.get("checked") == "true" else 1
         return 1
 
     if args.value:
         for node in tree.iter("node"):
-            if matches(node, args.text, args.resource_id, args.exact):
+            if matches(node, args.text, args.resource_id, args.exact, args.ignore_case):
                 print(node.get("text", ""))
                 return 0
         return 1
@@ -136,7 +146,7 @@ def main():
     read = box_of if args.bounds else centre_of
     found = None
     for node in tree.iter("node"):
-        if matches(node, args.text, args.resource_id, args.exact):
+        if matches(node, args.text, args.resource_id, args.exact, args.ignore_case):
             value = read(node)
             if value is not None:
                 found = value

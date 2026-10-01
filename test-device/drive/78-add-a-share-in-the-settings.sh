@@ -49,11 +49,12 @@ sleep 4
 
 prefs() { "${ADB[@]}" shell "run-as $FIXTURE_PACKAGE sh -c 'cat shared_prefs/Prefs.xml'" | tr -d '\r'; }
 
-# The settings are longer than the screen; the share's row is scrolled to. It is found by its id:
-# the section above it carries the same words as the row's label, and is the first of the two
+# The share's row is on the Network share tab under Storage (#58), scrolled to in case the tab is
+# longer than the screen. It is found by its id: the row's label reads like the tab's title
 open_share_row() {
     local name="$1" i dump point
-    for i in 1 2 3 4 5 6 7 8 9 10; do
+    open_settings_tab "$name" "Storage" "Network share" || return 1
+    for i in 1 2 3 4 5; do
         dump="$(ui_dump "$name-scroll-$i")"
         if point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --resource-id "settings_smb_share")"; then
             # shellcheck disable=SC2086

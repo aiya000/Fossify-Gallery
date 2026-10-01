@@ -256,6 +256,12 @@ at afterwards.
   pCloud, this device, the network share, All storages. The menu is the witness that matters: a
   dialog that only reordered itself would pass everything before it. The drag is held and moved
   in steps, since ItemTouchHelper swaps a row only once the dragged one passes the next one's middle
+- **`82-settings-tabs.sh`** — #58: the settings are split by two rows of tabs, General and
+  Storage on top and, under Storage, This device, pCloud, Network share and Other. Each tab is
+  opened in turn, and the check is that one row of that tab is on screen and a row of every other
+  tab is not -- a screen showing every page at once would pass a check that only looked for the
+  wanted row. The second row of tabs has to be there under Storage and gone under General, and
+  Storage, left and opened again, comes back on the storage tab it was left on
 - **`83-a-search-and-a-mixed-selection.sh`** — #107: two places the share was left out of a rule
   the other storages had. A video of the share tapped in the search results opens in the app's
   own player rather than being handed to the system player as a pseudo path, which is what the

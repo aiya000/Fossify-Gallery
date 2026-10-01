@@ -286,6 +286,25 @@ ui_tap_exact_text() {
     "${ADB[@]}" shell input tap $point
 }
 
+# Opens tabs of the settings, one after another: `open_settings_tab name Storage "Network share"`.
+# The settings open on General, and every storage's rows are behind two rows of tabs (#58).
+# A tab's title is found as its whole label in any case, since the theme may draw it in capitals
+open_settings_tab() {
+    local name="$1" tab dump point
+    shift
+    for tab in "$@"; do
+        dump="$(ui_dump "$name-tab")"
+        if ! point="$(python3 "$DRIVE_DIR/ui.py" "$dump" --text "$tab" --exact --ignore-case)"; then
+            fail "the settings have no tab '$tab' (view tree in $dump)"
+            return 1
+        fi
+
+        # shellcheck disable=SC2086
+        "${ADB[@]}" shell input tap $point
+        sleep 1
+    done
+}
+
 # Whether the folder list is in its selection mode. The toolbar counts what is picked there --
 # "1 / 2003" -- and that count is the only thing on screen that says so
 in_selection_mode() {

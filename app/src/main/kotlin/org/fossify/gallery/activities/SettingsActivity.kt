@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.TextUtils
 import android.widget.Toast
+import com.google.android.material.tabs.TabLayout
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import org.fossify.commons.dialogs.*
@@ -42,8 +43,14 @@ class SettingsActivity : SimpleActivity() {
 
         // the list of shares has a row per connection, keyed by its id, which is never negative
         private const val SMB_OPTION_ADD = -1
+
+        private const val TAB_STORAGE = 1
+        private const val STATE_TAB = "settings_tab"
+        private const val STATE_STORAGE_TAB = "settings_storage_tab"
     }
 
+    private var mTab = 0
+    private var mStorageTab = 0
     private var mRecycleBinContentSize = 0L
     private var mSettingsItemsToExport = LinkedHashMap<String, Any>()
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
@@ -57,12 +64,72 @@ class SettingsActivity : SimpleActivity() {
             padBottomSystem = listOf(binding.settingsNestedScrollview)
         )
         setupMaterialScrollListener(binding.settingsNestedScrollview, binding.settingsAppbar)
+
+        mTab = savedInstanceState?.getInt(STATE_TAB) ?: 0
+        mStorageTab = savedInstanceState?.getInt(STATE_STORAGE_TAB) ?: 0
+        setupTabs()
     }
 
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.settingsAppbar, NavigationIcon.Arrow)
         setupSettingItems()
+        updateTabColors()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_TAB, mTab)
+        outState.putInt(STATE_STORAGE_TAB, mStorageTab)
+    }
+
+    // General / Storage on top, and under Storage one tab per storage (#58). Each tab only
+    // shows its page; the rows stay in the one layout, so nothing else has to know about tabs
+    private fun setupTabs() {
+        binding.settingsTabs.getTabAt(mTab)?.select()
+        binding.settingsStorageTabs.getTabAt(mStorageTab)?.select()
+        showSelectedPage()
+
+        binding.settingsTabs.addOnTabSelectedListener(onTabSelected {
+            mTab = it
+            showSelectedPage()
+        })
+        binding.settingsStorageTabs.addOnTabSelectedListener(onTabSelected {
+            mStorageTab = it
+            showSelectedPage()
+        })
+    }
+
+    private fun onTabSelected(callback: (Int) -> Unit) = object : TabLayout.OnTabSelectedListener {
+        override fun onTabSelected(tab: TabLayout.Tab) = callback(tab.position)
+        override fun onTabUnselected(tab: TabLayout.Tab) {}
+        override fun onTabReselected(tab: TabLayout.Tab) {}
+    }
+
+    private fun showSelectedPage() {
+        val onStorage = mTab == TAB_STORAGE
+        binding.settingsStorageTabs.beVisibleIf(onStorage)
+        binding.settingsStorageTabsDivider.beVisibleIf(onStorage)
+        binding.settingsGeneralPage.beVisibleIf(!onStorage)
+        arrayOf(
+            binding.settingsStorageLocalPage,
+            binding.settingsStoragePcloudPage,
+            binding.settingsStorageSmbPage,
+            binding.settingsStorageOtherPage
+        ).forEachIndexed { index, page ->
+            page.beVisibleIf(onStorage && index == mStorageTab)
+        }
+        binding.settingsNestedScrollview.scrollTo(0, 0)
+    }
+
+    private fun updateTabColors() {
+        val textColor = getProperTextColor()
+        val primaryColor = getProperPrimaryColor()
+        arrayOf(binding.settingsTabs, binding.settingsStorageTabs).forEach {
+            it.setBackgroundColor(getProperBackgroundColor())
+            it.setTabTextColors(textColor.adjustAlpha(0.6f), primaryColor)
+            it.setSelectedTabIndicatorColor(primaryColor)
+        }
     }
 
     private fun setupSettingItems() {
