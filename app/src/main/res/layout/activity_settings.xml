@@ -49,6 +49,10 @@
 
         </com.google.android.material.tabs.TabLayout>
 
+        <include
+            android:id="@+id/settings_tabs_divider"
+            layout="@layout/divider" />
+
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/settings_storage_tabs"
             android:layout_width="match_parent"
@@ -77,6 +81,11 @@
                 android:text="@string/other" />
 
         </com.google.android.material.tabs.TabLayout>
+
+        <include
+            android:id="@+id/settings_storage_tabs_divider"
+            layout="@layout/divider"
+            android:visibility="gone" />
 
         <androidx.core.widget.NestedScrollView
             android:id="@+id/settings_nested_scrollview"

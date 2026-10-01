@@ -109,6 +109,7 @@ class SettingsActivity : SimpleActivity() {
     private fun showSelectedPage() {
         val onStorage = mTab == TAB_STORAGE
         binding.settingsStorageTabs.beVisibleIf(onStorage)
+        binding.settingsStorageTabsDivider.beVisibleIf(onStorage)
         binding.settingsGeneralPage.beVisibleIf(!onStorage)
         arrayOf(
             binding.settingsStorageLocalPage,
