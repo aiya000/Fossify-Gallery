@@ -1,5 +1,6 @@
 package org.fossify.gallery.helpers
 
+import android.app.Activity
 import org.fossify.commons.helpers.*
 
 // shared preferences
@@ -371,6 +372,10 @@ const val PICKED_PATHS = "picked_paths"
 const val SHOULD_INIT_FRAGMENT = "should_init_fragment"
 const val PORTRAIT_PATH = "portrait_path"
 const val SKIP_AUTHENTICATION = "skip_authentication"
+
+// what a folder opened from the folder list returns with, to have the list go back to the top of
+// its storage on the way back
+const val RESULT_GO_TO_TOP = Activity.RESULT_FIRST_USER
 
 // editor
 const val TEMP_FOLDER_NAME = "images"

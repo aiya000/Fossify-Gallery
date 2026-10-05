@@ -4,14 +4,14 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="AppCompatResource">
     <item
-        android:id="@+id/open_camera"
-        android:icon="@drawable/ic_camera_vector"
-        android:title="@string/open_camera"
-        app:showAsAction="always" />
-    <item
         android:id="@+id/show_all"
         android:icon="@drawable/ic_files_vector"
         android:title="@string/show_all"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/go_to_top"
+        android:icon="@drawable/ic_home_vector"
+        android:title="@string/go_to_top"
         app:showAsAction="always" />
     <item
         android:id="@+id/storage_filter"

@@ -120,7 +120,6 @@ import org.fossify.gallery.extensions.rescanSmb
 import org.fossify.gallery.extensions.rescanSmbFolders
 import org.fossify.gallery.extensions.shownSmbConnectionIds
 import org.fossify.gallery.extensions.launchAbout
-import org.fossify.gallery.extensions.launchCamera
 import org.fossify.gallery.extensions.launchSettings
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.extensions.movePinnedDirectoriesToFront
@@ -157,6 +156,7 @@ import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
+import org.fossify.gallery.helpers.RESULT_GO_TO_TOP
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.smbConnectionIdOfFilter
@@ -501,11 +501,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             mOpenedSubfolders.removeAt(mOpenedSubfolders.lastIndex)
             mCurrentPathPrefix = mOpenedSubfolders.last()
             setupAdapter(mDirs)
+            refreshMenuItems()
             true
         } else if (mCurrentGroupId != null) {
             mOpenedGroups.removeAt(mOpenedGroups.lastIndex)
             mCurrentGroupId = mOpenedGroups.last()
             setupAdapter(mDirs)
+            refreshMenuItems()
             true
         } else {
             appLockManager.lock()
@@ -527,8 +529,26 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mCurrentPathPrefix = ""
         mOpenedSubfolders = arrayListOf("")
         setupAdapter(mDirs, "")
+        refreshMenuItems()
         rescanPCloudFoldersOfGroupIfDue(groupId)
     }
+
+    // Leaves every group and subfolder that is open at once, back to the top of the folder list
+    // of the storage on screen. The storage itself stays what it was
+    private fun goToTop() {
+        if (binding.mainMenu.isSearchOpen) {
+            binding.mainMenu.closeSearch()
+        }
+
+        mOpenedGroups = arrayListOf(null)
+        mCurrentGroupId = null
+        mOpenedSubfolders = arrayListOf("")
+        mCurrentPathPrefix = ""
+        setupAdapter(mDirs, "")
+        refreshMenuItems()
+    }
+
+    private fun isAtTop() = mCurrentGroupId == null && mCurrentPathPrefix.isEmpty()
 
     // The pCloud folders assigned to the group, or to a group inside it, are refreshed one by
     // one when the setting asks for it, each under its own throttle. The cached folders are on
@@ -584,7 +604,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
-        if (resultCode == RESULT_OK) {
+        if (requestCode == PICK_MEDIA && resultCode == RESULT_GO_TO_TOP) {
+            goToTop()
+        } else if (resultCode == RESULT_OK) {
             if (requestCode == PICK_MEDIA && resultData != null) {
                 val resultIntent = Intent()
                 var resultUri: Uri? = null
@@ -640,6 +662,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 // and goes for a reason nobody can see is worse than one that reports nothing
                 // to do
                 findItem(R.id.read_smb_durations_group).isVisible = config.isSmbConfigured && mCurrentGroupId != null
+                findItem(R.id.go_to_top).isVisible = !isAtTop()
             }
 
             // a freshly set icon has no tint yet
@@ -689,7 +712,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.rescan_smb -> rescanSmbManually()
                 R.id.find_new_folders -> findNewFolders()
                 R.id.read_smb_durations_group -> readSmbVideoDurationsOfGroup()
-                R.id.open_camera -> launchCamera()
+                R.id.go_to_top -> goToTop()
                 R.id.show_all -> showAllMedia()
                 R.id.change_view_type -> changeViewType()
                 R.id.temporarily_show_hidden -> tryToggleTemporarilyShowHidden()
@@ -2227,6 +2250,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     mCurrentPathPrefix = path
                     mOpenedSubfolders.add(path)
                     setupAdapter(mDirs, "")
+                    refreshMenuItems()
                 }
             }.apply {
                 setupZoomListener(mZoomListener)
@@ -2505,6 +2529,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         runOnUiThread {
             setupAdapter(mDirs)
+            refreshMenuItems()
         }
     }
 
