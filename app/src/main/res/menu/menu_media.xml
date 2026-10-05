@@ -9,6 +9,11 @@
         android:title="@string/toggle_filename"
         app:showAsAction="always" />
     <item
+        android:id="@+id/go_to_top"
+        android:icon="@drawable/ic_home_vector"
+        android:title="@string/go_to_top"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/folder_view"
         android:icon="@drawable/ic_folders_vector"
         android:title="@string/folder_view"

@@ -73,6 +73,7 @@
     <string name="pcloud_rescanning">Scanning pCloud…</string>
     <string name="pcloud_rescan_done">pCloud: %1$d folders, %2$d files</string>
     <string name="storage_filter">Storage</string>
+    <string name="go_to_top">Back to the top of this storage</string>
     <string name="storage_local">This device</string>
     <string name="storage_local_and_pcloud">This device and pCloud</string>
     <string name="pcloud_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder or a group, switching storage)</string>

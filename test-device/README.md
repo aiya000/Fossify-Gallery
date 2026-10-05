@@ -243,6 +243,12 @@ at afterwards.
   offers it by its name and the first share by its address; that a new name is saved without a
   walk; and that forgetting it takes its settings out of the preferences and its row out of the
   menu, the first share becoming "Network share" again. Red with every save walking the share
+- **`79-back-to-the-top.sh`** — the folder list's toolbar button that goes back to the top of the
+  storage on screen, in place of the camera. With a folder of this device in the group Trips, it is
+  not offered at the top, and neither is the camera; inside Trips it is, and tapping it lists Trips
+  again, not the folder inside it, with the button gone; inside that folder it is offered too, and
+  tapping it closes the folder onto the top of the list. Red with the button left visible at the
+  top, or tapping it going nowhere
 - **`80-open-on-the-device.sh`** — where the folder list opens, and the order the storages stand
   in. Both are preferences rather than requirements, so nothing else breaks loudly when one is
   undone: the list has to open on this device whatever storage it was left on, and the storage

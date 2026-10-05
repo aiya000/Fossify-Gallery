@@ -117,6 +117,7 @@ import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_RECYCLE_BIN
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
+import org.fossify.gallery.helpers.RESULT_GO_TO_TOP
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.SLIDESHOW_START_ON_ENTER
 import org.fossify.gallery.helpers.VIDEO_PLAYER_APP
@@ -395,6 +396,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
             findItem(R.id.folder_view).isVisible = mShowAll
             findItem(R.id.open_camera).isVisible = mShowAll
+            // only the folder list knows where its top is, so the button is there only when the
+            // folder was opened from it
+            findItem(R.id.go_to_top).isVisible = !mShowAll && callingActivity?.className == MainActivity::class.java.name
             findItem(R.id.about).isVisible = mShowAll
             // on every storage that is set up, see MediaStorage.createFolder()
             findItem(R.id.create_new_folder).isVisible =
@@ -422,6 +426,11 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    private fun goToTop() {
+        setResult(RESULT_GO_TO_TOP)
+        finish()
+    }
+
     private fun setupOptionsMenu() {
         binding.mediaMenu.requireToolbar().inflateMenu(R.menu.menu_media)
         binding.mediaMenu.toggleHideOnScroll(!config.scrollHorizontally)
@@ -442,6 +451,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 R.id.restore_all_files -> restoreAllFiles()
                 R.id.toggle_filename -> toggleFilenameVisibility()
                 R.id.open_camera -> launchCamera()
+                R.id.go_to_top -> goToTop()
                 R.id.folder_view -> switchToFolderView()
                 R.id.change_view_type -> changeViewType()
                 R.id.group -> showGroupByDialog()

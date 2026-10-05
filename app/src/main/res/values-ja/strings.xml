@@ -72,6 +72,7 @@
     <string name="pcloud_rescanning">pCloud をスキャンしています…</string>
     <string name="pcloud_rescan_done">pCloud: %1$d フォルダ、%2$d ファイル</string>
     <string name="storage_filter">ストレージ</string>
+    <string name="go_to_top">このストレージのトップに戻る</string>
     <string name="storage_local">この端末</string>
     <string name="storage_local_and_pcloud">この端末と pCloud</string>
     <string name="pcloud_rescan_on_unmetered_only">自動再スキャンは Wi-Fi 接続時のみ。従量制の回線では、操作で始まる再スキャン（引っぱって更新、フォルダやグループを開く、ストレージ切替）の前に確認する</string>
