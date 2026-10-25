@@ -102,6 +102,7 @@ import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
 import org.fossify.gallery.helpers.PCLOUD_RESULT_ALREADY_EXISTS
 import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.PullToRefreshPolicy
 import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
@@ -726,6 +727,22 @@ fun Context.effectiveStorageFilter(): Int {
         else -> filter
     }
 }
+
+// whether the folder list can be pulled to refresh on the storage it is showing, see PullToRefreshPolicy
+fun Context.canPullFolderList(): Boolean = PullToRefreshPolicy.canPullFolderList(
+    enabled = config.enablePullToRefresh,
+    storageFilter = effectiveStorageFilter(),
+    pCloudPull = config.pCloudRescanOnPullToRefresh,
+    smbPull = config.smbRescanOnPullToRefresh
+)
+
+// whether a folder's grid can be pulled to refresh, see PullToRefreshPolicy
+fun Context.canPullFolder(path: String): Boolean = PullToRefreshPolicy.canPullFolder(
+    enabled = config.enablePullToRefresh,
+    path = path,
+    pCloudPull = config.pCloudRescanOnPullToRefresh,
+    smbPull = config.smbRescanOnPullToRefresh
+)
 
 // The shares the folder list is showing: every one there is under "All storages", the one
 // picked when a share is, none otherwise (#155)

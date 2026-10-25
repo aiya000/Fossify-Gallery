@@ -82,7 +82,7 @@
     <string name="use_for_every_group_confirmation">この並び順は、独自の並び順を持たないほかのすべてのグループと、グループの外のフォルダ一覧にも適用されます。続けますか？</string>
     <string name="pcloud_rescan_on_storage_switch">ストレージ切替時に pCloud を再スキャン</string>
     <string name="pcloud_rescan_on_folder_open">pCloud のフォルダを開いたときに再スキャン</string>
-    <string name="pcloud_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに pCloud を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
+    <string name="pcloud_rescan_on_pull_to_refresh">pCloud で引っぱって更新できるようにする。引っぱると pCloud を再スキャン（グループやフォルダの中では、そこにあるものだけ）。オフなら pCloud では引っぱれません</string>
     <string name="pcloud_rescan_on_group_open">グループを開いたときに中の pCloud フォルダを再スキャン</string>
     <string name="pcloud_rescan_folder">このフォルダを再スキャン</string>
     <string name="pcloud_fetch_failed">pCloud からファイルを取得できませんでした</string>
@@ -165,7 +165,7 @@
     <string name="smb_rescan_on_launch">起動時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>
-    <string name="smb_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに共有を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
+    <string name="smb_rescan_on_pull_to_refresh">共有で引っぱって更新できるようにする。引っぱると共有を再スキャン（グループやフォルダの中では、そこにあるものだけ）。オフなら共有では引っぱれません</string>
     <string name="ask_before_rescan_on_pull_to_refresh">フォルダ一覧の先頭で引っぱったときは、再スキャンの前に確認する（グループの中では確認せずに始める）</string>
     <string name="rescan_on_pull_smb">ネットワーク共有全体を再スキャンしますか？\nすべてのフォルダをたどるので、数分かかることがあります。</string>
     <string name="rescan_on_pull_pcloud">pCloud を再スキャンしますか？（前回からの差分だけ）</string>

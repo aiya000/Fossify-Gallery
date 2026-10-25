@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
@@ -64,6 +65,7 @@ import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.dialogs.ChangeViewTypeDialog
 import org.fossify.gallery.dialogs.FilterMediaDialog
 import org.fossify.gallery.dialogs.GrantAllFilesDialog
+import org.fossify.gallery.extensions.canPullFolder
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.emptyAndDisableTheRecycleBin
@@ -282,7 +284,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         refreshMenuItems()
 
         binding.mediaFastscroller.updateColors(primaryColor)
-        binding.mediaRefreshLayout.isEnabled = config.enablePullToRefresh
+        binding.mediaRefreshLayout.isEnabled = canPullFolder(mPath)
         getMediaAdapter()?.apply {
             dateFormat = config.dateFormat
             timeFormat = getTimeFormat()
@@ -439,7 +441,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         binding.mediaMenu.onSearchTextChangedListener = { text ->
             mLastSearchedText = text
             searchQueryChanged(text)
-            binding.mediaRefreshLayout.isEnabled = text.isEmpty() && config.enablePullToRefresh
+            binding.mediaRefreshLayout.isEnabled = text.isEmpty() && canPullFolder(mPath)
         }
 
         binding.mediaMenu.requireToolbar().setOnMenuItemClickListener { menuItem ->
@@ -771,6 +773,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     // a pull refreshes a remote folder from its storage first; the cache is what the list is
     // read from either way
     private fun refreshMedia() {
+        // the witness of test-device/drive/96: whether the gesture reached here at all
+        Log.i(MainActivity.TAG_PULL, "Pulled the folder $mPath")
         when {
             mPath.isPCloudPath() && config.isPCloudLoggedIn ->
                 rescanPCloudFolders(listOf(mPath), reportCounts = false, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
