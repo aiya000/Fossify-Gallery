@@ -312,6 +312,13 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(PCLOUD_RESCAN_ON_PULL_TO_REFRESH, true)
         set(pCloudRescanOnPullToRefresh) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_PULL_TO_REFRESH, pCloudRescanOnPullToRefresh).apply()
 
+    // Off by default, where the share's is on: a pull on pCloud is a diff sync of seconds, and
+    // a question before every one of them would be a nag. It is there for whoever wants it,
+    // the same question the share asks. See PullRescanConfirmation
+    var pCloudAskBeforePullToRefresh: Boolean
+        get() = prefs.getBoolean(PCLOUD_ASK_BEFORE_PULL_TO_REFRESH, false)
+        set(pCloudAskBeforePullToRefresh) = prefs.edit().putBoolean(PCLOUD_ASK_BEFORE_PULL_TO_REFRESH, pCloudAskBeforePullToRefresh).apply()
+
     var pCloudRescanOnGroupOpen: Boolean
         get() = prefs.getBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, false)
         set(pCloudRescanOnGroupOpen) = prefs.edit().putBoolean(PCLOUD_RESCAN_ON_GROUP_OPEN, pCloudRescanOnGroupOpen).apply()
@@ -484,6 +491,14 @@ class Config(context: Context) : BaseConfig(context) {
     var smbRescanOnPullToRefresh: Boolean
         get() = prefs.getBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, false)
         set(smbRescanOnPullToRefresh) = prefs.edit().putBoolean(SMB_RESCAN_ON_PULL_TO_REFRESH, smbRescanOnPullToRefresh).apply()
+
+    // On by default, for the same reason the one above is off: with the pull walking the share,
+    // the question is what stands between a scroll that went a little too far and minutes of
+    // work. Only a pull at the top of the list asks; inside a group the pull reaches that
+    // group's folders alone, which is a few listings. See PullRescanConfirmation
+    var smbAskBeforePullToRefresh: Boolean
+        get() = prefs.getBoolean(SMB_ASK_BEFORE_PULL_TO_REFRESH, true)
+        set(smbAskBeforePullToRefresh) = prefs.edit().putBoolean(SMB_ASK_BEFORE_PULL_TO_REFRESH, smbAskBeforePullToRefresh).apply()
 
     // a share lives on the local network, so a metered connection is never the one it is on
     var smbRescanOnUnmeteredOnly: Boolean

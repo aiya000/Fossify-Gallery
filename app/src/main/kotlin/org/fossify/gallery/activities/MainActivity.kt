@@ -147,6 +147,7 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_RECYCLE_BIN
 import org.fossify.gallery.helpers.PCloudSyncPolicy
+import org.fossify.gallery.helpers.PullRescanConfirmation
 import org.fossify.gallery.helpers.RescanOnMobileData
 import org.fossify.gallery.helpers.RescanScope
 import org.fossify.gallery.helpers.RescanVerdict
@@ -992,16 +993,45 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             else -> RescanVerdict.SKIP
         }
 
-        if (smb == RescanVerdict.RUN) {
+        // A pull at the top of the list may be asked about first, per storage, see
+        // PullRescanConfirmation: the whole of a storage is more than a scroll that went a
+        // little too far should start. The scans that are not asked about start here
+        val confirmSmb = event == RemoteRefresh.PULL && PullRescanConfirmation.isWanted(scans.scope, config.smbAskBeforePullToRefresh, smb)
+        val confirmPCloud = event == RemoteRefresh.PULL && PullRescanConfirmation.isWanted(scans.scope, config.pCloudAskBeforePullToRefresh, pCloud)
+
+        if (smb == RescanVerdict.RUN && !confirmSmb) {
             scans.startSmb()
         }
 
-        if (pCloud == RescanVerdict.RUN) {
+        if (pCloud == RescanVerdict.RUN && !confirmPCloud) {
             scans.startPCloud()
         }
 
+        askBeforeRescansOnAPull(scans, smb = confirmSmb, pCloud = confirmPCloud)
         val pCloudRanOnAnEarlierYes = askBeforeRescansOnMobileData(scans, smb = smb == RescanVerdict.ASK, pCloud = pCloud == RescanVerdict.ASK)
-        return pCloud == RescanVerdict.RUN || pCloudRanOnAnEarlierYes
+        return (pCloud == RescanVerdict.RUN && !confirmPCloud) || pCloudRanOnAnEarlierYes
+    }
+
+    // The question a pull at the top of the list puts first, for the storages whose settings
+    // want it. One dialog for whichever of the two it is, or both. A yes runs their scans as the
+    // gesture would have, the spinner going up with pCloud's, since the list is then waiting on
+    // it after all; a no, or the dialog dismissed, runs nothing. Nothing is remembered: every
+    // pull is its own gesture, and the question is there to catch the one made by accident
+    private fun askBeforeRescansOnAPull(scans: RemoteScans, smb: Boolean, pCloud: Boolean) {
+        if (!smb && !pCloud) {
+            return
+        }
+
+        ConfirmationDialog(this, scans.pullQuestion(smb, pCloud)) {
+            if (smb) {
+                scans.startSmb()
+            }
+
+            if (pCloud) {
+                binding.directoriesRefreshLayout.isRefreshing = true
+                scans.startPCloud()
+            }
+        }
     }
 
     // The scans one event starts on the remote storages: of the whole of each, or of a group's
@@ -1031,6 +1061,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             } else {
                 rescanPCloudFolders(pCloudFolders, reportCounts = false, priority = priority) { onDone() }
             }
+        }
+
+        // the question of a pull at the top of the list, see PullRescanConfirmation; only the
+        // whole of a storage is ever asked about, so there is no group wording here
+        fun pullQuestion(smb: Boolean, pCloud: Boolean): String = when {
+            smb && pCloud -> getString(R.string.rescan_on_pull_both)
+            smb -> getString(R.string.rescan_on_pull_smb)
+            else -> getString(R.string.rescan_on_pull_pcloud)
         }
 
         fun question(smb: Boolean, pCloud: Boolean): String = when {

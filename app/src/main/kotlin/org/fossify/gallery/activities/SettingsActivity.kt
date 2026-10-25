@@ -315,6 +315,15 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcloudRescanOnPullToRefreshHolder.setOnClickListener {
             binding.settingsPcloudRescanOnPullToRefresh.toggle()
             config.pCloudRescanOnPullToRefresh = binding.settingsPcloudRescanOnPullToRefresh.isChecked
+            binding.settingsPcloudAskBeforePullToRefreshHolder.beVisibleIf(config.pCloudRescanOnPullToRefresh)
+        }
+
+        // the question only makes sense under a pull that rescans, so the row follows that one
+        binding.settingsPcloudAskBeforePullToRefreshHolder.beVisibleIf(isLoggedIn && config.pCloudRescanOnPullToRefresh)
+        binding.settingsPcloudAskBeforePullToRefresh.isChecked = config.pCloudAskBeforePullToRefresh
+        binding.settingsPcloudAskBeforePullToRefreshHolder.setOnClickListener {
+            binding.settingsPcloudAskBeforePullToRefresh.toggle()
+            config.pCloudAskBeforePullToRefresh = binding.settingsPcloudAskBeforePullToRefresh.isChecked
         }
 
         binding.settingsPcloudRescanOnGroupOpen.isChecked = config.pCloudRescanOnGroupOpen
@@ -502,6 +511,15 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsSmbRescanOnPullToRefreshHolder.setOnClickListener {
             binding.settingsSmbRescanOnPullToRefresh.toggle()
             config.smbRescanOnPullToRefresh = binding.settingsSmbRescanOnPullToRefresh.isChecked
+            binding.settingsSmbAskBeforePullToRefreshHolder.beVisibleIf(config.smbRescanOnPullToRefresh)
+        }
+
+        // the question only makes sense under a pull that rescans, so the row follows that one
+        binding.settingsSmbAskBeforePullToRefreshHolder.beVisibleIf(isConfigured && config.smbRescanOnPullToRefresh)
+        binding.settingsSmbAskBeforePullToRefresh.isChecked = config.smbAskBeforePullToRefresh
+        binding.settingsSmbAskBeforePullToRefreshHolder.setOnClickListener {
+            binding.settingsSmbAskBeforePullToRefresh.toggle()
+            config.smbAskBeforePullToRefresh = binding.settingsSmbAskBeforePullToRefresh.isChecked
         }
 
         binding.settingsSmbRescanInterval.text = getPCloudRescanIntervalText(config.smbRescanIntervalMinutes)
