@@ -11,12 +11,13 @@ import com.bumptech.glide.load.model.ModelLoaderFactory
 import com.bumptech.glide.load.model.MultiModelLoaderFactory
 import com.bumptech.glide.signature.ObjectKey
 import okhttp3.Call
-import okhttp3.Response
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudPath
 import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.models.PCloudItem
+import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.util.concurrent.CancellationException
 
 // Feeds Glide the thumbnails of pCloud media. Every loadImage() caller hands Glide a medium as a
 // plain path string, so this loader is prepended to the String loaders in SvgModule and takes
@@ -46,10 +47,15 @@ class PCloudStreamLoader(private val context: Context) : ModelLoader<String, Inp
         override fun teardown() {}
     }
 
+    // Fetches on RemoteThumbnails' threads rather than Glide's (#165), see SmbStreamLoader for
+    // why. The picture is small -- pCloud renders it to size -- so it is read whole there and
+    // handed to Glide as bytes already on the device
     private class Fetcher(private val context: Context, private val item: PCloudItem, private val size: String) : DataFetcher<InputStream> {
         @Volatile
+        private var cancelled = false
+
+        @Volatile
         private var call: Call? = null
-        private var response: Response? = null
 
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             val config = context.config
@@ -58,31 +64,36 @@ class PCloudStreamLoader(private val context: Context) : ModelLoader<String, Inp
                 return
             }
 
-            try {
-                val call = PCloudApi.thumbCall(config.pCloudApiHost, config.pCloudAccessToken, item.itemId, size)
-                this.call = call
-                val response = call.execute()
-                this.response = response
-                callback.onDataReady(PCloudApi.contentOf(response))
-            } catch (e: PCloudException) {
-                // a token pCloud stopped accepting is rescanPCloud()'s business to act on; here
-                // it only means the thumbnail is not coming
-                if (e.requiresLogIn) {
-                    Log.w(TAG, "pCloud wants the account signed in again: ${e.message}")
+            RemoteThumbnails.submit(priority) {
+                if (cancelled) {
+                    callback.onLoadFailed(CancellationException("The thumbnail of ${item.path} was no longer wanted"))
+                    return@submit
                 }
 
-                callback.onLoadFailed(e)
-            } catch (e: Exception) {
-                callback.onLoadFailed(e)
+                try {
+                    val call = PCloudApi.thumbCall(config.pCloudApiHost, config.pCloudAccessToken, item.itemId, size)
+                    this.call = call
+                    val bytes = call.execute().use { response -> PCloudApi.contentOf(response).use { it.readBytes() } }
+                    Log.d(SmbStreamLoader.TAG, "Read the thumbnail of ${item.path} on ${Thread.currentThread().name}")
+                    callback.onDataReady(ByteArrayInputStream(bytes))
+                } catch (e: PCloudException) {
+                    // a token pCloud stopped accepting is rescanPCloud()'s business to act on; here
+                    // it only means the thumbnail is not coming
+                    if (e.requiresLogIn) {
+                        Log.w(TAG, "pCloud wants the account signed in again: ${e.message}")
+                    }
+
+                    callback.onLoadFailed(e)
+                } catch (e: Exception) {
+                    callback.onLoadFailed(e)
+                }
             }
         }
 
-        override fun cleanup() {
-            response?.close()
-            response = null
-        }
+        override fun cleanup() {}
 
         override fun cancel() {
+            cancelled = true
             call?.cancel()
         }
 

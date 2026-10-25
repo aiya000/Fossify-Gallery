@@ -77,4 +77,18 @@ else
     fail "a render drew nothing; the screenshot is $RUN_DIR/40-renders.png and the view tree is $dump"
 fi
 
+# #165: the share is read on threads of the app's own, never on Glide's, so that this device's
+# tiles are never stuck behind a read of the share. Each read logs the thread it ran on
+step "whose threads the share was read on"
+capture_log "40-threads"
+reads="$(captured_log | rg -c 'Read the thumbnail of smb:' || true)"
+on_glide="$(captured_log | rg -c 'Read the thumbnail of smb:.* on glide-' || true)"
+if [ "${reads:-0}" -gt 0 ] && [ "${on_glide:-0}" -eq 0 ]; then
+    pass "every one of the $reads reads of the share ran on the app's own thumbnail threads"
+elif [ "${reads:-0}" -eq 0 ]; then
+    fail "no read of the share was logged, so there is nothing to say whose thread it ran on"
+else
+    fail "$on_glide of $reads reads of the share ran on one of Glide's threads"
+fi
+
 finish

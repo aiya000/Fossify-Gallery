@@ -1103,10 +1103,15 @@ fun Context.loadImageBase(
     crossFadeDuration: Int = THUMBNAIL_FADE_DURATION_MS,
     onError: (() -> Unit)? = null
 ) {
+    // This device's tiles ahead of the remote storages' in Glide's own queue (#165): a tile of
+    // the share has a whole photo to fetch before it can be decoded, a tile of this device is
+    // milliseconds, and the list the user is looking at is the one being drawn. The fetching
+    // itself is on RemoteThumbnails' threads, so this is about the decodes, which share
+    // Glide's pool; see RemoteThumbnails for the whole of it
     val options = RequestOptions()
         .signature(signature)
         .skipMemoryCache(skipMemoryCacheAtPaths?.contains(path) == true)
-        .priority(Priority.LOW)
+        .priority(if (path.isRemotePath()) Priority.NORMAL else Priority.HIGH)
         .diskCacheStrategy(DiskCacheStrategy.RESOURCE)
         .format(DecodeFormat.PREFER_ARGB_8888)
 
