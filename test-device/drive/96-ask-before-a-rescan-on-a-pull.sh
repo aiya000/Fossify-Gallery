@@ -25,6 +25,11 @@ require_emulator
 # answer is given -- and short enough that the cases do not add up to a coffee break
 SETTLE=15
 
+# what the two screens log when a pull reaches them, see MainActivity.refreshDirectories() and
+# MediaActivity.refreshMedia(): a pull the switch has turned off never gets that far
+PULLED_LIST="Pulled the folder list"
+PULLED_FOLDER="Pulled the folder pcloud:/"
+
 seed() {
     env "$@" "$TEST_DEVICE_DIR/fixture/seed-app.sh" > /dev/null
 }
@@ -134,20 +139,29 @@ expect_scan "96b: Yes walked the share"
 step "with the setting off, a pull walks the share with nothing asked"
 seed FIXTURE_RESCAN_ON_PULL_TO_REFRESH=true FIXTURE_ASK_BEFORE_PULL_TO_REFRESH=false
 FIXTURE_STORAGE_FILTER=4
+logcat_reset
 app_start
 sleep 4
 pull_to_refresh
 refute_question "96c"
 expect_scan "96c: the share was walked on the gesture alone"
+capture_log "96c"
+expect_log "$PULLED_LIST" "96c: the gesture reached the list"
 
-step "and with the pull not rescanning at all, there is nothing to ask about"
+# The share's "pull to refresh" switch is the gesture on the share: off, the list cannot be
+# pulled there at all, rather than pulled to re-read a cache nobody asked for. That the gesture
+# never reached the list is read off the log line refreshDirectories() writes
+step "and with the share's pull off, the share cannot be pulled: nothing asked, nothing walked, nothing reached"
 seed FIXTURE_RESCAN_ON_PULL_TO_REFRESH=false FIXTURE_ASK_BEFORE_PULL_TO_REFRESH=true
 FIXTURE_STORAGE_FILTER=4
+logcat_reset
 app_start
 sleep 4
 pull_to_refresh
 refute_question "96d"
 expect_no_scan "96d: nothing was walked"
+capture_log "96d"
+refute_log "$PULLED_LIST" "96d: the gesture never reached the list"
 
 # ================================================================ pCloud, at the top and inside a group
 #
@@ -261,5 +275,59 @@ pull_to_refresh
 refute_question "96g"
 sleep "$SETTLE"
 expect_fetched "96g: the group's folder was listed on the gesture alone" "$before"
+
+# ================================================================ pCloud, inside a folder, and with the pull off
+
+step "inside the folder InGroup a pull lists that folder"
+if ! ui_wait_exact_text "InGroup" 30 "96h-group"; then
+    fail "InGroup is not in the group $FIXTURE_GROUP_PARENT_NAME, so there is no folder to open"
+    screenshot "96h-no-folder"
+    finish
+fi
+
+logcat_reset
+ui_tap_exact_text "InGroup" "96h-open" || finish
+sleep 3
+before="$(fetches)"
+pull_to_refresh
+sleep "$SETTLE"
+expect_fetched "96h: the folder was listed on the gesture alone" "$before"
+capture_log "96h"
+expect_log "$PULLED_FOLDER" "96h: the gesture reached the folder"
+"${ADB[@]}" shell input keyevent KEYCODE_BACK
+sleep 2
+
+# pCloud's "pull to refresh" switch is the gesture on pCloud, the same as the share's: off,
+# neither the list nor a folder of it can be pulled. The account is listed from the menu first,
+# so that there is a folder to open
+step "with pCloud's pull off, neither the list nor a folder can be pulled"
+seed_pcloud FIXTURE_RESCAN_ON_PULL_TO_REFRESH=false FIXTURE_ASK_BEFORE_PULL_TO_REFRESH=true
+FIXTURE_STORAGE_FILTER=2
+app_start
+sleep 4
+open_overflow_menu
+sleep 1
+ui_tap_text "Rescan pCloud" "96i-menu"
+if ! ui_wait_exact_text "Outside" 60 "96i-list"; then
+    fail "Outside never turned up in the folder list, so there is no folder to open"
+    screenshot "96i-no-folder"
+    finish
+fi
+
+sleep "$SETTLE"
+logcat_reset
+before="$(fetches)"
+pull_to_refresh
+refute_question "96i"
+capture_log "96i-list"
+refute_log "$PULLED_LIST" "96i: the gesture never reached the list"
+
+ui_tap_exact_text "Outside" "96i-open" || finish
+sleep 3
+pull_to_refresh
+sleep "$SETTLE"
+capture_log "96i-folder"
+refute_log "$PULLED_FOLDER" "96i: the gesture never reached the folder"
+expect_not_fetched "96i: pCloud was asked for nothing by either pull" "$before"
 
 finish

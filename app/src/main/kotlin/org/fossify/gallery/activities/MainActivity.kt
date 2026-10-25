@@ -110,6 +110,7 @@ import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.storageLabel
 import org.fossify.gallery.extensions.isRemotePath
 import org.fossify.gallery.extensions.isShownByStorageFilter
+import org.fossify.gallery.extensions.canPullFolderList
 import org.fossify.gallery.extensions.effectiveStorageFilter
 import org.fossify.gallery.extensions.findNewPCloudFolders
 import org.fossify.gallery.extensions.findNewSmbFolders
@@ -197,6 +198,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // what the recheck says about how much of the list it went through
         private const val TAG_RECHECK = "FolderRecheck"
+        const val TAG_PULL = "PullToRefresh"
 
         // how often the recheck may build the folder list again while it runs. Long enough that
         // a thousand folders cost a handful of rebuilds rather than a thousand, short enough
@@ -421,7 +423,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         binding.directoriesFastscroller.updateColors(primaryColor)
-        binding.directoriesRefreshLayout.isEnabled = config.enablePullToRefresh
+        binding.directoriesRefreshLayout.isEnabled = canPullFolderList()
         getRecyclerAdapter()?.apply {
             dateFormat = config.dateFormat
             timeFormat = getTimeFormat()
@@ -699,8 +701,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         binding.mainMenu.onSearchTextChangedListener = { text ->
             setupAdapter(mDirsIgnoringSearch, text)
-            binding.directoriesRefreshLayout.isEnabled =
-                text.isEmpty() && config.enablePullToRefresh
+            binding.directoriesRefreshLayout.isEnabled = text.isEmpty() && canPullFolderList()
             binding.directoriesSwitchSearching.beVisibleIf(text.isNotEmpty())
         }
 
@@ -913,6 +914,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         config.storageFilter = newFilter
         refreshMenuItems()
+
+        // the gesture follows the storage, see PullToRefreshPolicy
+        binding.directoriesRefreshLayout.isEnabled = canPullFolderList()
 
         // A scan of a storage the list has just left is of no use to it, and the reload it would
         // end in only sends the folders on screen through their recheck once more. The scheduler
@@ -1332,6 +1336,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // group's folders, on every storage -- this device's rechecked, the remote ones rescanned
     // if their settings say so. What is on screen is what the gesture is about
     private fun refreshDirectories() {
+        // the witness of test-device/drive/96: whether the gesture reached here at all
+        Log.i(TAG_PULL, "Pulled the folder list")
         val groupFolders = if (mCurrentGroupId == null) null else foldersOfCurrentGroup()
         if (!startRemoteScans(RemoteRefresh.PULL, groupFolders)) {
             getDirectories(groupFolders?.toSet())

@@ -61,6 +61,7 @@ import org.fossify.gallery.databinding.PhotoItemListBinding
 import org.fossify.gallery.databinding.ThumbnailSectionBinding
 import org.fossify.gallery.databinding.VideoItemGridBinding
 import org.fossify.gallery.databinding.VideoItemListBinding
+import org.fossify.gallery.extensions.canPullFolder
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
 import org.fossify.gallery.extensions.getShortcutImage
@@ -410,7 +411,7 @@ class MediaAdapter(
     }
 
     override fun onRowClear(myViewHolder: ViewHolder?) {
-        swipeRefreshLayout?.isEnabled = activity.config.enablePullToRefresh
+        swipeRefreshLayout?.isEnabled = activity.canPullFolder(path)
     }
 
     // the preview buttons only show up while selecting, so every visible item has to be

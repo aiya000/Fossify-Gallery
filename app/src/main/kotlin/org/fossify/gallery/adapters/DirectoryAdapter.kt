@@ -74,6 +74,7 @@ import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.PickMediumDialog
 import org.fossify.gallery.extensions.addNoMedia
 import org.fossify.gallery.extensions.checkAppendingHidden
+import org.fossify.gallery.extensions.canPullFolderList
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.isPCloudFolderHidden
 import org.fossify.gallery.extensions.isPCloudPath
@@ -1414,7 +1415,7 @@ class DirectoryAdapter(
     }
 
     override fun onRowClear(myViewHolder: ViewHolder?) {
-        swipeRefreshLayout?.isEnabled = activity.config.enablePullToRefresh
+        swipeRefreshLayout?.isEnabled = activity.canPullFolderList()
     }
 
     override fun onChange(position: Int) = dirs.getOrNull(position)?.getBubbleText(directorySorting, activity, dateFormat, timeFormat) ?: ""
