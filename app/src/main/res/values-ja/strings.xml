@@ -166,6 +166,10 @@
     <string name="smb_rescan_on_storage_switch">ストレージ切替時にネットワーク共有を再スキャン</string>
     <string name="smb_rescan_on_folder_open">共有のフォルダを開いたときに再スキャン</string>
     <string name="smb_rescan_on_pull_to_refresh">フォルダ一覧を引っぱって更新したときに共有を再スキャン（グループの中ではそのグループのフォルダだけ）</string>
+    <string name="ask_before_rescan_on_pull_to_refresh">フォルダ一覧の先頭で引っぱったときは、再スキャンの前に確認する（グループの中では確認せずに始める）</string>
+    <string name="rescan_on_pull_smb">ネットワーク共有全体を再スキャンしますか？\nすべてのフォルダをたどるので、数分かかることがあります。</string>
+    <string name="rescan_on_pull_pcloud">pCloud を再スキャンしますか？（前回からの差分だけ）</string>
+    <string name="rescan_on_pull_both">ネットワーク共有全体と pCloud を再スキャンしますか？\n共有はすべてのフォルダをたどるので、数分かかることがあります。</string>
     <string name="smb_rescan_on_unmetered_only">自動再スキャンは Wi-Fi 接続時のみ。従量制の回線では、操作で始まる再スキャン（引っぱって更新、フォルダを開く、ストレージ切替）の前に確認する</string>
     <string name="smb_rescan_interval">自動再スキャンの最小間隔</string>
     <string name="smb_fetch_failed">ネットワーク共有からファイルを取得できませんでした</string>

@@ -169,6 +169,11 @@
     <string name="smb_rescan_on_storage_switch">Rescan the network share when switching storage</string>
     <string name="smb_rescan_on_folder_open">Rescan a folder of the share when opening it</string>
     <string name="smb_rescan_on_pull_to_refresh">Rescan the share when pulling the folder list to refresh (inside a group, only its folders)</string>
+    <!-- under the row above, for both remote storages: a pull at the top of the list asks first, since it reaches the whole storage -->
+    <string name="ask_before_rescan_on_pull_to_refresh">Ask first when the pull is at the top of the folder list (inside a group it goes ahead)</string>
+    <string name="rescan_on_pull_smb">Rescan the whole network share?\nEvery folder on it is walked, which can take minutes.</string>
+    <string name="rescan_on_pull_pcloud">Rescan pCloud? (only what changed since the last scan)</string>
+    <string name="rescan_on_pull_both">Rescan the whole network share and pCloud?\nThe share is walked folder by folder, which can take minutes.</string>
     <string name="smb_rescan_on_unmetered_only">Automatic rescans on Wi-Fi only. On a metered network, ask before a rescan you started (a pull, opening a folder, switching storage)</string>
     <string name="smb_rescan_interval">Minimum interval between automatic rescans</string>
     <string name="smb_fetch_failed">Could not fetch the file from the network share</string>

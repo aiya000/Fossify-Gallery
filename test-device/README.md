@@ -324,6 +324,16 @@ at afterwards.
   app's preferences, read with `run-as`. Trips is given a folder of this device, so that it
   shows on this device's list without a walk of the share. Red with the dialog not told which
   group is open
+- **`96-ask-before-a-rescan-on-a-pull.sh`** — a pull at the top of the folder list asks before it
+  rescans a remote storage, when that storage's "ask first" setting is on; inside a group, and
+  with the setting off, it goes ahead, and with the pull not rescanning at all there is nothing
+  to ask about. A no runs nothing and a yes runs the rescan the gesture would have, and neither
+  is remembered: the next pull asks again. The share half is driven against the share, with the
+  scan starting as the witness, as in 92; the pCloud half against the stub, with the group Trips
+  given a pCloud folder (`FIXTURE_GROUP_EXTRA_MEMBER`) so that a pull inside it has something to
+  list, as in 93. The fixture seeds the setting off (`FIXTURE_ASK_BEFORE_PULL_TO_REFRESH`), where
+  the app's own default for the share is on, so that 90, 92 and 93 keep their scans starting on
+  the gesture alone
 - **`98-save-as-out-of-the-editor.sh`** — #105: the editor's "Save as" asks where and under what
   name on every storage, and sends the edit there. A photo of the share is edited twice, and each
   edit saved under a new name somewhere else: into another folder of the share, read off
