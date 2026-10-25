@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Build
+import android.util.Log
 import com.bumptech.glide.Priority
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.Options
@@ -20,6 +21,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.io.InputStream
+import java.util.concurrent.CancellationException
 
 // Feeds Glide the thumbnails of SMB media. Every loadImage() caller hands Glide a medium as a
 // plain path string, so this loader is prepended to the String loaders in SvgModule and takes
@@ -28,7 +30,13 @@ import java.io.InputStream
 // A share renders no thumbnails of its own, so there is nothing to ask it for: a photo is read
 // whole and Glide downsamples it while decoding, and a video has one frame pulled out of it
 // over random reads. Both are decoded once -- what Glide keeps in its disk cache afterwards is
-// the small bitmap, so the cost is paid per file, not per scroll
+// the small bitmap, so the cost is paid per file, not per scroll.
+//
+// The reading is done on RemoteThumbnails' threads, not Glide's (#165): loadData() hands the
+// work over and returns, and Glide is called back once every byte is on the device, so that
+// its own threads are never held by the network and this device's tiles never wait behind
+// the share's. That is also why a photo goes through SmbFileCache rather than straight off the
+// share: a stream read during the decode would be the network on Glide's thread after all
 class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputStream> {
     override fun handles(model: String) = model.isSmbPath()
 
@@ -61,38 +69,48 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         private var cancelled = false
         private var stream: InputStream? = null
 
-        // The file the stream is being read out of, when there is one. Closing the stream does
-        // not close it: smbj's own close() only drops its buffer, and the handle the share is
-        // holding open stays open until the file itself is closed
-        private var openFile: SmbClient.OpenFile? = null
-
-        // what the bytes came from, so that a photo read straight off the share is not reported
-        // as a local load
+        // what the bytes came from, so that a photo already on the device is not reported as a
+        // remote load
+        @Volatile
         private var source = DataSource.REMOTE
 
+        // Hands the read to RemoteThumbnails and returns at once; Glide hears back from that
+        // thread. A fetch Glide has cancelled by then -- the tile scrolled away, the list
+        // switched to another storage -- is not read at all, which is the other half of #165:
+        // Glide drops a job that has not started, but a fetcher that has started is left to run
+        // to the end, so the check is made here, on the far side of the queue
         override fun loadData(priority: Priority, callback: DataFetcher.DataCallback<in InputStream>) {
             if (context.config.smbConnectionOf(path) == null) {
                 callback.onLoadFailed(IllegalStateException("No SMB share is configured for $path"))
                 return
             }
 
-            try {
-                val stream = if (isVideo) frameStream() else photoStream()
-                this.stream = stream
+            RemoteThumbnails.submit(priority) {
                 if (cancelled) {
-                    cleanup()
-                    return
+                    callback.onLoadFailed(CancellationException("The thumbnail of $path was no longer wanted"))
+                    return@submit
                 }
 
-                callback.onDataReady(stream)
-            } catch (e: Exception) {
-                cleanup()
-                callback.onLoadFailed(e)
+                try {
+                    val stream = if (isVideo) frameStream() else photoStream()
+                    this.stream = stream
+                    Log.d(TAG, "Read the thumbnail of $path on ${Thread.currentThread().name}")
+                    if (cancelled) {
+                        cleanup()
+                        callback.onLoadFailed(CancellationException("The thumbnail of $path was no longer wanted"))
+                        return@submit
+                    }
+
+                    callback.onDataReady(stream)
+                } catch (e: Exception) {
+                    cleanup()
+                    callback.onLoadFailed(e)
+                }
             }
         }
 
-        // the copy the viewer already fetched, if there is one, so that going back to the grid
-        // does not read the file again; otherwise straight off the share
+        // The photo as a file on the device, fetched into SmbFileCache if it is not there yet,
+        // so that what Glide decodes from is the disk. The viewer reads the same copy afterwards
         private fun photoStream(): InputStream {
             // a picture Glide cannot rewind is decoded here instead, whichever of the two it
             // would have come from -- the bytes are the same bytes, and it is their number that
@@ -101,15 +119,14 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
                 return sampledPhotoStream()
             }
 
-            val cached = SmbFileCache(context).peek(path)
+            val cache = SmbFileCache(context)
+            val cached = cache.peek(path)
             if (cached != null) {
                 source = DataSource.LOCAL
                 return FileInputStream(cached)
             }
 
-            val open = SmbClient.open(context, path)
-            openFile = open
-            return open.inputStream()
+            return FileInputStream(cache.fetch(path))
         }
 
         // The same picture, decoded down to about the size of the tile it is going into and
@@ -186,8 +203,6 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         override fun cleanup() {
             stream?.close()
             stream = null
-            openFile?.close()
-            openFile = null
         }
 
         override fun cancel() {
@@ -201,5 +216,9 @@ class SmbStreamLoader(private val context: Context) : ModelLoader<String, InputS
         companion object {
             private const val FRAME_QUALITY = 90
         }
+    }
+
+    companion object {
+        const val TAG = "RemoteThumbnails"
     }
 }

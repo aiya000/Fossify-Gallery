@@ -30,6 +30,7 @@
 | 端末を動かすテストで、あるマスを境に pCloud のマスが全部落ちた。メニューにもピッカーにも pCloud が無い | stub が知らない API（`renamefile`）に 1000 番で答えていた。pCloud の 1000 は「ログインが必要」で、アプリがログアウトしていた。API を足し、知らない API は 5000 にした | [agents/tests/a-stub-refusal-that-signed-the-app-out.md](./agents/tests/a-stub-refusal-that-signed-the-app-out.md) |
 | 台本のチェックが「見つからない」で落ちた。画面にもファイルにもちゃんとある。通ったり落ちたりする | `adb ... \| rg -q` の形で、`rg -q` が先にパイプを閉じて `pipefail` で失敗になっていた。一度変数に受けてから探す | [agents/tests/a-found-match-that-failed-the-check.md](./agents/tests/a-found-match-that-failed-the-check.md) |
 | ある機能が端末にはあって共有（や pCloud）に無い。忘れているのか、わざとなのか分からない | #107 で全部読み直して分けた。わざと違えてあるものは表にした。載っていなければ抜けなので、`MediaStorage` の capability に乗せて直す | [agents/storage/what-each-storage-does-differently-on-purpose.md](./agents/storage/what-each-storage-does-differently-on-purpose.md) |
+| 共有を見たあと端末に切り替えると、端末のサムネが長く出ない | Glide のプールが共有の読み込みにふさがれていた。`cancel()` はフラグだけ。リモートの fetcher を非同期にして自前のプールで読み、端末のタイルを `HIGH` にした | [agents/thumbnails/remote-reads-off-glides-threads.md](./agents/thumbnails/remote-reads-off-glides-threads.md) |
 
 ### この索引に足すこと
 

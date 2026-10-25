@@ -90,7 +90,17 @@ at afterwards.
 - **`40-share-thumbnails.sh`** — every medium in `Renders/` gets a thumbnail, whatever size the
   file is. The check is on the pixels rather than on the view tree, because the failure it was
   written for drew nothing at all — not even the warning icon — and a view tree says the same
-  thing either way. It walks the whole share first, so on its own it is about five minutes
+  thing either way. It walks the whole share first, so on its own it is about five minutes.
+  Since #165 it also reads off the log whose thread each read of the share ran on, and fails
+  on one of Glide's
+- **`41-remote-thumbnails-off-glides-threads.sh`** — #165: the thumbnails of a remote storage are
+  fetched on threads of the app's own (`remote-thumbnails-N`), never on Glide's, so that this
+  device's tiles are never stuck behind a fetch from the network. The pCloud half, against the
+  stub, because it is seconds: a folder of the fixture's screens is listed and opened, every tile
+  has to draw (thumbs.py), and every read in the log has to name one of the app's own threads.
+  The thread name is the witness because the slowness itself does not reproduce on a fast local
+  network: the fix is about where the waiting happens, not how long it is. Red with the fetchers
+  reading on the thread Glide calls them on
 - **`45-properties-on-the-share.sh`** — #60: the (i) of a medium on the share opens a dialog, and
   that dialog says which storage the medium is on. It used to answer with a toast saying the
   source file does not exist and no dialog at all. Both ways in are driven, the viewer and the

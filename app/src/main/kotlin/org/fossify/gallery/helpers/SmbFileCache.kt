@@ -6,6 +6,7 @@ import org.fossify.gallery.extensions.mediaDB
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 // Local copies of SMB files, for the parts of the app that need a real file: the zoomable photo
 // view, GIF and SVG decoding, the editor. The same shape as PCloudFileCache, with one
@@ -20,6 +21,9 @@ class SmbFileCache(private val context: Context) {
         // off can never be picked up as a whole file
         private const val PARTIAL_SUFFIX = ".part"
 
+        // one lock per copy's name, for the fetches in flight; see fetch()
+        private val inFlight = ConcurrentHashMap<String, Any>()
+
         // what the cached copy of a medium is called. Only the scanned rows know the size and
         // the modification time, so a medium that is not in the cache has no name here
         fun nameOf(path: String, size: Long, modified: Long): String {
@@ -32,9 +36,21 @@ class SmbFileCache(private val context: Context) {
     private val dir = File(context.cacheDir, SMB_CACHE_DIR)
 
     // Blocks and talks to the network, so call it off the main thread. Throws FileNotFoundException
-    // for a path no scan has seen and an IOException when the share refused or the read was short
+    // for a path no scan has seen and an IOException when the share refused or the read was short.
+    //
+    // One download per copy at a time: the thumbnail of a photo and the viewer opening the same
+    // photo can ask for it together (#165 put the thumbnails through here), and two downloads
+    // into the same partial file would tear each other up. The second asker waits on the first
+    // and finds the copy there
     fun fetch(path: String): File {
         val target = targetOf(path) ?: throw FileNotFoundException(path)
+        val lock = inFlight.computeIfAbsent(target.name) { Any() }
+        synchronized(lock) {
+            return fetchLocked(path, target)
+        }
+    }
+
+    private fun fetchLocked(path: String, target: File): File {
         if (target.isFile && target.length() > 0) {
             target.setLastModified(System.currentTimeMillis())
             return target
