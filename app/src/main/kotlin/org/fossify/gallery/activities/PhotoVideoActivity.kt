@@ -45,6 +45,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.logQuietFailure
 import org.fossify.gallery.databinding.FragmentHolderBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.hideSystemUI
@@ -334,6 +335,7 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
                 return cursor.moveToFirst()
             }
         } catch (e: Exception) {
+            logQuietFailure("ask MediaStore about $path", e)
         }
 
         return false

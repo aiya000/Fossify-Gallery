@@ -18,6 +18,7 @@ import org.fossify.commons.extensions.getStringValue
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.updateDirectoryPath
+import org.fossify.gallery.helpers.logQuietFailure
 
 // based on https://developer.android.com/reference/android/app/job/JobInfo.Builder.html#addTriggerContentUri(android.app.job.JobInfo.TriggerContentUri)
 class NewPhotoFetcher : JobService() {
@@ -47,7 +48,8 @@ class NewPhotoFetcher : JobService() {
 
             try {
                 context.getSystemService(JobScheduler::class.java)?.schedule(build())
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("schedule the job that notices new photos", e)
             }
         }
     }
@@ -92,7 +94,8 @@ class NewPhotoFetcher : JobService() {
                                 addPathToDB(path)
                             }
                         }
-                    } catch (ignored: Exception) {
+                    } catch (e: Exception) {
+                        logQuietFailure("read the new media off MediaStore", e)
                     } finally {
                         cursor?.close()
                     }

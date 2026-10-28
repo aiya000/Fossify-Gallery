@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
@@ -534,7 +535,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     handleGridSpacing(grouped)
                     getMediaAdapter()?.updateMedia(grouped)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("filter the grid for \"$text\"", e)
             }
         }
     }
@@ -919,6 +921,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                             }
                         }
                 } catch (e: Exception) {
+                    logQuietFailure("take the gone media of $mPath off the cache", e)
                 }
             }
         }
@@ -957,7 +960,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         ensureBackgroundThread {
             try {
                 directoryDB.deleteDirPath(mPath)
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("take the folder $mPath off the cache", e)
             }
         }
     }
@@ -1166,7 +1170,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                         try {
                             WallpaperManager.getInstance(applicationContext).setBitmap(resource)
                             setResult(RESULT_OK)
-                        } catch (ignored: IOException) {
+                        } catch (e: IOException) {
+                            // a toast: this screen is closing, and would take a bar of its own with it
+                            showErrorToast(e)
+                            setResult(RESULT_CANCELED)
                         }
 
                         finish()
@@ -1258,6 +1265,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                 try {
                     mediaDB.insertAll(mediaToInsert)
                 } catch (e: Exception) {
+                    logQuietFailure("cache the media of $mPath", e)
                 }
             }.start()
         }

@@ -239,10 +239,14 @@ dependencies {
 }
 
 // StringFormatArgumentsTest reads the string XML at run time rather than through the classpath,
-// and gradle cannot see that from the test's inputs: without this the task stays up to date when
-// a string changes, so the run after a bad translation passes without having run anything
+// and NoSilentCatchTest reads the Kotlin sources the same way; gradle cannot see either from the
+// test's inputs: without this the task stays up to date when a string or a source changes, so
+// the run after a bad translation or a new empty catch passes without having run anything
 tasks.withType<Test>().configureEach {
     inputs.dir(layout.projectDirectory.dir("src/main/res"))
         .withPropertyName("resources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(layout.projectDirectory.dir("src/main/kotlin"))
+        .withPropertyName("sources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }

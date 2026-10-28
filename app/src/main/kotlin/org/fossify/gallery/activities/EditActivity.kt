@@ -88,6 +88,7 @@ import org.fossify.gallery.helpers.getPermissionToRequest
 import org.fossify.gallery.models.FilterItem
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.OutputStream
 import kotlin.math.max
 
@@ -1086,7 +1087,11 @@ class EditActivity : BaseCropActivity(), InAppMessageAnchor {
             } catch (e: Exception) {
                 showInAppError(e)
             } finally {
-                try { out?.close() } catch (_: Exception) {}
+                try {
+                    out?.close()
+                } catch (_: IOException) {
+                    // a stream that will not close has nothing more to give; the write was judged above
+                }
             }
         }
     }

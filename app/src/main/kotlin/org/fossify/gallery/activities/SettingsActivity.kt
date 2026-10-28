@@ -15,6 +15,7 @@ import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.logQuietFailure
 import org.fossify.gallery.databinding.ActivitySettingsBinding
 import org.fossify.gallery.dialogs.*
 import org.fossify.gallery.extensions.*
@@ -1193,7 +1194,8 @@ class SettingsActivity : SimpleActivity() {
                         size
                     }
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("size the recycle bin", e)
             }
 
             runOnUiThread {

@@ -13,6 +13,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.views.MyGridLayoutManager
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.logQuietFailure
 import org.fossify.gallery.adapters.MediaAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
 import org.fossify.gallery.databinding.ActivitySearchBinding
@@ -112,7 +113,8 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
                     handleGridSpacing(grouped)
                     getMediaAdapter()?.updateMedia(grouped)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("filter the search for \"$text\"", e)
             }
         }
     }

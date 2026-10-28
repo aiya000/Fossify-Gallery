@@ -16,6 +16,7 @@ import android.os.Process
 import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.Priority
@@ -529,7 +530,8 @@ fun Context.getNoMediaFoldersSync(): ArrayList<String> {
                 }
             } while (cursor.moveToNext())
         }
-    } catch (ignored: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("list the .nomedia folders off MediaStore", e)
     } finally {
         cursor?.close()
     }
@@ -586,7 +588,8 @@ fun Context.rescanFolderMediaSync(path: String) {
                             }
                         }
                     }
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
+                    logQuietFailure("write the media of $path into the cache", e)
                 }
             }
         }.execute()
@@ -1250,6 +1253,7 @@ fun Context.tryLoadingWithPicasso(
 
         builder.into(view)
     } catch (e: Exception) {
+        logQuietFailure("load a thumbnail with Picasso", e)
     }
 }
 
@@ -1268,6 +1272,7 @@ fun Context.getCachedDirectories(
         try {
             Process.setThreadPriority(Process.THREAD_PRIORITY_MORE_FAVORABLE)
         } catch (ignored: Exception) {
+            // the priority is a nicety; a device that refuses it lists the folders just as well
         }
 
         val directories = try {
@@ -1399,7 +1404,8 @@ fun Context.getCachedMedia(
             try {
                 val currMedia = mediaDB.getMediaFromPath(it)
                 media.addAll(currMedia)
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("read the cached media of $it", e)
             }
         }
 
@@ -1448,11 +1454,13 @@ fun Context.getCachedMedia(
                         mediaToDelete.filter { it.isFavorite }.forEach {
                             favoritesDB.deleteFavoritePath(it.path)
                         }
-                    } catch (ignored: Exception) {
+                    } catch (e: Exception) {
+                        logQuietFailure("take the media that are gone off the cache", e)
                     }
                 }
             }.start()
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("look for cached media that are gone", e)
         }
     }
 }
@@ -1472,7 +1480,8 @@ fun Context.removeInvalidDBDirectories(dirs: ArrayList<Directory>? = null) {
     }.forEach {
         try {
             directoryDB.deleteDirPath(it.path)
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("take the folder ${it.path} off the cache", e)
         }
     }
 }
@@ -1491,7 +1500,8 @@ fun Context.updateDBMediaPath(oldPath: String, newPath: String) {
     try {
         mediaDB.updateMedium(oldPath = oldPath, newParentPath = newParentPath, newFilename = newFilename, newFullPath = newPath)
         favoritesDB.updateFavorite(newFilename = newFilename, newFullPath = newPath, newParentPath = newParentPath, oldPath = oldPath)
-    } catch (ignored: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("rename $oldPath to $newPath in the cache", e)
     }
 }
 
@@ -1507,7 +1517,8 @@ fun Context.updateDBDirectory(directory: Directory) {
             mediaTypes = directory.types,
             sortValue = directory.sortValue
         )
-    } catch (ignored: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("update the folder ${directory.path} in the cache", e)
     }
 }
 
@@ -1569,7 +1580,8 @@ fun Context.deleteDBPath(path: String) {
 fun Context.deleteMediumWithPath(path: String) {
     try {
         mediaDB.deleteMediumPath(path)
-    } catch (ignored: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("take $path off the cache", e)
     }
 }
 
@@ -1651,6 +1663,8 @@ fun Context.parseFileChannel(
             fc.position(newEnd)
         }
     } catch (ignored: Exception) {
+        // a container that cannot be read through is not a panorama: that is the answer, not a
+        // failure
     }
 }
 
@@ -1688,7 +1702,8 @@ fun Context.addPathToDB(path: String) {
             )
 
             mediaDB.insert(medium)
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("add $path to the cache", e)
         }
     }
 }
@@ -1866,7 +1881,8 @@ fun Context.getFileDateTaken(path: String): Long {
                 return cursor.getLongValue(Images.Media.DATE_TAKEN)
             }
         }
-    } catch (ignored: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("read the date taken of $path off MediaStore", e)
     }
 
     return 0L

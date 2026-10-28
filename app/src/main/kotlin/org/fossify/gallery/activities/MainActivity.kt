@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.ViewConfiguration
@@ -1863,7 +1864,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
                     dirs.add(0, recycleBin)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("count the recycle bin", e)
             }
         }
 
@@ -1997,7 +1999,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     Thread {
                         try {
                             mediaDB.insertAll(curMedia)
-                        } catch (ignored: Exception) {
+                        } catch (e: Exception) {
+                            logQuietFailure("cache the media of ${directory.path}", e)
                         }
                     }.start()
                 }
@@ -2126,7 +2129,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     if (folder != RECYCLE_BIN && folder != FAVORITES) {
                         mediaDB.insertAll(newMedia)
                     }
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
+                    logQuietFailure("cache the new folder $folder", e)
                 }
             }.start()
         }
@@ -2394,7 +2398,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 if (binFolder != null && mediaDB.getDeletedMediaCount() == 0L) {
                     invalidDirs.add(binFolder)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Exception) {
+                logQuietFailure("count the recycle bin", e)
             }
         }
 
@@ -2408,7 +2413,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             invalidDirs.forEach {
                 try {
                     directoryDB.deleteDirPath(it.path)
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
+                    logQuietFailure("take the folder ${it.path} off the cache", e)
                 }
             }
         }
@@ -2520,6 +2526,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     }
                 }
             } catch (e: Exception) {
+                logQuietFailure("look for folders to exclude", e)
             }
         }
     }
@@ -2539,7 +2546,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     }
                 }
             }
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("walk $path for folders with media", e)
         }
 
         return folders
