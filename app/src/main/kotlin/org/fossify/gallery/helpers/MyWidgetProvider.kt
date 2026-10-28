@@ -71,13 +71,15 @@ class MyWidgetProvider : AppWidgetProvider() {
                         .get()
                     views.setImageViewBitmap(R.id.widget_imageview, image)
                 } catch (e: Exception) {
+                    logQuietFailure("render $path into the widget", e)
                 }
 
                 setupAppOpenIntent(context, views, R.id.widget_holder, it)
 
                 try {
                     appWidgetManager.updateAppWidget(it.widgetId, views)
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
+                    logQuietFailure("update the widget ${it.widgetId}", e)
                 }
             }
         }

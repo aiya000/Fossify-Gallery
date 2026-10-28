@@ -186,6 +186,7 @@ import org.fossify.gallery.helpers.getPermissionToRequest
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import java.io.File
+import java.io.IOException
 import kotlin.math.min
 
 @Suppress("UNCHECKED_CAST")
@@ -1296,6 +1297,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     }
                 }).submit(requestedWidth, requestedHeight)
         } catch (e: Exception) {
+            showInAppError(e)
         }
     }
 
@@ -1523,7 +1525,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 val exif = ExifInterface(pathToLoad)
                 val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, -1)
                 flipSides = orientation == ExifInterface.ORIENTATION_ROTATE_90 || orientation == ExifInterface.ORIENTATION_ROTATE_270
-            } catch (e: Exception) {
+            } catch (ignored: IOException) {
+                // a photo whose EXIF cannot be read has no orientation to flip by; the default is right
             }
             val resolution = applicationContext.getResolution(getCurrentPath()) ?: return
             val width = if (flipSides) resolution.y else resolution.x

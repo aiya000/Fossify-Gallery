@@ -834,7 +834,10 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
                 }
             }
         } catch (ignored: Exception) {
+            // a video that cannot be read through is not a panorama: that is the answer, not a
+            // failure
         } catch (ignored: OutOfMemoryError) {
+            // the same answer for a video too big to read through
         }
     }
 

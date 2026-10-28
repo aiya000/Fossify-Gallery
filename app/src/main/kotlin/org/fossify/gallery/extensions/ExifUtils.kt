@@ -3,6 +3,7 @@ package org.fossify.gallery.extensions
 import android.content.Context
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import org.fossify.gallery.helpers.logQuietFailure
 import java.io.File
 import java.io.InputStream
 
@@ -142,7 +143,8 @@ fun ExifInterface.copyNonDimensionAttributesTo(destination: ExifInterface) {
 
     try {
         destination.saveAttributes()
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        logQuietFailure("write the EXIF attributes into the copy", e)
     }
 }
 

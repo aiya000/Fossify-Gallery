@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -212,7 +213,8 @@ open class SimpleActivity : BaseSimpleActivity() {
         try {
             contentResolver.registerContentObserver(Images.Media.EXTERNAL_CONTENT_URI, true, observer)
             contentResolver.registerContentObserver(Video.Media.EXTERNAL_CONTENT_URI, true, observer)
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("listen for changes of MediaStore", e)
         }
     }
 
@@ -220,6 +222,7 @@ open class SimpleActivity : BaseSimpleActivity() {
         try {
             contentResolver.unregisterContentObserver(observer)
         } catch (ignored: Exception) {
+            // an observer that was never registered cannot be unregistered, and that is all this is
         }
     }
 

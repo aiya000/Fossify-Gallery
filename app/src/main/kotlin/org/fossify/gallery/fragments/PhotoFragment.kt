@@ -74,6 +74,7 @@ import org.fossify.commons.helpers.DEFAULT_ANIMATION_DURATION
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.logQuietFailure
 import org.fossify.gallery.activities.BaseViewerActivity
 import org.fossify.gallery.activities.PhotoActivity
 import org.fossify.gallery.activities.PhotoVideoActivity
@@ -319,6 +320,8 @@ class PhotoFragment : ViewPagerFragment() {
                     Glide.with(requireContext()).clear(binding.gesturesView)
                 }
             } catch (ignored: Exception) {
+                // Glide refuses a clear once the activity under it is destroyed, and then there is
+                // nothing left to clear
             }
         }
 
@@ -598,7 +601,8 @@ class PhotoFragment : ViewPagerFragment() {
                     }
                 }
             })
-        } catch (ignored: Exception) {
+        } catch (e: Exception) {
+            logQuietFailure("load $pathToLoad with Picasso", e)
         }
     }
 
@@ -884,7 +888,9 @@ class PhotoFragment : ViewPagerFragment() {
                 orient = exif2.getTag(ExifInterface.TAG_ORIENTATION)?.getValueAsInt(defaultOrientation) ?: defaultOrientation
             }
         } catch (ignored: Exception) {
+            // a photo whose EXIF cannot be read keeps the default orientation
         } catch (ignored: OutOfMemoryError) {
+            // the same for one too big to read the EXIF of
         }
         return orient
     }

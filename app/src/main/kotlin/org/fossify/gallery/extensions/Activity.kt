@@ -19,6 +19,7 @@ import android.provider.MediaStore.Images
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
@@ -1078,15 +1079,26 @@ fun BaseSimpleActivity.resizeImage(oldPath: String, newPath: String, size: Point
     getFileOutputStream(newFileDirItem, true) { out ->
         if (out != null) {
             out.use {
-                try {
+                // the write is what the caller is waiting on; this used to answer true whatever
+                // happened, and the screen then said "File saved" over a file that was not
+                val written = try {
                     newBitmap.compress(newFile.absolutePath.getCompressionFormat(), 90, out)
-
-                    val newExif = ExifInterface(newFile.absolutePath)
-                    oldExif.copyNonDimensionAttributesTo(newExif)
-                } catch (ignored: Exception) {
+                } catch (e: Exception) {
+                    logQuietFailure("write the resized copy to $newPath", e)
+                    false
                 }
 
-                callback(true)
+                if (written) {
+                    try {
+                        val newExif = ExifInterface(newFile.absolutePath)
+                        oldExif.copyNonDimensionAttributesTo(newExif)
+                    } catch (e: IOException) {
+                        // the copy is there; only its EXIF is not
+                        logQuietFailure("carry the EXIF of $oldPath over to $newPath", e)
+                    }
+                }
+
+                callback(written)
             }
         } else {
             callback(false)
@@ -1133,6 +1145,7 @@ fun Activity.getShortcutImage(tmb: String, drawable: Drawable, callback: () -> U
         try {
             (drawable as LayerDrawable).setDrawableByLayerId(R.id.shortcut_image, builder.get())
         } catch (e: Exception) {
+            logQuietFailure("draw the thumbnail into the shortcut", e)
         }
 
         runOnUiThread {

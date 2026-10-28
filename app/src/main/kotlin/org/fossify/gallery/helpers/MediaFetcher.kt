@@ -12,6 +12,7 @@ import android.provider.MediaStore.Files
 import android.provider.MediaStore.Images
 import android.text.format.DateFormat
 import android.util.Log
+import org.fossify.gallery.helpers.logQuietFailure
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.gallery.R
@@ -549,6 +550,7 @@ class MediaFetcher(val context: Context) {
 
                 media[parent]?.add(medium)
             } catch (e: Exception) {
+                logQuietFailure("read a medium's row out of MediaStore", e)
             }
         }
 
@@ -713,7 +715,8 @@ class MediaFetcher(val context: Context) {
                         val name = cursor.getStringValue(Images.Media.DISPLAY_NAME)
                         dateTakens["$folder/$name"] = dateTaken
                     }
-                } catch (e: Exception) {
+                } catch (ignored: Exception) {
+                    // a row this column cannot be read off is left out; the caller reads the file itself
                 }
             }
         }
@@ -752,7 +755,8 @@ class MediaFetcher(val context: Context) {
                         val path = cursor.getStringValue(Images.Media.DATA)
                         dateTakens[path] = dateTaken
                     }
-                } catch (e: Exception) {
+                } catch (ignored: Exception) {
+                    // a row this column cannot be read off is left out; the caller reads the file itself
                 }
             }
 
@@ -762,6 +766,7 @@ class MediaFetcher(val context: Context) {
                 dateTakens[it.fullPath] = it.taken
             }
         } catch (e: Exception) {
+            logQuietFailure("read the dates taken off MediaStore", e)
         }
 
         return dateTakens
@@ -786,7 +791,8 @@ class MediaFetcher(val context: Context) {
                         val name = cursor.getStringValue(Images.Media.DISPLAY_NAME)
                         lastModifieds["$folder/$name"] = lastModified
                     }
-                } catch (e: Exception) {
+                } catch (ignored: Exception) {
+                    // a row this column cannot be read off is left out; the caller reads the file itself
                 }
             }
         }
@@ -811,10 +817,12 @@ class MediaFetcher(val context: Context) {
                         val path = cursor.getStringValue(Images.Media.DATA)
                         lastModifieds[path] = lastModified
                     }
-                } catch (e: Exception) {
+                } catch (ignored: Exception) {
+                    // a row this column cannot be read off is left out; the caller reads the file itself
                 }
             }
         } catch (e: Exception) {
+            logQuietFailure("read the modification times off MediaStore", e)
         }
 
         return lastModifieds
@@ -839,7 +847,8 @@ class MediaFetcher(val context: Context) {
                         val name = cursor.getStringValue(Images.Media.DISPLAY_NAME)
                         sizes["$folder/$name"] = size
                     }
-                } catch (e: Exception) {
+                } catch (ignored: Exception) {
+                    // a row this column cannot be read off is left out; the caller reads the file itself
                 }
             }
         }
