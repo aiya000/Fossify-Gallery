@@ -3,7 +3,6 @@ package org.fossify.gallery.extensions
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
-import org.fossify.commons.extensions.toast
 
 fun View.sendFakeClick(x: Float, y: Float) {
     val uptime = SystemClock.uptimeMillis()
@@ -17,7 +16,7 @@ fun View.showContentDescriptionOnLongClick() {
     setOnLongClickListener {
         val contentDescription = contentDescription
         if (contentDescription != null) {
-            context.toast(contentDescription.toString())
+            showInAppMessage(contentDescription.toString())
         }
         true
     }

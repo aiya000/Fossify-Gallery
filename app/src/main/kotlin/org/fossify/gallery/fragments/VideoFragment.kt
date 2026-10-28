@@ -65,8 +65,8 @@ import org.fossify.commons.extensions.isGone
 import org.fossify.commons.extensions.isVisible
 import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.setDrawablesRelativeWithIntrinsicBounds
-import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.helpers.DEFAULT_ANIMATION_DURATION
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -598,7 +598,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
             fileDataSource.open(dataSpec)
         } catch (e: Exception) {
             fileDataSource.close()
-            activity?.showErrorToast(e)
+            activity?.showInAppError(e)
             return null
         }
 
@@ -653,7 +653,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         val context = context ?: return
         val cache = SmbVideoCache(context.applicationContext)
         if (cache.peek(mMedium.path, mMedium.size, mMedium.modified) != null) {
-            context.toast(R.string.smb_download_already)
+            context.showInAppMessage(R.string.smb_download_already)
             return
         }
 
@@ -663,7 +663,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         }
 
         if (!SmbDownloadService.start(context, listOf(mMedium.path))) {
-            context.toast(R.string.smb_download_busy)
+            context.showInAppMessage(R.string.smb_download_busy)
             return
         }
 
@@ -725,7 +725,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
                 val item = context.pCloudItemsDB.getItem(mMedium.path)
                 if (item == null) null else PCloudApi.getFileLink(config.pCloudApiHost, config.pCloudAccessToken, item.itemId)
             } catch (e: Exception) {
-                activity?.showErrorToast(e)
+                activity?.showInAppError(e)
                 null
             }
 
@@ -985,7 +985,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         if (mHasAudio) {
             if (isMuted) mExoPlayer?.mute() else mExoPlayer?.unmute()
         } else if (showToast && mWasVideoStarted) {
-            activity?.toast(R.string.video_no_sound)
+            activity?.showInAppMessage(R.string.video_no_sound)
         }
 
         val drawableId = when {

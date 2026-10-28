@@ -57,9 +57,9 @@ import org.fossify.commons.extensions.isMediaFile
 import org.fossify.commons.extensions.isPathOnOTG
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
 import org.fossify.commons.extensions.sdCardPath
-import org.fossify.commons.extensions.showErrorToast
+import org.fossify.gallery.extensions.showInAppError
 import org.fossify.commons.extensions.toFileDirItem
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.underlineText
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.DAY_SECONDS
@@ -776,7 +776,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     && newFolder.getFileCount(true) == 0
                     && newFolder.list()?.isEmpty() == true
                 ) {
-                    toast(
+                    showInAppMessage(
                         String.format(
                             getString(org.fossify.commons.R.string.deleting_folder),
                             config.tempFolderPath
@@ -1348,7 +1348,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // The spinner is not started for it: the walk outlives this screen, and its progress is in
     // the notification the service puts up
     private fun rescanSmbManually() {
-        toast(R.string.smb_rescanning)
+        showInAppMessage(R.string.smb_rescanning)
         rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL)
     }
 
@@ -1374,7 +1374,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             runOnUiThread {
                 if (paths.isEmpty()) {
                     // nothing to ask about, so it is reported as the run that it was
-                    toast(getString(R.string.smb_read_durations_done, 0))
+                    showInAppMessage(getString(R.string.smb_read_durations_done, 0))
                     return@runOnUiThread
                 }
 
@@ -1391,7 +1391,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // the question, wherever it is. The share's result comes back through the service's
     // listener like a rescan's; the spinner is not raised, for the same reason a rescan's is not
     private fun findNewFolders() {
-        toast(R.string.finding_new_folders)
+        showInAppMessage(R.string.finding_new_folders)
         findNewSmbFolders(priority = RemoteScanScheduler.PRIORITY_MANUAL)
         findNewPCloudFolders(priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getDirectories() } }
     }
@@ -1399,7 +1399,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // the menu item lists the whole account again: it is the way out when the diff sync
     // behind every other rescan has gone astray, and its counts toast means the whole account
     private fun rescanPCloudManually() {
-        toast(R.string.pcloud_rescanning)
+        showInAppMessage(R.string.pcloud_rescanning)
         binding.directoriesRefreshLayout.isRefreshing = true
         rescanPCloud(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, full = true) { runOnUiThread { getDirectories() } }
     }
@@ -1732,7 +1732,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             outputStream = contentResolver.openOutputStream(output)
             inputStream.copyTo(outputStream!!)
         } catch (e: SecurityException) {
-            showErrorToast(e)
+            showInAppError(e)
         } catch (ignored: FileNotFoundException) {
             return getFilePublicUri(file, BuildConfig.APPLICATION_ID)
         } finally {

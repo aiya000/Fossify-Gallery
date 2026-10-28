@@ -20,14 +20,12 @@ import android.provider.Settings
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.View
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.exifinterface.media.ExifInterface
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.request.RequestOptions
-import com.google.android.material.snackbar.Snackbar
 import com.squareup.picasso.Picasso
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -62,31 +60,6 @@ import java.io.*
 import java.text.SimpleDateFormat
 import java.util.Locale
 import androidx.core.net.toUri
-
-// how many lines the app's own message may take. The material default is two, which is the
-// very limit this exists to escape: a sentence of guidance is cut off inside it
-private const val IN_APP_MESSAGE_MAX_LINES = 5
-
-// The app's own message line, in place of a toast (#76).
-//
-// A toast is the OS speaking -- black on white, a couple of lines at most, and gone before a
-// long sentence has been read. This lands in the activity's own content view, in this app's
-// theme, with room for what it has to say. PickDirectoryDialog.showPickerMessage() is where it
-// came from; the sweep of the other call sites is #76's own.
-//
-// Nothing is shown when the activity has no content view yet or is on its way out, which is
-// exactly when a toast is still the right thing
-fun Activity.showInAppMessage(text: String) {
-    if (isFinishing || isDestroyed) {
-        return
-    }
-
-    val root = findViewById<View>(android.R.id.content) ?: return
-    Snackbar.make(root, text, Snackbar.LENGTH_LONG).apply {
-        view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.maxLines = IN_APP_MESSAGE_MAX_LINES
-        show()
-    }
-}
 
 fun Activity.sharePath(path: String) {
     sharePathIntent(path, BuildConfig.APPLICATION_ID)
@@ -137,7 +110,7 @@ fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: Arr
         return
     }
 
-    toast(remote.fetchingMessage())
+    showInAppMessage(remote.fetchingMessage())
     ensureBackgroundThread {
         val localPaths = try {
             paths.mapTo(ArrayList()) { MediaStorage.of(this, it).fetchForReading(it) }
@@ -145,7 +118,7 @@ fun Activity.withLocalMediaFiles(paths: List<String>, callback: (localPaths: Arr
             // the reason goes to the log and onto the toast, a bare "could not fetch" left
             // nothing to go on when it happened once on the device
             Log.w("RemoteFetch", "Could not fetch ${paths.size} media", e)
-            toast("${remote.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+            showInAppMessage("${remote.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
@@ -165,13 +138,13 @@ fun Activity.withEditableMediaFile(path: String, callback: (localPath: String) -
         return
     }
 
-    toast(storage.fetchingMessage())
+    showInAppMessage(storage.fetchingMessage())
     ensureBackgroundThread {
         val copy = try {
             storage.fetchForEditing(path)
         } catch (e: Exception) {
             Log.w("RemoteFetch", "Could not fetch $path for editing", e)
-            toast("${storage.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+            showInAppMessage("${storage.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
             return@ensureBackgroundThread
         }
 
@@ -193,7 +166,7 @@ fun Activity.launchGesturePlayer(path: String, extras: HashMap<String, Boolean> 
     ensureBackgroundThread {
         val newUri = getFinalUriFromPath(path, BuildConfig.APPLICATION_ID)
         if (newUri == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return@ensureBackgroundThread
         }
 
@@ -334,7 +307,7 @@ fun BaseSimpleActivity.launchGrantAllFilesIntent() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            showErrorToast(e)
+            showInAppError(e)
         }
     }
 }
@@ -366,7 +339,7 @@ fun BaseSimpleActivity.addNoMedia(path: String, callback: () -> Unit) {
                 addNoMediaIntoMediaStore(file.absolutePath)
                 callback()
             } else {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
+                showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                 callback()
             }
         }
@@ -377,10 +350,10 @@ fun BaseSimpleActivity.addNoMedia(path: String, callback: () -> Unit) {
                     addNoMediaIntoMediaStore(file.absolutePath)
                 }
             } else {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
+                showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             }
         } catch (e: Exception) {
-            showErrorToast(e)
+            showInAppError(e)
         }
         callback()
     }
@@ -395,7 +368,7 @@ fun BaseSimpleActivity.addNoMediaIntoMediaStore(path: String) {
         }
         contentResolver.insert(Files.getContentUri("external"), content)
     } catch (e: Exception) {
-        showErrorToast(e)
+        showInAppError(e)
     }
 }
 
@@ -464,7 +437,7 @@ fun BaseSimpleActivity.tryCopyMoveFilesTo(
     callback: (destinationPath: String) -> Unit
 ) {
     if (fileDirItems.isEmpty()) {
-        toast(org.fossify.commons.R.string.unknown_error_occurred)
+        showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
         return
     }
 
@@ -536,7 +509,7 @@ fun BaseSimpleActivity.movePathsInRecycleBin(paths: ArrayList<String>, callback:
                         pathsCnt--
                     }
                 } catch (e: Exception) {
-                    showErrorToast(e)
+                    showInAppError(e)
                     return@ensureBackgroundThread
                 } finally {
                     inputStream?.close()
@@ -556,7 +529,7 @@ fun BaseSimpleActivity.movePathsInRecycleBin(paths: ArrayList<String>, callback:
                         }
                     }
                 } catch (e: Exception) {
-                    showErrorToast(e)
+                    showInAppError(e)
                     return@ensureBackgroundThread
                 }
             }
@@ -583,7 +556,7 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, destinat
                 val picturesDirectory = getPicturesDirectoryPath(destination)
                 destination = File(picturesDirectory, destination.getFilenameFromPath()).path
                 if (!shownRestoringToPictures) {
-                    toast(getString(R.string.restore_to_path, humanizePath(picturesDirectory)))
+                    showInAppMessage(getString(R.string.restore_to_path, humanizePath(picturesDirectory)))
                     shownRestoringToPictures = true
                 }
             }
@@ -634,7 +607,7 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, destinat
                     File(destination).setLastModified(lastModified)
                 }
             } catch (e: Exception) {
-                showErrorToast(e)
+                showInAppError(e)
             } finally {
                 inputStream?.close()
                 out?.close()
@@ -661,7 +634,7 @@ fun BaseSimpleActivity.emptyTheRecycleBin(callback: (() -> Unit)? = null) {
         if (index == storages.size) {
             ensureBackgroundThread {
                 directoryDB.deleteRecycleBin()
-                toast(org.fossify.commons.R.string.recycle_bin_emptied)
+                showInAppMessage(org.fossify.commons.R.string.recycle_bin_emptied)
                 callback?.invoke()
             }
             return
@@ -761,7 +734,7 @@ fun AppCompatActivity.fixDateTaken(
 ) {
     val BATCH_SIZE = 50
     if (showToasts && !hasRescanned) {
-        toast(R.string.fixing)
+        showInAppMessage(R.string.fixing)
     }
 
     val pathsToRescan = ArrayList<String>()
@@ -822,7 +795,7 @@ fun AppCompatActivity.fixDateTaken(
 
             if (!didUpdateFile) {
                 if (showToasts) {
-                    toast(R.string.no_date_takens_found)
+                    showInAppMessage(R.string.no_date_takens_found)
                 }
 
                 runOnUiThread {
@@ -843,7 +816,7 @@ fun AppCompatActivity.fixDateTaken(
 
                 runOnUiThread {
                     if (showToasts) {
-                        toast(if (didUpdateFile) R.string.dates_fixed_successfully else org.fossify.commons.R.string.unknown_error_occurred)
+                        showInAppMessage(if (didUpdateFile) R.string.dates_fixed_successfully else org.fossify.commons.R.string.unknown_error_occurred)
                     }
 
                     callback?.invoke()
@@ -856,7 +829,7 @@ fun AppCompatActivity.fixDateTaken(
         }
     } catch (e: Exception) {
         if (showToasts) {
-            showErrorToast(e)
+            showInAppError(e)
         }
     }
 }
@@ -879,7 +852,7 @@ fun BaseSimpleActivity.saveRotatedImageToFile(oldPath: String, newPath: String, 
         getFileOutputStream(tmpFileDirItem) {
             if (it == null) {
                 if (showToasts) {
-                    toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                 }
                 return@getFileOutputStream
             }
@@ -904,11 +877,11 @@ fun BaseSimpleActivity.saveRotatedImageToFile(oldPath: String, newPath: String, 
         }
     } catch (e: OutOfMemoryError) {
         if (showToasts) {
-            toast(org.fossify.commons.R.string.out_of_memory_error)
+            showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
         }
     } catch (e: Exception) {
         if (showToasts) {
-            showErrorToast(e)
+            showInAppError(e)
         }
     } finally {
         tryDeleteFileDirItem(tmpFileDirItem, false, true)
@@ -923,7 +896,7 @@ fun Activity.tryRotateByExif(path: String, degrees: Int, showToasts: Boolean, ca
             fileRotatedSuccessfully(path, oldLastModified)
             callback.invoke()
             if (showToasts) {
-                toast(org.fossify.commons.R.string.file_saved)
+                showInAppMessage(org.fossify.commons.R.string.file_saved)
             }
             true
         } else {
@@ -932,7 +905,7 @@ fun Activity.tryRotateByExif(path: String, degrees: Int, showToasts: Boolean, ca
     } catch (e: Exception) {
         // lets not show IOExceptions, rotating is saved just fine even with them
         if (showToasts && e !is IOException) {
-            showErrorToast(e)
+            showInAppError(e)
         }
         false
     }
@@ -961,7 +934,7 @@ fun BaseSimpleActivity.copyFile(source: String, destination: String) {
         inputStream = getFileInputStreamSync(source)
         inputStream!!.copyTo(out!!)
     } catch (e: Exception) {
-        showErrorToast(e)
+        showInAppError(e)
     } finally {
         inputStream?.close()
         out?.close()
@@ -1056,13 +1029,13 @@ private fun BaseSimpleActivity.showResizeImageDialog(path: String, localPath: St
         ensureBackgroundThread {
             try {
                 if (storage.isRemote) {
-                    toast(storage.writingBackMessage(this))
+                    showInAppMessage(storage.writingBackMessage(this))
                 }
 
                 storage.writeInto(this, newPath, { target, wrote ->
                     resizeImage(localPath, target, newSize) { success ->
                         if (!success) {
-                            toast(R.string.image_editing_failed)
+                            showInAppMessage(R.string.image_editing_failed)
                         }
 
                         wrote(success)
@@ -1073,7 +1046,7 @@ private fun BaseSimpleActivity.showResizeImageDialog(path: String, localPath: St
                         return@writeInto
                     }
 
-                    toast(org.fossify.commons.R.string.file_saved)
+                    showInAppMessage(org.fossify.commons.R.string.file_saved)
                     if (storage.isRemote) {
                         callback?.invoke()
                     } else {
@@ -1085,9 +1058,9 @@ private fun BaseSimpleActivity.showResizeImageDialog(path: String, localPath: St
                     }
                 }
             } catch (e: OutOfMemoryError) {
-                toast(org.fossify.commons.R.string.out_of_memory_error)
+                showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
             } catch (e: Exception) {
-                showErrorToast(e)
+                showInAppError(e)
             }
         }
     }
@@ -1176,7 +1149,7 @@ fun Activity.showFileOnMap(path: String) {
             ExifInterface(path)
         }
     } catch (e: Exception) {
-        showErrorToast(e)
+        showInAppError(e)
         return
     }
 
@@ -1184,7 +1157,7 @@ fun Activity.showFileOnMap(path: String) {
     if (exif.getLatLong(latLon)) {
         showLocationOnMap("${latLon[0]}, ${latLon[1]}")
     } else {
-        toast(R.string.unknown_location)
+        showInAppMessage(R.string.unknown_location)
     }
 }
 

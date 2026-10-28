@@ -21,6 +21,7 @@ import org.fossify.gallery.extensions.addPathToDB
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openRemoteEditor
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.gallery.extensions.updateDirectoryPath
 import org.fossify.gallery.extensions.withEditableMediaFile
 import org.fossify.gallery.helpers.EDIT_SAVED_TO
@@ -174,20 +175,20 @@ open class SimpleActivity : BaseSimpleActivity() {
             // makes that look like the write back did nothing at all
             if (editorSaidItSaved) {
                 Log.w("RemoteEdit", "The editor reported a save but left ${edit.localPath} untouched")
-                toast(storage.editNotWrittenMessage(this), Toast.LENGTH_LONG)
+                showInAppMessage(storage.editNotWrittenMessage(this), Toast.LENGTH_LONG)
             }
 
             return
         }
 
-        toast(storage.writingBackMessage(this))
+        showInAppMessage(storage.writingBackMessage(this))
         storage.overwriteMedium(this, edit.remotePath, edit.localPath) { written ->
             if (written) {
-                toast(org.fossify.commons.R.string.file_saved)
+                showInAppMessage(org.fossify.commons.R.string.file_saved)
                 onWritten()
             } else {
                 // the storage already said what went wrong; this says what is left
-                toast(getString(R.string.remote_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
+                showInAppMessage(getString(R.string.remote_edit_kept_at, edit.localPath), Toast.LENGTH_LONG)
             }
         }
     }
@@ -195,7 +196,7 @@ open class SimpleActivity : BaseSimpleActivity() {
     // Rotates media wherever they live, one after the other, each the way its storage does
     // it, see MediaStorage.rotateMediumAndWait()
     fun rotateMedia(paths: List<String>, degrees: Int, onDone: () -> Unit) {
-        toast(org.fossify.commons.R.string.saving)
+        showInAppMessage(org.fossify.commons.R.string.saving)
         ensureBackgroundThread {
             paths.forEach { path ->
                 MediaStorage.of(this, path).rotateMediumAndWait(this, path, degrees)
@@ -269,6 +270,7 @@ open class SimpleActivity : BaseSimpleActivity() {
     }
 
     private fun onPermissionDenied() {
+        // a toast: this screen is closing, and would take a bar of its own with it
         toast(org.fossify.commons.R.string.no_storage_permissions)
         finish()
     }

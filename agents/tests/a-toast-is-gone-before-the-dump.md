@@ -59,3 +59,19 @@ focused_window() {
 - `test-device/drive/47-hand-out-a-medium-of-the-share.sh` -- 窓を待つ形にしたあとのチェックと、GPS の書き込み
 - `test-device/drive/lib.sh` の `ui_dump`
 - `app/src/main/kotlin/org/fossify/gallery/extensions/Activity.kt` の `showFileOnMap()` と `withLocalMediaFiles()`
+
+## #76 のあと: メッセージはログで見る
+
+#76 で、アプリが言うことは OS のトーストではなく、アプリ自身の画面に出るバー
+（`extensions/InAppMessage.kt`）になりました。ダイアログの入力欄についての文句は、その欄の下に出ます。
+バーも数秒で消えるので、dump が追いつかないのはトーストと同じです。
+
+その代わり、**メッセージは全部 `InAppMessage` タグでログに残ります**。どこに出たかも言います。
+
+- `Said in the app: <文言>` -- 画面のバーに出た
+- `Said under the field: <文言>` -- 入力欄の下に出た（これは消えないので、dump でも見られます）
+- `Said as a toast, with no screen of the app to say it on: <文言>` -- 画面が無くて、トーストに落ちた
+
+「出たこと」も「出なかったこと」も、`expect_log` / `refute_log` でこの行を見ます
+（`drive/87-messages-are-the-apps-own.sh`、`drive/45-properties-on-the-share.sh`）。
+サービスが出すトースト（`jobs/` の `toast(`）だけは、このログを通りません。

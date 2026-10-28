@@ -8,6 +8,7 @@ import org.fossify.commons.extensions.*
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogExportFavoritesBinding
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.showInputError
 
 class ExportFavoritesDialog(
     val activity: BaseSimpleActivity, val defaultFilename: String, val hidePath: Boolean,
@@ -47,14 +48,14 @@ class ExportFavoritesDialog(
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         var filename = binding.exportFavoritesFilename.value
                         if (filename.isEmpty()) {
-                            activity.toast(org.fossify.commons.R.string.filename_cannot_be_empty)
+                            binding.exportFavoritesHint.showInputError(org.fossify.commons.R.string.filename_cannot_be_empty)
                             return@setOnClickListener
                         }
 
                         filename += ".txt"
                         val newPath = "${folder.trimEnd('/')}/$filename"
                         if (!newPath.getFilenameFromPath().isAValidFilename()) {
-                            activity.toast(org.fossify.commons.R.string.filename_invalid_characters)
+                            binding.exportFavoritesHint.showInputError(org.fossify.commons.R.string.filename_invalid_characters)
                             return@setOnClickListener
                         }
 

@@ -69,7 +69,7 @@ import org.fossify.commons.extensions.isWebP
 import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.portrait
 import org.fossify.commons.extensions.realScreenSize
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.helpers.DEFAULT_ANIMATION_DURATION
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
@@ -236,7 +236,7 @@ class PhotoFragment : ViewPagerFragment() {
                     rotated.compress(Bitmap.CompressFormat.JPEG, 100, out)
                     mMedium.path = file.absolutePath
                 } catch (e: Exception) {
-                    requireActivity().toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    requireActivity().showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                     return mView
                 } finally {
                     out?.close()

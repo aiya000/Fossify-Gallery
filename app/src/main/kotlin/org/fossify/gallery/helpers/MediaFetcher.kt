@@ -184,7 +184,7 @@ class MediaFetcher(val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            context.showErrorToast(e)
+            context.showInAppError(e)
         } finally {
             cursor?.close()
         }

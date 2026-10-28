@@ -41,7 +41,7 @@ import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.isVisible
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.IS_FROM_GALLERY
@@ -198,6 +198,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         try {
             mPath = intent.getStringExtra(DIRECTORY) ?: ""
         } catch (e: Exception) {
+            // a toast: this screen is closing, and would take a bar of its own with it
             showErrorToast(e)
             finish()
             return
@@ -787,7 +788,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun rescanPCloudFolderManually() {
-        toast(R.string.pcloud_rescanning)
+        showInAppMessage(R.string.pcloud_rescanning)
         binding.mediaRefreshLayout.isRefreshing = true
         rescanPCloudFolders(listOf(mPath), reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
     }
@@ -871,7 +872,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
             runOnUiThread {
                 if (paths.isEmpty()) {
                     // nothing to ask about, so it is reported as the run that it was
-                    toast(getString(R.string.smb_read_durations_done, 0))
+                    showInAppMessage(getString(R.string.smb_read_durations_done, 0))
                     return@runOnUiThread
                 }
 
@@ -883,7 +884,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun rescanSmbFolderManually() {
-        toast(R.string.smb_rescanning)
+        showInAppMessage(R.string.smb_rescanning)
         binding.mediaRefreshLayout.isRefreshing = true
         rescanSmbFolders(listOf(mPath), reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL) { runOnUiThread { getMedia() } }
     }
@@ -1143,7 +1144,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private fun itemClicked(path: String) {
         hideKeyboard()
         if (isSetWallpaperIntent()) {
-            toast(R.string.setting_wallpaper)
+            showInAppMessage(R.string.setting_wallpaper)
 
             val wantedWidth = wallpaperDesiredMinimumWidth
             val wantedHeight = wallpaperDesiredMinimumHeight
@@ -1276,7 +1277,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         val storage = MediaStorage.ofAll(this, filtered.map { it.path }) ?: return
         val toBin = config.useRecycleBin && !skipRecycleBin && !storage.isInRecycleBin(filtered.first().path)
         val progress = if (toBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
-        toast(resources.getQuantityString(progress, filtered.size, filtered.size))
+        showInAppMessage(resources.getQuantityString(progress, filtered.size, filtered.size))
 
         storage.deleteMedia(this, filtered, skipRecycleBin) { deleted ->
             if (!deleted) {

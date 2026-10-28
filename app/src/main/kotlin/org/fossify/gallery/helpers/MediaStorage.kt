@@ -33,9 +33,9 @@ import org.fossify.commons.extensions.isSvg
 import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.needsStupidWritePermissions
 import org.fossify.commons.extensions.recycleBinPath
-import org.fossify.commons.extensions.showErrorToast
+import org.fossify.gallery.extensions.showInAppError
 import org.fossify.commons.extensions.toFileDirItem
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
@@ -231,7 +231,7 @@ sealed class MediaStorage(protected val context: Context) {
         onQueued: (() -> Unit)?
     ) {
         if (!context.config.isPCloudLoggedIn) {
-            activity.toast(R.string.pcloud_log_in_required)
+            activity.showInAppMessage(R.string.pcloud_log_in_required)
             return
         }
 
@@ -249,7 +249,7 @@ sealed class MediaStorage(protected val context: Context) {
                 }
 
                 PCloudTransferService.enqueue(activity, PCloudTransferService.Job(kind, paths, destination, isCopy))
-                activity.toast(R.string.pcloud_transfer_started)
+                activity.showInAppMessage(R.string.pcloud_transfer_started)
                 onQueued?.invoke()
             }
         }
@@ -285,7 +285,7 @@ sealed class MediaStorage(protected val context: Context) {
             PCloudTransferService.Kind.ONTO_SHARE -> if (context.config.isSmbConfigured) {
                 enqueue()
             } else {
-                activity.toast(R.string.smb_not_configured)
+                activity.showInAppMessage(R.string.smb_not_configured)
             }
         }
     }
@@ -305,7 +305,7 @@ sealed class MediaStorage(protected val context: Context) {
         onQueued: (() -> Unit)?
     ) {
         if (!context.config.isSmbConfigured) {
-            activity.toast(R.string.smb_not_configured)
+            activity.showInAppMessage(R.string.smb_not_configured)
             return
         }
 
@@ -315,7 +315,7 @@ sealed class MediaStorage(protected val context: Context) {
         }
 
         if (kind == SmbTransferService.Kind.TO_PCLOUD && !context.config.isPCloudLoggedIn) {
-            activity.toast(R.string.pcloud_log_in_required)
+            activity.showInAppMessage(R.string.pcloud_log_in_required)
             return
         }
 
@@ -328,7 +328,7 @@ sealed class MediaStorage(protected val context: Context) {
                 }
 
                 SmbTransferService.enqueue(activity, SmbTransferService.Job(kind, paths, destination, isCopy))
-                activity.toast(if (isCopy) R.string.smb_transfer_started else R.string.smb_move_started)
+                activity.showInAppMessage(if (isCopy) R.string.smb_transfer_started else R.string.smb_move_started)
                 onQueued?.invoke()
             }
         }
@@ -503,7 +503,7 @@ sealed class MediaStorage(protected val context: Context) {
                 isNameTaken(path)
             } catch (e: Exception) {
                 activity.runOnUiThread {
-                    activity.showErrorToast(e)
+                    activity.showInAppError(e)
                     onCancel?.invoke()
                 }
                 return@ensureBackgroundThread
@@ -553,7 +553,7 @@ sealed class MediaStorage(protected val context: Context) {
             fetchForEditing(path)
         } catch (e: Exception) {
             Log.w(tag, "Could not fetch $path to resize it", e)
-            activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+            activity.showInAppMessage("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
             return false
         }
 
@@ -568,7 +568,7 @@ sealed class MediaStorage(protected val context: Context) {
         overwriteMedium(activity, path, localPath) {
             written = it
             if (!it) {
-                activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                activity.showInAppMessage(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
             }
 
             latch.countDown()
@@ -715,7 +715,7 @@ sealed class MediaStorage(protected val context: Context) {
         private fun isOnARootTheSystemKeeps(activity: BaseSimpleActivity, path: String): Boolean {
             val isSDOrOtgRootFolder = context.isAStorageRootFolder(path.getParentPath()) && !path.startsWith(context.internalStoragePath)
             if (isRPlus() && isSDOrOtgRootFolder && !isExternalStorageManager()) {
-                activity.toast(org.fossify.commons.R.string.rename_in_sd_card_system_restriction, Toast.LENGTH_LONG)
+                activity.showInAppMessage(org.fossify.commons.R.string.rename_in_sd_card_system_restriction, Toast.LENGTH_LONG)
                 return true
             }
 
@@ -724,7 +724,7 @@ sealed class MediaStorage(protected val context: Context) {
 
         override fun renameFolder(activity: BaseSimpleActivity, path: String, onDone: (newPath: String?) -> Unit) {
             if (context.isAStorageRootFolder(path)) {
-                activity.toast(org.fossify.commons.R.string.rename_folder_root)
+                activity.showInAppMessage(org.fossify.commons.R.string.rename_folder_root)
                 onDone(null)
                 return
             }
@@ -746,7 +746,7 @@ sealed class MediaStorage(protected val context: Context) {
                                     oldPath = path
                                 )
                             } catch (e: Exception) {
-                                activity.showErrorToast(e)
+                                activity.showInAppError(e)
                             }
 
                             activity.runOnUiThread { onDone(newPath) }
@@ -887,7 +887,7 @@ sealed class MediaStorage(protected val context: Context) {
             val deleteTheFiles = {
                 activity.deleteFiles(fileDirItems) { deleted ->
                     if (!deleted) {
-                        activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                        activity.showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                     } else if (!toBin) {
                         ensureBackgroundThread {
                             paths.forEach { context.deleteDBPath(it) }
@@ -903,7 +903,7 @@ sealed class MediaStorage(protected val context: Context) {
                     if (moved) {
                         deleteTheFiles()
                     } else {
-                        activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                        activity.showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                         activity.runOnUiThread { onDone(false) }
                     }
                 }
@@ -922,15 +922,15 @@ sealed class MediaStorage(protected val context: Context) {
                 fileDirItems.isEmpty() -> return
                 fileDirItems.size == 1 -> {
                     try {
-                        activity.toast(String.format(activity.getString(org.fossify.commons.R.string.deleting_folder), fileDirItems.first().name))
+                        activity.showInAppMessage(String.format(activity.getString(org.fossify.commons.R.string.deleting_folder), fileDirItems.first().name))
                     } catch (e: Exception) {
-                        activity.showErrorToast(e)
+                        activity.showInAppError(e)
                     }
                 }
 
                 else -> {
                     val base = if (toRecycleBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.delete_items
-                    activity.toast(activity.resources.getQuantityString(base, fileDirItems.size, fileDirItems.size))
+                    activity.showInAppMessage(activity.resources.getQuantityString(base, fileDirItems.size, fileDirItems.size))
                 }
             }
 
@@ -975,7 +975,7 @@ sealed class MediaStorage(protected val context: Context) {
                     if (moved) {
                         deleteTheFiles()
                     } else {
-                        activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                        activity.showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                     }
                 }
             } else {
@@ -1206,7 +1206,7 @@ sealed class MediaStorage(protected val context: Context) {
 
         // the parents are read again afterwards, so that a folder pCloud kept after all comes back
         override fun deleteFolders(activity: BaseSimpleActivity, paths: List<String>, toRecycleBin: Boolean, onDone: () -> Unit) {
-            activity.toast(activity.resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
+            activity.showInAppMessage(activity.resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, paths.size, paths.size))
             val parents = paths.map { it.getParentPath() }.distinct()
             context.writeToPCloud(parents, { deleteFolders(paths, toRecycleBin) }) {
                 activity.runOnUiThread { onDone() }
@@ -1260,7 +1260,7 @@ sealed class MediaStorage(protected val context: Context) {
                 fetchForEditing(path)
             } catch (e: Exception) {
                 Log.w("PCloudTransfer", "Could not fetch $path to rotate it", e)
-                activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+                activity.showInAppMessage("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
                 return
             }
 
@@ -1268,7 +1268,7 @@ sealed class MediaStorage(protected val context: Context) {
             activity.saveRotatedImageToFile(localPath, localPath, degrees, true) {
                 overwriteMedium(activity, path, localPath) { written ->
                     if (!written) {
-                        activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                        activity.showInAppMessage(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
                     }
 
                     latch.countDown()
@@ -1447,7 +1447,7 @@ sealed class MediaStorage(protected val context: Context) {
         // went is put right by the next walk of it, and a walk of a whole share is minutes
         override fun deleteFolders(activity: BaseSimpleActivity, paths: List<String>, toRecycleBin: Boolean, onDone: () -> Unit) {
             val base = if (toRecycleBin) org.fossify.commons.R.plurals.moving_items_into_bin else org.fossify.commons.R.plurals.deleting_items
-            activity.toast(activity.resources.getQuantityString(base, paths.size, paths.size))
+            activity.showInAppMessage(activity.resources.getQuantityString(base, paths.size, paths.size))
             context.writeToShare({ deleteFolders(paths, toRecycleBin) }) {
                 activity.runOnUiThread { onDone() }
             }
@@ -1486,7 +1486,7 @@ sealed class MediaStorage(protected val context: Context) {
                     } catch (e: Exception) {
                         Log.w("SmbWrite", "Could not ask the share whether it already has $path", e)
                         activity.runOnUiThread {
-                            activity.showErrorToast(e)
+                            activity.showInAppError(e)
                             onDone(false)
                         }
                         return@write
@@ -1503,7 +1503,7 @@ sealed class MediaStorage(protected val context: Context) {
                     } catch (e: Exception) {
                         Log.w("SmbWrite", "Could not save $path onto the share", e)
                         activity.runOnUiThread {
-                            activity.showErrorToast(e)
+                            activity.showInAppError(e)
                             onDone(false)
                         }
                         return@write
@@ -1523,7 +1523,7 @@ sealed class MediaStorage(protected val context: Context) {
                 fetchForEditing(path)
             } catch (e: Exception) {
                 Log.w("SmbWrite", "Could not fetch $path to rotate it", e)
-                activity.toast("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+                activity.showInAppMessage("${fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
                 return
             }
 
@@ -1531,7 +1531,7 @@ sealed class MediaStorage(protected val context: Context) {
             activity.saveRotatedImageToFile(localPath, localPath, degrees, true) {
                 overwriteMedium(activity, path, localPath) { written ->
                     if (!written) {
-                        activity.toast(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
+                        activity.showInAppMessage(activity.getString(R.string.remote_edit_kept_at, localPath), Toast.LENGTH_LONG)
                     }
 
                     latch.countDown()

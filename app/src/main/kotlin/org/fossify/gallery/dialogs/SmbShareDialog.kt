@@ -1,12 +1,14 @@
 package org.fossify.gallery.dialogs
 
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.textfield.TextInputLayout
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.value
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogSmbShareBinding
@@ -53,8 +55,9 @@ class SmbShareDialog(
             .apply {
                 activity.setupDialogStuff(binding.root, this, R.string.smb_share) { alertDialog ->
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        if (!hasHostAndShare()) {
-                            activity.toast(R.string.smb_host_required)
+                        val missing = fieldMissingHostOrShare()
+                        if (missing != null) {
+                            missing.showInputError(R.string.smb_host_required)
                             return@setOnClickListener
                         }
 
@@ -66,27 +69,34 @@ class SmbShareDialog(
             }
     }
 
-    private fun hasHostAndShare() = binding.smbHost.value.trim().isNotEmpty() && binding.smbShareName.value.trim().isNotEmpty()
+    // The field a share cannot be reached without, when it is empty -- the host first, then the
+    // share -- so that the complaint is made under the box that has to be filled in
+    private fun fieldMissingHostOrShare(): TextInputLayout? = when {
+        binding.smbHost.value.trim().isEmpty() -> binding.smbHostHint
+        binding.smbShareName.value.trim().isEmpty() -> binding.smbShareNameHint
+        else -> null
+    }
 
     // Connects with what is in the fields, off the main thread, and leaves the saved settings as
     // they were: a test of a share that turns out to be wrong is not a reason to lose the one
-    // that worked
+    // that worked. What the test has to say is said inside this dialog, which stays up
     private fun testConnection() {
-        if (!hasHostAndShare()) {
-            activity.toast(R.string.smb_host_required)
+        val missing = fieldMissingHostOrShare()
+        if (missing != null) {
+            missing.showInputError(R.string.smb_host_required)
             return
         }
 
         val connection = typedConnection()
-        activity.toast(R.string.smb_connecting)
+        binding.root.showInAppMessage(R.string.smb_connecting)
         ensureBackgroundThread {
             try {
                 SmbClient.test(connection)
-                activity.toast(R.string.smb_connection_ok)
+                binding.root.showInAppMessage(R.string.smb_connection_ok)
             } catch (e: Exception) {
-                // SmbClient logs which step failed and with what; the toast is cut short by the
-                // length of a status name, so it says only that something went wrong
-                activity.showErrorToast(e)
+                // SmbClient logs which step failed and with what; this says only that something
+                // went wrong, in the words every error is said in
+                binding.root.showInAppError(e)
             } finally {
                 // what was tested is not what is saved, and the next call has to connect with
                 // the settings rather than find this connection standing

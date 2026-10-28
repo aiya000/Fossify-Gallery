@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the tag a TextInputLayout carries once it clears its error on the next edit, see
+         extensions/InAppMessage.kt -->
+    <item name="in_app_message_error_clearer" type="id" />
+</resources>
