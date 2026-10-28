@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.content.Context
 import android.util.JsonReader
+import android.util.Log
 import android.util.JsonToken
 import okhttp3.Call
 import org.fossify.commons.extensions.getFilenameFromPath
@@ -54,6 +55,8 @@ class PCloudScanner(private val context: Context) {
         // how many diff pages a sync replays before it lists the whole account instead
         private const val MAX_DIFF_PAGES = 20
 
+        private const val TAG = "PCloudScan"
+
         // claims the scanner for the given scan, or answers false when one is running
         fun start(scanner: PCloudScanner): Boolean {
             if (!isRunning.compareAndSet(false, true)) {
@@ -71,23 +74,63 @@ class PCloudScanner(private val context: Context) {
 
         // Calls off the registered scan, if one runs: it ends in a PCloudScanAbortedException
         // at its next check, with the cache as it was and the diff id where it was, and the
-        // request on the wire is cancelled. Nothing happens when no scan is registered
-        fun abortCurrent() {
-            current?.abort()
+        // request on the wire is cancelled. Nothing happens when no scan is registered.
+        // [keepPlace] is whether it leaves its place in RemoteScanPlaces, see abort()
+        fun abortCurrent(keepPlace: Boolean) {
+            current?.abort(keepPlace)
         }
     }
 
     class Result(val folderCount: Int, val mediaCount: Int)
 
+    // How far a listing of the whole account had got (#80): the diff id it took first, the root
+    // once it was listed, and the tree of each of the root's entries fetched so far, in the
+    // root's order. One recursive listing per folder in the root is the smallest step pCloud
+    // allows, so a listing called off in the middle of one fetches that one again
+    private class Listing(val diffId: Long) {
+        var root: Entry? = null
+        val fetched = ArrayList<Entry>()
+    }
+
+    // How far a sync had got: the diff id it started from and the one it reached, and the
+    // folders the events touched that are still to be listed. The events themselves were all
+    // written to the cache before the first folder was listed, so this is all that is left
+    private class Syncing(val fromDiffId: Long, val toDiffId: Long, val remaining: ArrayList<String>) {
+        var folderCount = 0
+        var mediaCount = 0
+    }
+
     private val aborted = AtomicBoolean(false)
+    private val keepsPlace = AtomicBoolean(true)
 
     // the request on the wire, while one is; cancelled by abort()
     @Volatile
     private var call: Call? = null
 
-    fun abort() {
+    // Calls the scan off. Made way for another scan, it keeps its place for the next scan of
+    // the account to pick up (#80); stopped by the user, it does not. Once one call has said not
+    // to keep it, a later one that says to keep it does not bring it back
+    fun abort(keepPlace: Boolean = false) {
+        if (!keepPlace) {
+            keepsPlace.set(false)
+        }
+
         aborted.set(true)
         call?.cancel()
+    }
+
+    // what makes a held place this account's: the login it was walked under. Logging out, or
+    // in as somebody else, leaves the place behind
+    private fun owner() = "${config.pCloudApiHost} ${config.pCloudAccessToken}"
+
+    private fun putDown(kind: RemoteScanPlaces.Kind, place: Any) {
+        if (keepsPlace.get()) {
+            RemoteScanPlaces.hold(kind, 0, owner(), place)
+            Log.i(TAG, "Put the pCloud ${kind.name.lowercase()} down; its place is held")
+        } else {
+            RemoteScanPlaces.drop(kind, 0)
+            Log.i(TAG, "Stopped the pCloud ${kind.name.lowercase()}; its place is not kept")
+        }
     }
 
     private fun throwIfAborted() {
@@ -128,19 +171,35 @@ class PCloudScanner(private val context: Context) {
     // blocks and talks to the network, so call it off the main thread. Throws PCloudException
     // when pCloud refused, an IOException when it could not be reached and a
     // PCloudScanAbortedException when abort() was called; the cache is left untouched in
-    // every case, it is only rewritten once the whole tree has arrived
+    // every case, it is only rewritten once the whole tree has arrived.
+    //
+    // A listing that was called off to make way for another scan left its place behind (#80),
+    // and this picks it up rather than listing again what had arrived. What arrived before is
+    // older than the rest, and a transfer that cut in may have written to it; the diff id the
+    // listing started from covers exactly that, so a resumed listing is followed by a sync
     fun scanAll(): Result {
+        val kind = RemoteScanPlaces.Kind.PCLOUD_LISTING
+        val held = RemoteScanPlaces.take<Listing>(kind, 0, owner())
+        held?.let { Log.i(TAG, "Picking up the pCloud listing at ${it.fetched.size} folders of the root fetched") }
+
         // the diff id is taken before the tree so that a change made while the tree is on its
         // way is replayed by the next sync rather than lost; replaying it is harmless. Without
         // one, every sync falls back to a full scan
-        val diffId = try {
-            abortable { onCall -> PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = null, last = 1, onCall = onCall).diffId }
-        } catch (e: PCloudException) {
-            if (e.requiresLogIn) throw e
-            0L
-        }
+        val listing = held ?: Listing(
+            try {
+                abortable { onCall -> PCloudApi.diff(config.pCloudApiHost, config.pCloudAccessToken, sinceDiffId = null, last = 1, onCall = onCall).diffId }
+            } catch (e: PCloudException) {
+                if (e.requiresLogIn) throw e
+                0L
+            }
+        )
 
-        val root = fetchTree()
+        val root = try {
+            fetchTree(listing).also { throwIfAborted() }
+        } catch (e: PCloudScanAbortedException) {
+            putDown(kind, listing)
+            throw e
+        }
 
         val media = ArrayList<Medium>()
         val directories = ArrayList<Directory>()
@@ -148,10 +207,21 @@ class PCloudScanner(private val context: Context) {
         val collector = Collector(media, directories, items)
         collector.collect(root, PCLOUD_PATH_SCHEME)
 
-        throwIfAborted()
         store(media, directories, items)
-        config.pCloudDiffId = diffId
+        config.pCloudDiffId = listing.diffId
         config.pCloudLastFullScanAt = System.currentTimeMillis()
+
+        // without a diff id there is nothing to replay from, and a sync would list it all again
+        if (held != null && listing.diffId > 0L) {
+            try {
+                sync()
+            } catch (e: PCloudScanAbortedException) {
+                // the listing is written by now; the sync has put its own place down, and the
+                // next one picks it up
+                Log.i(TAG, "The sync after a resumed pCloud listing was called off; the listing is written")
+            }
+        }
+
         return Result(directories.size, media.size)
     }
 
@@ -163,13 +233,24 @@ class PCloudScanner(private val context: Context) {
     // of the folders listed again. Blocks like scanAll() does and throws the same way; the
     // diff id moves on only once every touched folder is through, so a sync that broke off
     // or was aborted replays its events next time. What an event wrote to the cache by then
-    // stays, replaying it changes nothing
+    // stays, replaying it changes nothing.
+    //
+    // A sync called off to make way for another scan leaves the folders it had still to list
+    // behind (#80), and the next sync from the same diff id lists only those. One from another
+    // diff id means a scan has moved the cache on since, and that place is of no use
     fun sync(): Result {
         var diffId = config.pCloudDiffId
         if (diffId <= 0L) {
             return scanAll()
         }
 
+        val held = RemoteScanPlaces.take<Syncing>(RemoteScanPlaces.Kind.PCLOUD_SYNC, 0, owner())?.takeIf { it.fromDiffId == diffId }
+        if (held != null) {
+            Log.i(TAG, "Picking up the pCloud sync with ${held.remaining.size} folders left to list")
+            return listTouched(held)
+        }
+
+        val fromDiffId = diffId
         val touchedFolderIds = LinkedHashSet<Long>()
         var pages = 0
         while (true) {
@@ -199,29 +280,53 @@ class PCloudScanner(private val context: Context) {
             touchedPaths.add(folderPathOf(folderId) ?: return scanAll())
         }
 
-        var folderCount = 0
-        var mediaCount = 0
-        touchedPaths.forEach { path ->
-            scanFolder(path)?.let {
-                folderCount += it.folderCount
-                mediaCount += it.mediaCount
+        return listTouched(Syncing(fromDiffId, diffId, touchedPaths))
+    }
+
+    // the second half of a sync: each folder the events touched, listed again, and the diff id
+    // moved on once they all are. A folder is taken off the list only once it is stored, so the
+    // one a call-off cut short is listed again when the sync is picked up
+    private fun listTouched(syncing: Syncing): Result {
+        try {
+            while (syncing.remaining.isNotEmpty()) {
+                scanFolder(syncing.remaining.first())?.let {
+                    syncing.folderCount += it.folderCount
+                    syncing.mediaCount += it.mediaCount
+                }
+
+                syncing.remaining.removeAt(0)
             }
+
+            throwIfAborted()
+        } catch (e: PCloudScanAbortedException) {
+            putDown(RemoteScanPlaces.Kind.PCLOUD_SYNC, syncing)
+            throw e
         }
 
-        throwIfAborted()
-        config.pCloudDiffId = diffId
+        config.pCloudDiffId = syncing.toDiffId
         config.pCloudLastFullScanAt = System.currentTimeMillis()
-        return Result(folderCount, mediaCount)
+        return Result(syncing.folderCount, syncing.mediaCount)
     }
 
     // The new folders of the account (#127): a diff sync, which is how pCloud says what changed
     // and costs one call for nothing changed, and then the folders the cache has a row for now
     // that it had none for before. A hidden folder has a row, so it is not new. A sync that
     // falls back to listing the whole account counts the same way -- on a fresh account that
-    // makes every folder new, which is what it is. Blocks and throws like sync() does
+    // makes every folder new, which is what it is. Blocks and throws like sync() does.
+    //
+    // Called off, it keeps what the cache knew before it began (#80): the sync under it picks up
+    // its own place, and the folders it had already stored would otherwise count as known
     fun scanNewFolders(): Result {
-        val before = context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).toHashSet()
-        sync()
+        val kind = RemoteScanPlaces.Kind.PCLOUD_NEW_FOLDERS
+        val before = RemoteScanPlaces.take<HashSet<String>>(kind, 0, owner())
+            ?: context.directoryDB.getPathsWithPrefix(PCLOUD_PATH_SCHEME).toHashSet()
+
+        try {
+            sync()
+        } catch (e: PCloudScanAbortedException) {
+            putDown(kind, before)
+            throw e
+        }
 
         val newFolders = context.directoryDB.getAll().filter { it.path.startsWith(PCLOUD_PATH_SCHEME) && it.path !in before }
         return Result(newFolders.size, newFolders.sumOf { it.mediaCnt })
@@ -369,12 +474,17 @@ class PCloudScanner(private val context: Context) {
 
     // pCloud refuses a recursive listing of the root with 1101 "Invalid request" (seen on a real
     // account, not documented), while a folder below it lists fine that way. So the root is
-    // listed flat and each folder in it is fetched as a tree of its own
-    private fun fetchTree(): Entry {
-        val root = fetchFolder(PCLOUD_PATH_SCHEME)
-        return root.withChildren(root.children.filter { !isRecycleBinFolder(PCLOUD_PATH_SCHEME, it) }.map { child ->
-            if (child.isFolder) fetchSubtree("$PCLOUD_PATH_SCHEME/${child.name}") else child
-        })
+    // listed flat and each folder in it is fetched as a tree of its own. What [listing] already
+    // holds is not fetched again, and each tree is added to it as it arrives
+    private fun fetchTree(listing: Listing): Entry {
+        val root = listing.root ?: fetchFolder(PCLOUD_PATH_SCHEME).also { listing.root = it }
+        val children = root.children.filter { !isRecycleBinFolder(PCLOUD_PATH_SCHEME, it) }
+        for (index in listing.fetched.size until children.size) {
+            val child = children[index]
+            listing.fetched.add(if (child.isFolder) fetchSubtree("$PCLOUD_PATH_SCHEME/${child.name}") else child)
+        }
+
+        return root.withChildren(listing.fetched)
     }
 
     // the app's recycle bin, a folder in the root, is left out of every listing
