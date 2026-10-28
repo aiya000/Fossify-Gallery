@@ -55,9 +55,10 @@ class SmbScanner(private val context: Context) {
         }
 
         // calls off the registered scan, if one runs; it ends in a SmbScanAbortedException at
-        // its next folder, with the cache as it was
-        fun abortCurrent() {
-            current?.abort()
+        // its next folder, with the cache as it was. [keepPlace] is whether it leaves its place
+        // in RemoteScanPlaces for the next scan to pick up, see abort()
+        fun abortCurrent(keepPlace: Boolean) {
+            current?.abort(keepPlace)
         }
 
         // a folder deeper than this is not walked. A share can be pointed at a whole disk by
@@ -74,9 +75,21 @@ class SmbScanner(private val context: Context) {
     // is what says so
     class Result(val folderCount: Int, val mediaCount: Int, val skippedFolderCount: Int = 0)
 
-    private val aborted = AtomicBoolean(false)
+    // what one folder of a full walk came to: its media, and the folder row built from them
+    class Found(val media: List<Medium>, val directory: Directory)
 
-    fun abort() {
+    private val aborted = AtomicBoolean(false)
+    private val keepsPlace = AtomicBoolean(true)
+
+    // Calls the scan off. Made way for another scan, it keeps its place for the next walk of the
+    // same share to pick up (#80); stopped by the user, it does not -- stopping means "leave the
+    // network alone", not "hold my place". Once one call has said not to keep it, a later one
+    // that says to keep it does not bring it back
+    fun abort(keepPlace: Boolean = false) {
+        if (!keepPlace) {
+            keepsPlace.set(false)
+        }
+
         aborted.set(true)
     }
 
@@ -86,6 +99,49 @@ class SmbScanner(private val context: Context) {
         }
     }
 
+    // Leaves a walk that was called off where the next one finds it, or not, by what abort()
+    // was told; the log is the only record of how far it had got
+    private fun putDown(kind: RemoteScanPlaces.Kind, connection: SmbConnection, walk: SmbWalk<*>) {
+        if (!keepsPlace.get()) {
+            RemoteScanPlaces.drop(kind, connection.id)
+            Log.i(TAG, "Stopped the walk of the share at ${walk.listedCount} folders listed; its place is not kept (${connection.root})")
+            return
+        }
+
+        RemoteScanPlaces.hold(kind, connection.id, ownerOf(connection), walk)
+        Log.i(TAG, "Put the walk of the share down at ${walk.listedCount} folders listed; its place is held (${connection.root})")
+    }
+
+    // what makes a held place this share's: everything that says which tree is walked and as
+    // whom. Not the name, which changes nothing about what a walk finds
+    private fun ownerOf(connection: SmbConnection) = connection.copy(name = "")
+
+    // a folder that cannot be listed -- no permission for it, or it was removed while the walk
+    // ran -- is skipped rather than ending the scan; the rest of the share is still worth having.
+    // Null says to skip it
+    private fun listOrSkip(path: String, depth: Int): List<SmbClient.Entry>? {
+        throwIfAborted()
+        return try {
+            listWithOneRetry(path)
+        } catch (e: Exception) {
+            throwIfAborted()
+            // The root not listing means the share is not reachable, which is not a folder to
+            // skip over -- and neither is any folder whose listing left no connection standing.
+            // Walking on without one skips every folder that is left, and the scan then reports
+            // an empty share rather than an unreachable one
+            if (depth == 0 || !SmbClient.isConnected(path)) {
+                throw e
+            }
+
+            Log.w(TAG, "Skipping \"$path\", a folder of the share that could not be listed", e)
+            null
+        }
+    }
+
+    // the cache's media rows of one connection, outside the recycle bin, as SmbWalk compares them
+    private fun cacheSignaturesOf(connection: SmbConnection) =
+        SmbWalk.signaturesOf(context.mediaDB.getMediaWithPrefix(connection.rowPrefix).filter { !it.path.isSmbRecycleBinPath() })
+
     // Walks the whole share of [connection] and replaces its rows with what it found; the other
     // connections' rows are not this walk's to touch (#155). Blocks and talks to the network, so
     // call it off the main thread.
@@ -94,16 +150,48 @@ class SmbScanner(private val context: Context) {
     // the folder it has just come out of. A share has no count to work towards -- what is in it
     // is only known once it has all been walked -- so this is the only thing that can tell the
     // user a scan is moving rather than stuck. It runs on the scanning thread: keep it quick,
-    // and do not touch a view from it
+    // and do not touch a view from it.
+    //
+    // A walk that was called off to make way for another scan left its place behind (#80), and
+    // this picks it up rather than starting over. What it had found stays out of the cache all the
+    // while: the cache is only written once the whole share has been walked, resumed or not. The
+    // folders something wrote to while the walk was put down are read again first, so that what
+    // it found there before does not undo the write
     fun scanAll(connection: SmbConnection, onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }): Result {
-        val media = ArrayList<Medium>()
-        val directories = ArrayList<Directory>()
-        val collector = Collector(media, directories, onProgress)
-        collector.collect(connection.root, 0)
+        val kind = RemoteScanPlaces.Kind.SMB_WALK
+        val held = RemoteScanPlaces.take<SmbWalk<Found>>(kind, connection.id, ownerOf(connection))
+        val walk = if (held != null) {
+            val signatures = cacheSignaturesOf(connection)
+            val changed = SmbWalk.changedFolders(held.cacheSignatures, signatures)
+            held.reopen(changed)
+            held.cacheSignatures = signatures
+            Log.i(
+                TAG,
+                "Picking up the walk of the share at ${held.listedCount} folders listed, ${changed.size} folders changed since (${connection.root})"
+            )
+            held
+        } else {
+            SmbWalk<Found>(connection.root, MAX_DEPTH) { it.media.size }.apply { cacheSignatures = cacheSignaturesOf(connection) }
+        }
 
-        store(connection, media, directories, collector.skippedPaths)
+        val collector = Collector()
+        try {
+            walk.walk(
+                list = ::listOrSkip,
+                read = collector::read,
+                isWalkable = { parentPath, entry -> !isRecycleBinFolder(parentPath, entry) },
+                onFolder = { path -> onProgress(walk.foundCount, walk.mediaCount, path) }
+            )
+        } catch (e: SmbScanAbortedException) {
+            putDown(kind, connection, walk)
+            throw e
+        }
+
+        val media = walk.results.flatMap { it.media }
+        val directories = walk.results.map { it.directory }
+        store(connection, media, directories, walk.skippedPaths)
         context.config.setSmbLastFullScanAt(connection.id, System.currentTimeMillis())
-        return Result(directories.size, media.size, collector.skippedPaths.size)
+        return Result(directories.size, media.size, walk.skippedPaths.size)
     }
 
     // The same for one folder and its direct children only; the subfolders keep the rows an
@@ -116,11 +204,9 @@ class SmbScanner(private val context: Context) {
             throw e
         }
 
-        val media = ArrayList<Medium>()
-        val directories = ArrayList<Directory>()
-        Collector(media, directories).collectOne(path, entries)
-        storeFolder(path, media, directories)
-        return Result(directories.size, media.size)
+        val found = Collector().read(path, entries)
+        storeFolder(path, found?.media.orEmpty(), listOfNotNull(found?.directory))
+        return Result(if (found == null) 0 else 1, found?.media?.size ?: 0)
     }
 
     // Walks the whole share the way scanAll() does, but reads only the folders the cache has no
@@ -133,56 +219,46 @@ class SmbScanner(private val context: Context) {
     // cannot be listed is skipped the way scanAll() skips it.
     //
     // The counts are the new folders and their media. smbLastFullScanAt is not moved: this was
-    // not a walk that could have dropped anything, so the automatic scans are still owed one
+    // not a walk that could have dropped anything, so the automatic scans are still owed one.
+    //
+    // Called off to make way for another scan, it leaves its place behind like scanAll() does, and
+    // the next search picks it up. Nothing has to be read again for that: each new folder was
+    // stored as it was found, and the folders the cache knows are counted afresh
     fun scanNewFolders(
         connection: SmbConnection,
         onProgress: (newFolderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }
     ): Result {
+        val kind = RemoteScanPlaces.Kind.SMB_NEW_FOLDERS
+        val held = RemoteScanPlaces.take<SmbWalk<Int>>(kind, connection.id, ownerOf(connection))
+        held?.let { Log.i(TAG, "Picking up the search for new folders on the share at ${it.listedCount} folders listed (${connection.root})") }
+        val walk = held ?: SmbWalk<Int>(connection.root, MAX_DEPTH) { it }
+
+        // a new folder the walk found before it was put down is known by now, and that is why
+        // the walk keeps its own count of them rather than reading it off the cache
         val known = directoryPathsOf(connection).toHashSet()
-        val media = ArrayList<Medium>()
-        val directories = ArrayList<Directory>()
-        val collector = Collector(media, directories)
-        val skippedPaths = HashSet<String>()
-        var newFolderCount = 0
-        var mediaCount = 0
-
-        fun walk(path: String, depth: Int) {
-            throwIfAborted()
-            val entries = try {
-                listWithOneRetry(path)
-            } catch (e: Exception) {
-                throwIfAborted()
-                if (depth == 0 || !SmbClient.isConnected(path)) {
-                    throw e
-                }
-
-                Log.w(TAG, "Skipping \"$path\", a folder of the share that could not be listed", e)
-                skippedPaths.add(path)
-                return
-            }
-
-            if (path !in known) {
-                collector.collectOne(path, entries)
-                if (directories.isNotEmpty()) {
-                    storeFolder(path, media, directories)
-                    newFolderCount++
-                    mediaCount += media.size
-                }
-
-                media.clear()
-                directories.clear()
-            }
-
-            onProgress(newFolderCount, mediaCount, path)
-            if (depth >= MAX_DEPTH) {
-                return
-            }
-
-            entries.filter { it.isFolder && !isRecycleBinFolder(path, it) }.forEach { walk(childPathOf(path, it.name), depth + 1) }
+        val collector = Collector()
+        try {
+            walk.walk(
+                list = ::listOrSkip,
+                read = { path, entries ->
+                    if (path in known) {
+                        null
+                    } else {
+                        collector.read(path, entries)?.let {
+                            storeFolder(path, it.media, listOf(it.directory))
+                            it.media.size
+                        }
+                    }
+                },
+                isWalkable = { parentPath, entry -> !isRecycleBinFolder(parentPath, entry) },
+                onFolder = { path -> onProgress(walk.foundCount, walk.mediaCount, path) }
+            )
+        } catch (e: SmbScanAbortedException) {
+            putDown(kind, connection, walk)
+            throw e
         }
 
-        walk(connection.root, 0)
-        return Result(newFolderCount, mediaCount, skippedPaths.size)
+        return Result(walk.foundCount, walk.mediaCount, walk.skippedPaths.size)
     }
 
     // the direct subfolders of a folder, for the folder pickers. Not cached: a picker is opened
@@ -246,11 +322,7 @@ class SmbScanner(private val context: Context) {
     // Turns the entries of a folder into the rows the cache holds. The Directory rows are built
     // by the same createDirectoryFromMedia() that builds local folders, so MainActivity's
     // recheck of the displayed folders finds nothing to change in them
-    private inner class Collector(
-        private val media: ArrayList<Medium>,
-        private val directories: ArrayList<Directory>,
-        private val onProgress: (folderCount: Int, mediaCount: Int, path: String) -> Unit = { _, _, _ -> }
-    ) {
+    private inner class Collector {
         private val config = context.config
         private val favoritePaths = context.getFavoritePaths()
         private val albumCovers = config.parseAlbumCovers()
@@ -260,43 +332,9 @@ class SmbScanner(private val context: Context) {
         private val getProperFileSize = config.directorySorting and SORT_BY_SIZE != 0
         private val mediaFetcher = MediaFetcher(context)
 
-        // the folders the walk could not get into. They are not in the media it collected, and
-        // store() must therefore not read their absence as the share having dropped them
-        val skippedPaths = HashSet<String>()
-
-        // Lists one folder and walks into its subfolders. A folder that cannot be listed -- no
-        // permission for it, or it was removed while the walk ran -- is skipped rather than
-        // ending the scan; the rest of the share is still worth having
-        fun collect(path: String, depth: Int) {
-            throwIfAborted()
-            val entries = try {
-                listWithOneRetry(path)
-            } catch (e: Exception) {
-                throwIfAborted()
-                // The root not listing means the share is not reachable, which is not a folder
-                // to skip over -- and neither is any folder whose listing left no connection
-                // standing. Walking on without one skips every folder that is left, and the
-                // scan then reports an empty share rather than an unreachable one
-                if (depth == 0 || !SmbClient.isConnected(path)) {
-                    throw e
-                }
-
-                Log.w(TAG, "Skipping \"$path\", a folder of the share that could not be listed", e)
-                skippedPaths.add(path)
-                return
-            }
-
-            collectOne(path, entries)
-            onProgress(directories.size, media.size, path)
-            if (depth >= MAX_DEPTH) {
-                return
-            }
-
-            entries.filter { it.isFolder && !isRecycleBinFolder(path, it) }.forEach { collect(childPathOf(path, it.name), depth + 1) }
-        }
-
-        // the media of one folder, without walking into anything
-        fun collectOne(path: String, entries: List<SmbClient.Entry>) {
+        // the media of one listed folder and the row they make, without walking into anything;
+        // null for a folder with no media in it
+        fun read(path: String, entries: List<SmbClient.Entry>): Found? {
             val folderMedia = ArrayList<Medium>()
             entries.filter { !it.isFolder }.forEach { entry ->
                 val type = getMediaType(entry.name)
@@ -326,23 +364,21 @@ class SmbScanner(private val context: Context) {
             }
 
             if (folderMedia.isEmpty()) {
-                return
+                return null
             }
 
             mediaFetcher.sortMedia(folderMedia, config.getFolderSorting(path), path)
-            directories.add(
-                context.createDirectoryFromMedia(
-                    path = path,
-                    curMedia = folderMedia,
-                    albumCovers = albumCovers,
-                    hiddenString = hiddenString,
-                    includedFolders = includedFolders,
-                    getProperFileSize = getProperFileSize,
-                    noMediaFolders = noMediaFolders
-                )
+            val directory = context.createDirectoryFromMedia(
+                path = path,
+                curMedia = folderMedia,
+                albumCovers = albumCovers,
+                hiddenString = hiddenString,
+                includedFolders = includedFolders,
+                getProperFileSize = getProperFileSize,
+                noMediaFolders = noMediaFolders
             )
 
-            media.addAll(folderMedia)
+            return Found(folderMedia, directory)
         }
     }
 
@@ -439,6 +475,7 @@ class SmbScanner(private val context: Context) {
     // drops every row of the connection [connectionId], for one that was removed or pointed at
     // something else; the rows of the recycle bin go with them, the bin being on that share
     fun forgetAll(connectionId: Int) {
+        RemoteScanPlaces.dropConnection(connectionId)
         val root = smbRootOf(connectionId)
         val rowPrefix = "$root/"
         GalleryDatabase.getInstance(context).runInTransaction {

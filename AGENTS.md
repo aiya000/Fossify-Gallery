@@ -32,6 +32,8 @@
 | 端末を動かすテストで、あるマスを境に pCloud のマスが全部落ちた。メニューにもピッカーにも pCloud が無い | stub が知らない API（`renamefile`）に 1000 番で答えていた。pCloud の 1000 は「ログインが必要」で、アプリがログアウトしていた。API を足し、知らない API は 5000 にした | [agents/tests/a-stub-refusal-that-signed-the-app-out.md](./agents/tests/a-stub-refusal-that-signed-the-app-out.md) |
 | 台本のチェックが「見つからない」で落ちた。画面にもファイルにもちゃんとある。通ったり落ちたりする | `adb ... \| rg -q` の形で、`rg -q` が先にパイプを閉じて `pipefail` で失敗になっていた。一度変数に受けてから探す | [agents/tests/a-found-match-that-failed-the-check.md](./agents/tests/a-found-match-that-failed-the-check.md) |
 | ある機能が端末にはあって共有（や pCloud）に無い。忘れているのか、わざとなのか分からない | #107 で全部読み直して分けた。わざと違えてあるものは表にした。載っていなければ抜けなので、`MediaStorage` の capability に乗せて直す | [agents/storage/what-each-storage-does-differently-on-purpose.md](./agents/storage/what-each-storage-does-differently-on-purpose.md) |
+| 台本で読み込み中の通知の「Stop」を押したいのに、シェードで出ない・dump が `could not get idle state` で落ちる | 通知が 0.5 秒ごとに書き換わり、uiautomator が待てない。ボタンと同じ intent を `su` でサービスへ直接送った。共有は 15 秒ほどで読み終わる | [agents/tests/the-scan-notification-cannot-be-tapped.md](./agents/tests/the-scan-notification-cannot-be-tapped.md) |
+| 止められた読み込みが続きから再開しない・再開したのに数が合わない | #80 から、割り込まれた読み込みは続きを `RemoteScanPlaces` に置き、次の同じ読み込みが拾う。通知の Stop・設定の変更・1 時間で捨てる。止まっているあいだに書き込まれたフォルダは読み直す。ログの `Put the walk ... down` と `Picking up` を見る | [app/src/main/kotlin/org/fossify/gallery/helpers/RemoteScanPlaces.kt](./app/src/main/kotlin/org/fossify/gallery/helpers/RemoteScanPlaces.kt) |
 | 共有を見たあと端末に切り替えると、端末のサムネが長く出ない | Glide のプールが共有の読み込みにふさがれていた。`cancel()` はフラグだけ。リモートの fetcher を非同期にして自前のプールで読み、端末のタイルを `HIGH` にした | [agents/thumbnails/remote-reads-off-glides-threads.md](./agents/thumbnails/remote-reads-off-glides-threads.md) |
 
 ### この索引に足すこと

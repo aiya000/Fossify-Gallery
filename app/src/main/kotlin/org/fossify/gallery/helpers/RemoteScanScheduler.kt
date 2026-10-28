@@ -24,9 +24,16 @@ import org.fossify.gallery.jobs.RemoteScanService
 // - the refresh after a transfer outranks everything: it is short, and what was transferred stays
 //   invisible until it has run
 //
-// A preempted scan is dropped, not resumed and not put back: neither scanner has a cursor to
-// resume from, and keeping a half-written result is the shape of the bug where a failed scan wiped
-// the cache. The next request for that storage starts it over.
+// A scan that is called off keeps its place (#80): the scanner leaves how far it had got in
+// RemoteScanPlaces, unpublished, and the next scan of the same storage picks it up from there. How
+// it was called off decides what happens to the request itself:
+//
+// - outranked by a request that came in, it is put back in the queue at its own rank once it has
+//   stopped, and picks up where it was after the request that cut in has run
+// - left behind by the folder list, it is not put back -- nobody is looking at that storage any
+//   more -- but its place is still held for whichever scan of it comes next
+// - stopped from the notification, it is neither put back nor does it keep its place: the user
+//   wants the network left alone, not their place held
 object RemoteScanScheduler {
     // the settings' own schedule: on launch, on arriving at a storage, on a pull. Nobody is
     // waiting on one, so it is the only thing a storage switch is allowed to cut short
@@ -81,18 +88,35 @@ object RemoteScanScheduler {
                 full == other.full && newFoldersOnly == other.newFoldersOnly
     }
 
+    // How the running scan was called off, in rising order of finality: a later call-off can make
+    // it more final, never less. A scan left behind and then outranked is still not put back
+    private enum class CallOff { OUTRANKED, LEFT_BEHIND, STOPPED }
+
     private val lock = Any()
     private val queue = ArrayList<Request>()
     private var running: Request? = null
+    private var runningCallOff: CallOff? = null
 
-    // How a running scan is called off. The scanners are reached through this rather than named
-    // directly, so that what got called off can be watched without a share to walk or an account
-    // to log in to -- which is the whole of rule 1, and the hardest thing here to check by hand
-    internal var abortScan: (Storage) -> Unit = { storage ->
+    // How a running scan is called off, and whether it keeps its place. The scanners are reached
+    // through this rather than named directly, so that what got called off can be watched without
+    // a share to walk or an account to log in to -- which is the whole of rule 1, and the hardest
+    // thing here to check by hand
+    internal var abortScan: (Storage, keepPlace: Boolean) -> Unit = { storage, keepPlace ->
         when (storage) {
-            Storage.PCLOUD -> PCloudScanner.abortCurrent()
-            Storage.SMB -> SmbScanner.abortCurrent()
+            Storage.PCLOUD -> PCloudScanner.abortCurrent(keepPlace)
+            Storage.SMB -> SmbScanner.abortCurrent(keepPlace)
         }
+    }
+
+    // calls off the running scan, remembering the most final way it has been called off so far.
+    // Called under the lock
+    private fun callOff(current: Request, how: CallOff) {
+        val was = runningCallOff
+        if (was == null || how > was) {
+            runningCallOff = how
+        }
+
+        abortScan(current.storage, runningCallOff != CallOff.STOPPED)
     }
 
     // Queues the request and makes sure something is draining the queue. Safe to call from any
@@ -107,34 +131,41 @@ object RemoteScanScheduler {
     // that stood between these rules and a test of them
     internal fun enqueue(request: Request) {
         synchronized(lock) {
-            val existing = queue.firstOrNull { it.isSameWorkAs(request) }
-            if (existing != null) {
-                // the work is already queued. Raise it to the newcomer's rank if that is higher,
-                // so that a manual rescan is not left sitting behind at an automatic scan's place
-                if (request.priority > existing.priority) {
-                    queue.remove(existing)
-                    insert(
-                        Request(
-                            storage = existing.storage,
-                            priority = request.priority,
-                            reportCounts = existing.reportCounts,
-                            folders = existing.folders,
-                            full = existing.full,
-                            newFoldersOnly = existing.newFoldersOnly,
-                            connectionId = existing.connectionId,
-                            onDone = existing.onDone
-                        )
-                    )
-                }
-            } else {
-                insert(request)
-            }
+            merge(request)
 
             val current = running
             if (current != null && request.priority > current.priority) {
                 Log.i(TAG, "${describe(request)} outranks the running ${describe(current)}; calling it off")
-                abortScan(current.storage)
+                callOff(current, CallOff.OUTRANKED)
             }
+        }
+    }
+
+    // Puts a request in the queue, or folds it into the same work already there. Called under
+    // the lock
+    private fun merge(request: Request) {
+        val existing = queue.firstOrNull { it.isSameWorkAs(request) }
+        if (existing == null) {
+            insert(request)
+            return
+        }
+
+        // the work is already queued. Raise it to the newcomer's rank if that is higher, so that
+        // a manual rescan is not left sitting behind at an automatic scan's place
+        if (request.priority > existing.priority) {
+            queue.remove(existing)
+            insert(
+                Request(
+                    storage = existing.storage,
+                    priority = request.priority,
+                    reportCounts = existing.reportCounts,
+                    folders = existing.folders,
+                    full = existing.full,
+                    newFoldersOnly = existing.newFoldersOnly,
+                    connectionId = existing.connectionId,
+                    onDone = existing.onDone
+                )
+            )
         }
     }
 
@@ -157,12 +188,24 @@ object RemoteScanScheduler {
         // level
         val next = if (queue.isEmpty()) null else queue.removeAt(0)
         running = next
+        runningCallOff = null
         next
     }
 
-    fun finished() {
+    // The running request is over. [calledOff] is whether it ended by being called off, rather
+    // than running through or failing; one that was outranked is then put back, to pick up its
+    // place after what cut in. A scan that ran through in the moment it was being called off
+    // says false, and is not run a second time
+    fun finished(calledOff: Boolean = false) {
         synchronized(lock) {
+            val current = running
+            if (current != null && calledOff && runningCallOff == CallOff.OUTRANKED) {
+                Log.i(TAG, "putting the ${describe(current)} back, to pick up where it was")
+                merge(current)
+            }
+
             running = null
+            runningCallOff = null
         }
     }
 
@@ -173,6 +216,7 @@ object RemoteScanScheduler {
     // more. It is called off only when the switch outranks it, which is the whole of rule 1: the
     // settings' automatic scan goes, and a walk the user asked for by hand stays. A sideways drag
     // is the easiest gesture in the app to make by accident, and a share takes minutes to walk.
+    // What goes is not put back, but it keeps its place for the next scan of that storage.
     //
     // [connectionId] names the one share left behind; null is every one of them, which is what
     // leaving pCloud or a list that shows no share at all means
@@ -184,18 +228,18 @@ object RemoteScanScheduler {
             val current = running
             if (current != null && isLeft(current) && current.priority < PRIORITY_SWITCH) {
                 Log.i(TAG, "the list left ${current.storage} behind; calling off its ${describe(current)}")
-                abortScan(storage)
+                callOff(current, CallOff.LEFT_BEHIND)
             }
         }
     }
 
     // Calls off the running scan whatever its rank, which is what the notification's stop action
     // does, and empties the queue with it: the user stopping a scan means they want the network
-    // left alone, not the next request started on its heels
+    // left alone, not the next request started on its heels. Nor is its place kept
     fun abortAll() {
         synchronized(lock) {
             queue.clear()
-            running?.let { abortScan(it.storage) }
+            running?.let { callOff(it, CallOff.STOPPED) }
         }
     }
 

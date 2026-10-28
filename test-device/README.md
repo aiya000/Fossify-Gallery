@@ -307,6 +307,15 @@ at afterwards.
   `InAppMessage`, which also says where the message went; the complaint under the box stays, so
   the view tree is the witness there. A message a screen says as it closes is still a toast on
   purpose, and is not driven
+- **`88-a-called-off-walk-picks-up-where-it-stopped.sh`** — #80: a walk of the share called off
+  to make way for another keeps its place. The launch scan is left behind by a swipe, as in rule
+  1-a, and the walk the arrival back at the share starts has to pick up at the very folder count
+  the first one was put down at, then come to every file the fixture holds -- a resumed walk that
+  lost or doubled a folder shows there. The notification's Stop must not keep the place: the walk
+  after it starts from the top. Stop is sent to the service as the intent the button sends, through
+  the emulator's `su`, since the notification is redrawn twice a second and uiautomator will not
+  dump a shade that never goes still. `FIXTURE_ONLY_CASES="b"` runs one case. The folders written
+  to while a walk is put down are `SmbWalkTest`'s, which can stop a walk at every folder in turn
 - **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
   for both events that can ask and for both storages alike. Each case runs twice, once with its
   setting off and once on, because the "off" half would pass on an app that fetches nothing ever.

@@ -21,14 +21,21 @@ import org.junit.Test
 // The scheduler is one object for the whole app, so every test hands it back empty.
 class RemoteScanSchedulerTest {
     private val calledOff = ArrayList<Storage>()
-    private var realAbortScan: (Storage) -> Unit = {}
+
+    // whether each call-off told the scanner to keep its place, in the same order
+    private val keptPlace = ArrayList<Boolean>()
+    private var realAbortScan: (Storage, Boolean) -> Unit = { _, _ -> }
 
     @Before
     fun setUp() {
         realAbortScan = RemoteScanScheduler.abortScan
-        RemoteScanScheduler.abortScan = { calledOff.add(it) }
+        RemoteScanScheduler.abortScan = { storage, keepPlace ->
+            calledOff.add(storage)
+            keptPlace.add(keepPlace)
+        }
         emptyTheQueue()
         calledOff.clear()
+        keptPlace.clear()
     }
 
     @After
@@ -155,19 +162,83 @@ class RemoteScanSchedulerTest {
         assertEquals(RemoteScanScheduler.PRIORITY_TRANSFER, startNext()?.priority)
     }
 
-    // and the scan it cut short is gone, rather than starting again on its own once the transfer
-    // has been read. Neither scanner can resume from where it was, see #80
+    // and the scan it cut short comes back once the transfer has been read, keeping its place
+    // to pick up where it was (#80). Before, it was gone, and the minutes it had walked with it
     @Test
-    fun `a scan that was cut short is not put back`() {
+    fun `a scan that was cut short is put back behind what cut in`() {
         RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL))
         startNext()
         RemoteScanScheduler.enqueue(folder(Storage.SMB, RemoteScanScheduler.PRIORITY_TRANSFER, "smb:/pictures"))
+        RemoteScanScheduler.finished(calledOff = true)
+
+        assertEquals(listOf(true), keptPlace)
+        assertEquals(RemoteScanScheduler.PRIORITY_TRANSFER, startNext()?.priority)
         RemoteScanScheduler.finished()
+
+        val resumed = startNext()
+        assertEquals(RemoteScanScheduler.PRIORITY_MANUAL, resumed?.priority)
+        assertTrue(resumed!!.isWholeStorage)
+        RemoteScanScheduler.finished()
+
+        assertNull(startNext())
+    }
+
+    // the call-off came in the moment the scan ran through: it wrote its result, so it is done,
+    // not owed another run
+    @Test
+    fun `a scan that ran through while it was being cut short is not put back`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL))
+        startNext()
+        RemoteScanScheduler.enqueue(folder(Storage.SMB, RemoteScanScheduler.PRIORITY_TRANSFER, "smb:/pictures"))
+        RemoteScanScheduler.finished(calledOff = false)
 
         startNext()
         RemoteScanScheduler.finished()
 
         assertNull(startNext())
+    }
+
+    // put back, it is the same work as a request for it that came in meanwhile, and the two
+    // become one at the higher of their ranks
+    @Test
+    fun `a scan put back folds into the same work already queued`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO))
+        startNext()
+        RemoteScanScheduler.enqueue(whole(Storage.PCLOUD, RemoteScanScheduler.PRIORITY_MANUAL))
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL))
+        RemoteScanScheduler.finished(calledOff = true)
+
+        val queued = generateSequence { startNext() }.toList()
+
+        assertEquals(listOf(Storage.PCLOUD, Storage.SMB), queued.map { it.storage })
+        assertEquals(RemoteScanScheduler.PRIORITY_MANUAL, queued.last().priority)
+    }
+
+    // left behind, nobody is looking at that storage any more: it is not put back, but it keeps
+    // its place for whichever scan of it comes next
+    @Test
+    fun `a scan left behind keeps its place and is not put back`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO))
+        startNext()
+
+        RemoteScanScheduler.leftBehind(Storage.SMB)
+        RemoteScanScheduler.finished(calledOff = true)
+
+        assertEquals(listOf(true), keptPlace)
+        assertNull(startNext())
+    }
+
+    // and being outranked after it was left behind does not bring it back
+    @Test
+    fun `a scan left behind and then outranked is still not put back`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO))
+        startNext()
+
+        RemoteScanScheduler.leftBehind(Storage.SMB)
+        RemoteScanScheduler.enqueue(whole(Storage.PCLOUD, RemoteScanScheduler.PRIORITY_SWITCH))
+        RemoteScanScheduler.finished(calledOff = true)
+
+        assertEquals(listOf(Storage.PCLOUD), generateSequence { startNext() }.map { it.storage }.toList())
     }
 
     // the one rule underneath all three: strictly higher, or wait your turn
@@ -303,5 +374,31 @@ class RemoteScanSchedulerTest {
 
         assertEquals(listOf(Storage.SMB), calledOff)
         assertFalse(RemoteScanScheduler.hasWork())
+    }
+
+    // nor does it hold the user's place: "stop" is not "pause" (#80)
+    @Test
+    fun `stopping the running scan does not keep its place`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_MANUAL))
+        startNext()
+
+        RemoteScanScheduler.abortAll()
+
+        assertEquals(listOf(false), keptPlace)
+    }
+
+    // and a stop after the scan was outranked wins: it is neither put back nor does it keep its
+    // place, although the first call-off had asked it to
+    @Test
+    fun `stopping a scan that was outranked does not put it back`() {
+        RemoteScanScheduler.enqueue(whole(Storage.SMB, RemoteScanScheduler.PRIORITY_AUTO))
+        startNext()
+        RemoteScanScheduler.enqueue(whole(Storage.PCLOUD, RemoteScanScheduler.PRIORITY_MANUAL))
+
+        RemoteScanScheduler.abortAll()
+        RemoteScanScheduler.finished(calledOff = true)
+
+        assertEquals(listOf(true, false), keptPlace)
+        assertNull(startNext())
     }
 }

@@ -119,10 +119,12 @@ class RemoteScanService : Service() {
         while (true) {
             while (true) {
                 val request = RemoteScanScheduler.takeNext() ?: break
+                var outcome = Outcome.WROTE_NOTHING
                 try {
-                    wroteAnything = run(request) || wroteAnything
+                    outcome = run(request)
+                    wroteAnything = outcome == Outcome.WROTE || wroteAnything
                 } finally {
-                    RemoteScanScheduler.finished()
+                    RemoteScanScheduler.finished(calledOff = outcome == Outcome.CALLED_OFF)
                 }
             }
 
@@ -135,18 +137,22 @@ class RemoteScanService : Service() {
         finish(notifyListeners = wroteAnything)
     }
 
-    // Runs the one request, and answers whether it wrote anything worth rebuilding a screen for.
-    // A request that was called off wrote nothing and says so, which is also why its onDone does
-    // not run: the screen that outranked it is reloading on its own
+    // how one request ended: what it wrote is worth rebuilding a screen for, and what was called
+    // off may be put back in the queue to pick up its place
+    private enum class Outcome { WROTE, WROTE_NOTHING, CALLED_OFF }
+
+    // Runs the one request, and answers how it ended. A request that was called off wrote nothing
+    // and says so, which is also why its onDone does not run: the screen that outranked it is
+    // reloading on its own, and the request is run again if it is put back
     private fun run(request: RemoteScanScheduler.Request) = when (request.storage) {
         RemoteScanScheduler.Storage.PCLOUD -> runPCloud(request)
         RemoteScanScheduler.Storage.SMB -> runSmb(request)
     }
 
-    private fun runPCloud(request: RemoteScanScheduler.Request): Boolean {
+    private fun runPCloud(request: RemoteScanScheduler.Request): Outcome {
         if (!config.isPCloudLoggedIn) {
             request.onDone?.invoke()
-            return false
+            return Outcome.WROTE_NOTHING
         }
 
         val scanner = PCloudScanner(this)
@@ -156,11 +162,11 @@ class RemoteScanService : Service() {
             // and answering false is cheaper than finding out the hard way that something does
             Log.w(TAG, "the pCloud scanner is held elsewhere, not starting a second scan")
             request.onDone?.invoke()
-            return false
+            return Outcome.WROTE_NOTHING
         }
 
         showProgress(buildNotification(getString(if (request.newFoldersOnly) R.string.pcloud_finding_new_folders else R.string.pcloud_rescanning), null))
-        var wrote = false
+        var outcome = Outcome.WROTE_NOTHING
         try {
             if (request.newFoldersOnly) {
                 val result = scanner.scanNewFolders()
@@ -190,9 +196,10 @@ class RemoteScanService : Service() {
                 }
             }
 
-            wrote = true
+            outcome = Outcome.WROTE
         } catch (e: PCloudScanAbortedException) {
             Log.i(TAG, "the pCloud scan was called off; nothing was written")
+            outcome = Outcome.CALLED_OFF
         } catch (e: PCloudException) {
             if (e.requiresLogIn) {
                 config.clearPCloudAccount()
@@ -206,30 +213,30 @@ class RemoteScanService : Service() {
             PCloudScanner.finish()
         }
 
-        if (wrote) {
+        if (outcome == Outcome.WROTE) {
             request.onDone?.invoke()
         }
 
-        return wrote
+        return outcome
     }
 
-    private fun runSmb(request: RemoteScanScheduler.Request): Boolean {
+    private fun runSmb(request: RemoteScanScheduler.Request): Outcome {
         // a connection removed while its request waited has nothing left to walk
         val connection = config.smbConnection(request.connectionId)
         if (connection == null) {
             request.onDone?.invoke()
-            return false
+            return Outcome.WROTE_NOTHING
         }
 
         val scanner = SmbScanner(this)
         if (!SmbScanner.start(scanner)) {
             Log.w(TAG, "the share scanner is held elsewhere, not starting a second scan")
             request.onDone?.invoke()
-            return false
+            return Outcome.WROTE_NOTHING
         }
 
         showProgress(buildNotification(getString(if (request.newFoldersOnly) R.string.smb_finding_new_folders else R.string.smb_rescanning), null))
-        var wrote = false
+        var outcome = Outcome.WROTE_NOTHING
         try {
             if (request.newFoldersOnly) {
                 val result = scanner.scanNewFolders(connection) { newFolders, _, path -> showNewFoldersProgress(newFolders, path) }
@@ -279,12 +286,13 @@ class RemoteScanService : Service() {
                 }
             }
 
-            wrote = true
+            outcome = Outcome.WROTE
         } catch (e: SmbScanAbortedException) {
             // the screen that outranked it is reloading on its own, and nothing was written.
             // Nothing is said to the user about it, so the log is the only record that the walk
-            // happened at all and threw its result away
+            // happened at all; whether its place was kept, the scanner has said just before
             Log.i(TAG, "The walk of the share was called off; nothing was written")
+            outcome = Outcome.CALLED_OFF
         } catch (e: Exception) {
             Log.w(TAG, "A scan of the network share failed", e)
             // the most common failure is a session the server has given up on; dropping the
@@ -295,11 +303,11 @@ class RemoteScanService : Service() {
             SmbScanner.finish()
         }
 
-        if (wrote) {
+        if (outcome == Outcome.WROTE) {
             request.onDone?.invoke()
         }
 
-        return wrote
+        return outcome
     }
 
     private fun finish(notifyListeners: Boolean) {
