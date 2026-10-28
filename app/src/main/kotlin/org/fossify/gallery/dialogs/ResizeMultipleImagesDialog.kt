@@ -9,6 +9,9 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogResizeMultipleImagesBinding
 import org.fossify.gallery.extensions.ensureWriteAccess
 import org.fossify.gallery.extensions.rescanPathsAndUpdateLastModified
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.gallery.helpers.MediaStorage
 import java.io.File
 import kotlin.math.roundToInt
@@ -47,7 +50,7 @@ class ResizeMultipleImagesDialog(
                     positiveButton.setOnClickListener {
                         val resizeFactorText = resizeFactorEditText.text?.toString()
                         if (resizeFactorText.isNullOrEmpty() || resizeFactorText.toInt() !in 10..90) {
-                            activity.toast(R.string.resize_factor_error)
+                            binding.resizeFactorInputLayout.showInputError(R.string.resize_factor_error)
                             return@setOnClickListener
                         }
 
@@ -84,7 +87,7 @@ class ResizeMultipleImagesDialog(
 
             onceWritable {
                 if (storage.isRemote) {
-                    toast(storage.writingBackMessage(activity))
+                    showInAppMessage(storage.writingBackMessage(activity))
                 }
 
                 ensureBackgroundThread {
@@ -107,17 +110,17 @@ class ResizeMultipleImagesDialog(
                                 }
                             }
                         } catch (e: OutOfMemoryError) {
-                            toast(org.fossify.commons.R.string.out_of_memory_error)
+                            showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
                         } catch (e: Exception) {
-                            showErrorToast(e)
+                            showInAppError(e)
                         }
                     }
 
                     val failureCount = imagePaths.size - resizedCount
                     if (failureCount > 0) {
-                        toast(resources.getQuantityString(R.plurals.failed_to_resize_images, failureCount, failureCount))
+                        showInAppMessage(resources.getQuantityString(R.plurals.failed_to_resize_images, failureCount, failureCount))
                     } else {
-                        toast(R.string.images_resized_successfully)
+                        showInAppMessage(R.string.images_resized_successfully)
                     }
 
                     rescanPathsAndUpdateLastModified(pathsToRescan, pathLastModifiedMap) {

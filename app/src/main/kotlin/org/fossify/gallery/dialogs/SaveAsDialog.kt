@@ -11,7 +11,7 @@ import org.fossify.commons.extensions.isAValidFilename
 import org.fossify.commons.extensions.isInDownloadDir
 import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.databinding.DialogSaveAsBinding
 import org.fossify.gallery.extensions.humanizeAnyPath
@@ -105,19 +105,19 @@ class SaveAsDialog(
         val extension = binding.extensionValue.value
 
         if (filename.isEmpty()) {
-            activity.toast(org.fossify.commons.R.string.filename_cannot_be_empty)
+            binding.filenameHint.showInputError(org.fossify.commons.R.string.filename_cannot_be_empty)
             return
         }
 
         if (extension.isEmpty()) {
-            activity.toast(org.fossify.commons.R.string.extension_cannot_be_empty)
+            binding.extensionHint.showInputError(org.fossify.commons.R.string.extension_cannot_be_empty)
             return
         }
 
         val newFilename = "$filename.$extension"
         val newPath = "${realPath.trimEnd('/')}/$newFilename"
         if (!newFilename.isAValidFilename()) {
-            activity.toast(org.fossify.commons.R.string.filename_invalid_characters)
+            binding.filenameHint.showInputError(org.fossify.commons.R.string.filename_invalid_characters)
             return
         }
 

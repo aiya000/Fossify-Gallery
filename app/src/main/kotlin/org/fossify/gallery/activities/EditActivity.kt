@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
+import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -46,8 +47,11 @@ import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.onSeekBarChangeListener
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.sharePathIntent
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.InAppMessageAnchor
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.REAL_FILE_PATH
@@ -87,7 +91,10 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import kotlin.math.max
 
-class EditActivity : BaseCropActivity() {
+class EditActivity : BaseCropActivity(), InAppMessageAnchor {
+    // the editor's tools sit along the bottom; a message is laid above them, not across them
+    override fun inAppMessageAnchor(): View? = binding.bottomEditorPrimaryActions.root
+
     companion object {
         init {
             System.loadLibrary("NativeImageProcessor")
@@ -159,6 +166,7 @@ class EditActivity : BaseCropActivity() {
         setupOptionsMenu()
         handlePermission(getPermissionToRequest()) {
             if (!it) {
+                // a toast: this screen is closing, and would take a bar of its own with it
                 toast(org.fossify.commons.R.string.no_storage_permissions)
                 finish()
             }
@@ -195,6 +203,7 @@ class EditActivity : BaseCropActivity() {
 
     private fun initEditActivity() {
         if (intent.data == null) {
+            // a toast, for the same reason
             toast(R.string.invalid_image_path)
             finish()
             return
@@ -203,6 +212,7 @@ class EditActivity : BaseCropActivity() {
         uri = intent.data!!
         originalUri = uri
         if (uri!!.scheme != "file" && uri!!.scheme != "content") {
+            // a toast, for the same reason
             toast(R.string.unknown_file_location)
             finish()
             return
@@ -385,7 +395,7 @@ class EditActivity : BaseCropActivity() {
                 }
             }
         } catch (e: Exception) {
-            showErrorToast(e)
+            showInAppError(e)
         }
     }
 
@@ -415,7 +425,7 @@ class EditActivity : BaseCropActivity() {
     override fun onImageCropped(bitmap: Bitmap?, error: Exception?) {
         if (isFinishing || isDestroyed) return
         if (error != null || bitmap == null) {
-            toast("${getString(R.string.image_editing_failed)}: ${error?.message}")
+            showInAppMessage("${getString(R.string.image_editing_failed)}: ${error?.message}")
             return
         }
 
@@ -458,7 +468,7 @@ class EditActivity : BaseCropActivity() {
                 currentFilter.processFilter(original)
                 callback(original)
             } catch (_: OutOfMemoryError) {
-                toast(org.fossify.commons.R.string.out_of_memory_error)
+                showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
             }
         }
     }
@@ -483,7 +493,7 @@ class EditActivity : BaseCropActivity() {
                 binding.defaultImageView.isVisible() -> {
                     val currentFilter = getFiltersAdapter()?.getCurrentFilter()
                     if (currentFilter == null) {
-                        toast(org.fossify.commons.R.string.unknown_error_occurred)
+                        showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                         return@ensureBackgroundThread
                     }
 
@@ -509,7 +519,7 @@ class EditActivity : BaseCropActivity() {
             if (it != null) {
                 sharePathIntent(it, BuildConfig.APPLICATION_ID)
             } else {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
+                showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             }
         }
     }
@@ -712,7 +722,7 @@ class EditActivity : BaseCropActivity() {
                         .asBitmap()
                         .load(uri).listener(object : RequestListener<Bitmap> {
                             override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Bitmap>, isFirstResource: Boolean): Boolean {
-                                showErrorToast(e.toString())
+                                showInAppError(e.toString())
                                 return false
                             }
 
@@ -727,6 +737,7 @@ class EditActivity : BaseCropActivity() {
                         .submit(thumbnailSize, thumbnailSize)
                         .get()
                 } catch (e: GlideException) {
+                    // a toast: this screen is closing, and would take a bar of its own with it
                     showErrorToast(e)
                     finish()
                     return@ensureBackgroundThread
@@ -841,7 +852,7 @@ class EditActivity : BaseCropActivity() {
     private fun resizeImage() {
         val point = getAreaSize()
         if (point == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -910,7 +921,7 @@ class EditActivity : BaseCropActivity() {
         }
 
         if (showSavingToast) {
-            toast(org.fossify.commons.R.string.saving)
+            showInAppMessage(org.fossify.commons.R.string.saving)
         }
 
         storage.writeInto(this, path, { target, wrote ->
@@ -921,10 +932,10 @@ class EditActivity : BaseCropActivity() {
                     writeExif(oldExif, file.toUri())
                     true
                 } catch (e: OutOfMemoryError) {
-                    toast(org.fossify.commons.R.string.out_of_memory_error)
+                    showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
                     false
                 } catch (e: Exception) {
-                    showErrorToast(e)
+                    showInAppError(e)
                     false
                 }
 
@@ -933,6 +944,7 @@ class EditActivity : BaseCropActivity() {
         }) { written ->
             if (written) {
                 setResult(RESULT_OK, resultIntent())
+                // a toast: the editor closes on the save, and the words have to outlive it
                 toast(org.fossify.commons.R.string.file_saved)
                 finish()
             }
@@ -994,21 +1006,21 @@ class EditActivity : BaseCropActivity() {
                         if (it != null) {
                             saveBitmapToFile(file, bitmap, it, showSavingToast)
                         } else {
-                            toast(R.string.image_editing_failed)
+                            showInAppMessage(R.string.image_editing_failed)
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            showErrorToast(e)
+            showInAppError(e)
         } catch (e: OutOfMemoryError) {
-            toast(org.fossify.commons.R.string.out_of_memory_error)
+            showInAppMessage(org.fossify.commons.R.string.out_of_memory_error)
         }
     }
 
     private fun saveBitmapToFile(file: File, bitmap: Bitmap, out: OutputStream, showSavingToast: Boolean) {
         if (showSavingToast) {
-            toast(org.fossify.commons.R.string.saving)
+            showInAppMessage(org.fossify.commons.R.string.saving)
         }
 
         out.use {
@@ -1038,7 +1050,7 @@ class EditActivity : BaseCropActivity() {
         isCropCommit: Boolean
     ) {
         if (showSavingToast) {
-            toast(org.fossify.commons.R.string.saving)
+            showInAppMessage(org.fossify.commons.R.string.saving)
         }
 
         ensureBackgroundThread {
@@ -1066,12 +1078,13 @@ class EditActivity : BaseCropActivity() {
                         finishCropResultForContent(uri)
                     } else {
                         setResult(RESULT_OK, intent)
+                        // a toast: the editor closes on the save, and the words have to outlive it
                         toast(org.fossify.commons.R.string.file_saved)
                         finish()
                     }
                 }
             } catch (e: Exception) {
-                showErrorToast(e)
+                showInAppError(e)
             } finally {
                 try { out?.close() } catch (_: Exception) {}
             }
@@ -1088,6 +1101,7 @@ class EditActivity : BaseCropActivity() {
         rescanPaths(paths) {
             fixDateTaken(paths, false)
             setResult(RESULT_OK, resultIntent())
+            // a toast: the editor closes on the save, and the words have to outlive it
             toast(org.fossify.commons.R.string.file_saved)
             finish()
         }

@@ -12,6 +12,7 @@ import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.gallery.helpers.*
 import org.fossify.gallery.models.Medium
 import java.io.File
@@ -128,7 +129,7 @@ abstract class ViewPagerFragment : Fragment() {
                 storage.fetchedCopy(path)
             } catch (e: Exception) {
                 Log.w("RemoteFetch", "Could not fetch $path for the viewer", e)
-                context.toast("${storage.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
+                context.showInAppMessage("${storage.fetchFailedMessage()}: ${e.message ?: e.javaClass.simpleName}")
                 null
             } ?: return@ensureBackgroundThread
 

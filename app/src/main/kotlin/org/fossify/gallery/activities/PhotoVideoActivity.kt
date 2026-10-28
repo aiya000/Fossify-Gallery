@@ -35,7 +35,7 @@ import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.rescanPath
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.toHex
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.updateBrightness
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.IS_FROM_GALLERY
@@ -275,7 +275,7 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
     private fun launchGesturePlayer() {
         val newUri = getFinalUriFromPath(mUri.toString(), BuildConfig.APPLICATION_ID)
         if (newUri == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 

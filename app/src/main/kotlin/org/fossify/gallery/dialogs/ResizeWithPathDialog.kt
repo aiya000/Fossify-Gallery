@@ -11,6 +11,8 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogResizeImageWithPathBinding
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.humanizeAnyPath
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.gallery.helpers.MediaStorage
 
 // The destination is picked with the gallery's own folder picker rather than commons', so that
@@ -83,7 +85,7 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
                         val width = getViewValue(widthView)
                         val height = getViewValue(heightView)
                         if (width <= 0 || height <= 0) {
-                            activity.toast(R.string.invalid_values)
+                            (if (width <= 0) binding.resizeImageWidthHint else binding.resizeImageHeightHint).showInputError(R.string.invalid_values)
                             return@setOnClickListener
                         }
 
@@ -92,19 +94,19 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
                         val filename = binding.filenameValue.value
                         val extension = binding.extensionValue.value
                         if (filename.isEmpty()) {
-                            activity.toast(org.fossify.commons.R.string.filename_cannot_be_empty)
+                            binding.filenameHint.showInputError(org.fossify.commons.R.string.filename_cannot_be_empty)
                             return@setOnClickListener
                         }
 
                         if (extension.isEmpty()) {
-                            activity.toast(org.fossify.commons.R.string.extension_cannot_be_empty)
+                            binding.extensionHint.showInputError(org.fossify.commons.R.string.extension_cannot_be_empty)
                             return@setOnClickListener
                         }
 
                         val newFilename = "$filename.$extension"
                         val newPath = "${realPath.trimEnd('/')}/$newFilename"
                         if (!newFilename.isAValidFilename()) {
-                            activity.toast(org.fossify.commons.R.string.filename_invalid_characters)
+                            binding.filenameHint.showInputError(org.fossify.commons.R.string.filename_invalid_characters)
                             return@setOnClickListener
                         }
 
@@ -124,7 +126,9 @@ class ResizeWithPathDialog(val activity: BaseSimpleActivity, val size: Point, va
             val exists = try {
                 storage.isNameTaken(newPath)
             } catch (e: Exception) {
-                activity.showErrorToast(e)
+                // said inside this dialog, which stays up to be corrected
+                val dialogWindow = alertDialog.window?.decorView
+                if (dialogWindow != null) dialogWindow.showInAppError(e) else activity.showInAppError(e)
                 return@ensureBackgroundThread
             }
 

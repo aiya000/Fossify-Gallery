@@ -61,8 +61,9 @@ import org.fossify.commons.extensions.getFormattedDuration
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.setDrawablesRelativeWithIntrinsicBounds
-import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
+import org.fossify.gallery.extensions.InAppMessageAnchor
 import org.fossify.commons.extensions.updateBrightness
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
@@ -98,7 +99,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeListener,
-    TextureView.SurfaceTextureListener, PlaybackSpeedListener {
+    TextureView.SurfaceTextureListener, PlaybackSpeedListener, InAppMessageAnchor {
+    // the seek bar sits along the bottom of the player; a message is laid above it, not across it
+    override fun inAppMessageAnchor(): View? = binding.bottomVideoTimeHolder.root
+
     companion object {
         private const val PLAY_WHEN_READY_DRAG_DELAY = 100L
         private const val UPDATE_INTERVAL_MS = 250L
@@ -381,7 +385,7 @@ open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeLi
         try {
             fileDataSource.open(dataSpec)
         } catch (e: Exception) {
-            showErrorToast(e)
+            showInAppError(e)
         }
 
         val factory = DataSource.Factory { fileDataSource }
@@ -548,7 +552,7 @@ open class VideoPlayerActivity : BaseViewerActivity(), SeekBar.OnSeekBarChangeLi
         if (mHasAudio) {
             if (isMuted) mExoPlayer?.mute() else mExoPlayer?.unmute()
         } else if (showToast && mWasVideoStarted) {
-            toast(R.string.video_no_sound)
+            showInAppMessage(R.string.video_no_sound)
         }
 
         val drawableId = when {

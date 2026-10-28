@@ -14,7 +14,6 @@ import androidx.activity.addCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.snackbar.Snackbar
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.extensions.beGone
@@ -32,7 +31,7 @@ import org.fossify.commons.extensions.isInDownloadDir
 import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
 import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.underlineText
 import org.fossify.commons.helpers.VIEW_TYPE_GRID
 import org.fossify.commons.views.MyGridLayoutManager
@@ -65,9 +64,6 @@ import org.fossify.gallery.helpers.placeFolder
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.views.StorageChips
 import java.io.File
-
-// a sentence of guidance wants more than the two lines a snackbar gives it by default
-private const val SNACKBAR_MAX_LINES = 5
 
 /**
  * Lets the user pick a folder. Virtual folder groups are shown as soon as [navigateGroups] is set or
@@ -201,7 +197,7 @@ class PickDirectoryDialog(
                                 return@setOnClickListener
                             }
 
-                            showPickerMessage(
+                            binding.root.showInAppMessage(
                                 if (currentGroupId == null) {
                                     R.string.pick_a_destination_by_tapping
                                 } else {
@@ -432,16 +428,6 @@ class PickDirectoryDialog(
     }
 
     private fun groupName(groupId: Long) = config.getFolderGroup(groupId)?.name ?: ""
-
-    // The dialog's own message, in place of a toast: this dialog fills the screen and a toast
-    // behind it was cut off after its first line. A snackbar lands in this dialog's own
-    // CoordinatorLayout, and is given the lines a sentence of guidance needs
-    private fun showPickerMessage(messageId: Int) {
-        Snackbar.make(binding.root, activity.getString(messageId), Snackbar.LENGTH_LONG).apply {
-            view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text)?.maxLines = SNACKBAR_MAX_LINES
-            show()
-        }
-    }
 
     // The OK with [foldersToPlace]: each folder goes to the top or into the opened group, on the
     // storage the chips were showing. Answers false when the OK keeps its old meaning -- there
@@ -674,13 +660,13 @@ class PickDirectoryDialog(
                 }
             } else if (clickedDir.subfoldersCount == 1 || !activity.config.groupDirectSubfolders) {
                 if (!allowFolderDestination) {
-                    activity.toast(R.string.pick_a_group, Toast.LENGTH_LONG)
+                    binding.root.showInAppMessage(R.string.pick_a_group, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && path.trimEnd('/') == sourcePath) {
-                    activity.toast(org.fossify.commons.R.string.source_and_destination_same)
+                    binding.root.showInAppMessage(org.fossify.commons.R.string.source_and_destination_same)
                     return@DirectoryAdapter
                 } else if (isPickingCopyMoveDestination && activity.isRestrictedWithSAFSdk30(path) && !activity.isInDownloadDir(path)) {
-                    activity.toast(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)
+                    binding.root.showInAppMessage(org.fossify.commons.R.string.system_folder_copy_restriction, Toast.LENGTH_LONG)
                     return@DirectoryAdapter
                 } else {
                     activity.handleLockedFolderOpening(path) { success ->

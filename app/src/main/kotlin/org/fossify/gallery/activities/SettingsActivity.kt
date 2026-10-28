@@ -407,7 +407,7 @@ class SettingsActivity : SimpleActivity() {
             ensureBackgroundThread {
                 SmbVideoCache(this).clear()
                 runOnUiThread {
-                    toast(R.string.smb_video_cache_cleared)
+                    showInAppMessage(R.string.smb_video_cache_cleared)
                     refreshSmbVideoCacheSize()
                 }
             }
@@ -457,7 +457,7 @@ class SettingsActivity : SimpleActivity() {
             }
 
             if (change.walks) {
-                toast(R.string.smb_rescanning)
+                showInAppMessage(R.string.smb_rescanning)
                 rescanSmb(reportCounts = true, priority = RemoteScanScheduler.PRIORITY_MANUAL, connectionIds = listOf(connectionId))
             }
         }
@@ -1203,7 +1203,7 @@ class SettingsActivity : SimpleActivity() {
 
         binding.settingsEmptyRecycleBinHolder.setOnClickListener {
             if (mRecycleBinContentSize == 0L) {
-                toast(org.fossify.commons.R.string.recycle_bin_empty)
+                showInAppMessage(org.fossify.commons.R.string.recycle_bin_empty)
             } else {
                 showRecycleBinEmptyingDialog {
                     emptyTheRecycleBin()
@@ -1244,9 +1244,9 @@ class SettingsActivity : SimpleActivity() {
                         try {
                             startActivityForResult(this, SELECT_EXPORT_FAVORITES_FILE_INTENT)
                         } catch (e: ActivityNotFoundException) {
-                            toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                            showInAppMessage(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
                         } catch (e: Exception) {
-                            showErrorToast(e)
+                            showInAppError(e)
                         }
                     }
                 }
@@ -1267,7 +1267,7 @@ class SettingsActivity : SimpleActivity() {
 
     private fun exportFavoritesTo(outputStream: OutputStream?) {
         if (outputStream == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -1280,9 +1280,9 @@ class SettingsActivity : SimpleActivity() {
                     }
                 }
 
-                toast(org.fossify.commons.R.string.exporting_successful)
+                showInAppMessage(org.fossify.commons.R.string.exporting_successful)
             } else {
-                toast(org.fossify.commons.R.string.no_items_found)
+                showInAppMessage(org.fossify.commons.R.string.no_items_found)
             }
         }
     }
@@ -1316,7 +1316,7 @@ class SettingsActivity : SimpleActivity() {
 
     private fun importFavorites(inputStream: InputStream?) {
         if (inputStream == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -1332,12 +1332,12 @@ class SettingsActivity : SimpleActivity() {
                             importedItems++
                         }
                     } catch (e: Exception) {
-                        showErrorToast(e)
+                        showInAppError(e)
                     }
                 }
             }
 
-            toast(if (importedItems > 0) org.fossify.commons.R.string.importing_successful else org.fossify.commons.R.string.no_entries_for_importing)
+            showInAppMessage(if (importedItems > 0) org.fossify.commons.R.string.importing_successful else org.fossify.commons.R.string.no_entries_for_importing)
         }
     }
 
@@ -1366,9 +1366,9 @@ class SettingsActivity : SimpleActivity() {
                         try {
                             startActivityForResult(this, SELECT_EXPORT_SORTING_FILE_INTENT)
                         } catch (e: ActivityNotFoundException) {
-                            toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                            showInAppMessage(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
                         } catch (e: Exception) {
-                            showErrorToast(e)
+                            showInAppError(e)
                         }
                     }
                 }
@@ -1398,7 +1398,7 @@ class SettingsActivity : SimpleActivity() {
 
     private fun exportConfigItemsTo(outputStream: OutputStream?, configItems: Map<String, Any>) {
         if (outputStream == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -1409,7 +1409,7 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
 
-            toast(org.fossify.commons.R.string.exporting_successful)
+            showInAppMessage(org.fossify.commons.R.string.exporting_successful)
         }
     }
 
@@ -1428,9 +1428,9 @@ class SettingsActivity : SimpleActivity() {
                     try {
                         startActivityForResult(this, SELECT_IMPORT_SORTING_FILE_INTENT)
                     } catch (e: ActivityNotFoundException) {
-                        toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                        showInAppMessage(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
                     } catch (e: Exception) {
-                        showErrorToast(e)
+                        showInAppError(e)
                     }
                 }
             } else {
@@ -1450,7 +1450,7 @@ class SettingsActivity : SimpleActivity() {
     // only sorting lines are taken out of the file, so the settings export can be fed in here too
     private fun importSorting(inputStream: InputStream?) {
         if (inputStream == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -1465,15 +1465,15 @@ class SettingsActivity : SimpleActivity() {
                             importedItems++
                         }
                     } catch (e: Exception) {
-                        showErrorToast(e)
+                        showInAppError(e)
                     }
                 }
             }
 
             if (importedItems > 0) {
-                toast(R.string.sorting_imported_successfully)
+                showInAppMessage(R.string.sorting_imported_successfully)
             } else {
-                toast(org.fossify.commons.R.string.no_entries_for_importing)
+                showInAppMessage(org.fossify.commons.R.string.no_entries_for_importing)
             }
         }
     }
@@ -1608,9 +1608,9 @@ class SettingsActivity : SimpleActivity() {
                     try {
                         startActivityForResult(this, SELECT_EXPORT_SETTINGS_FILE)
                     } catch (e: ActivityNotFoundException) {
-                        toast(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
+                        showInAppMessage(org.fossify.commons.R.string.system_service_disabled, Toast.LENGTH_LONG)
                     } catch (e: Exception) {
-                        showErrorToast(e)
+                        showInAppError(e)
                     }
                 }
             }
@@ -1672,7 +1672,7 @@ class SettingsActivity : SimpleActivity() {
 
     private fun parseFile(inputStream: InputStream?) {
         if (inputStream == null) {
-            toast(org.fossify.commons.R.string.unknown_error_occurred)
+            showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
             return
         }
 
@@ -1688,7 +1688,7 @@ class SettingsActivity : SimpleActivity() {
                     }
                     importedItems++
                 } catch (e: Exception) {
-                    showErrorToast(e)
+                    showInAppError(e)
                 }
             }
         }
@@ -1814,7 +1814,7 @@ class SettingsActivity : SimpleActivity() {
             }
         }
 
-        toast(if (configValues.size > 0) org.fossify.commons.R.string.settings_imported_successfully else org.fossify.commons.R.string.no_entries_for_importing)
+        showInAppMessage(if (configValues.size > 0) org.fossify.commons.R.string.settings_imported_successfully else org.fossify.commons.R.string.no_entries_for_importing)
         runOnUiThread {
             setupSettingItems()
         }

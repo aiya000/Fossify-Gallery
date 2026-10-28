@@ -75,8 +75,11 @@ import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.scanPathRecursively
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.InAppMessageAnchor
 import org.fossify.commons.extensions.tryGenericMimeType
 import org.fossify.commons.extensions.updateBrightness
 import org.fossify.commons.extensions.viewBinding
@@ -186,7 +189,10 @@ import java.io.File
 import kotlin.math.min
 
 @Suppress("UNCHECKED_CAST")
-class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, ViewPagerFragment.FragmentListener {
+class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, ViewPagerFragment.FragmentListener, InAppMessageAnchor {
+    // the actions sit along the bottom of the viewer; a message is laid above them, not across them
+    override fun inAppMessageAnchor(): View? = binding.bottomActions.root
+
     companion object {
         private const val REQUEST_VIEW_VIDEO = 1
         private const val SAVED_PATH = "current_path"
@@ -511,7 +517,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 refreshViewPager()
             }
         } else if (requestCode == REQUEST_SET_AS && resultCode == Activity.RESULT_OK) {
-            toast(R.string.wallpaper_set_successfully)
+            showInAppMessage(R.string.wallpaper_set_successfully)
         } else if (requestCode == REQUEST_VIEW_VIDEO && resultCode == Activity.RESULT_OK && resultData != null) {
             if (resultData.getBooleanExtra(GO_TO_NEXT_ITEM, false)) {
                 goToNextItem()
@@ -544,6 +550,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 // make sure "Open Recycle Bin" works well with "Show all folders content"
                 mShowAll = config.showAll && (mPath.isNotEmpty() && !mPath.startsWith(recycleBinPath))
             } catch (e: Exception) {
+                // a toast: this screen is closing, and would take a bar of its own with it
                 showErrorToast(e)
                 finish()
                 return
@@ -555,6 +562,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         if (mPath.isEmpty()) {
+            // a toast, for the same reason
             toast(org.fossify.commons.R.string.unknown_error_occurred)
             finish()
             return
@@ -824,7 +832,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
         } else {
             stopSlideshow()
-            toast(R.string.slideshow_ended)
+            showInAppMessage(R.string.slideshow_ended)
         }
     }
 
@@ -880,7 +888,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         return if (mSlideshowMedia.isEmpty()) {
-            toast(R.string.no_media_for_slideshow)
+            showInAppMessage(R.string.no_media_for_slideshow)
             false
         } else {
             updatePagerItems(mSlideshowMedia)
@@ -904,7 +912,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private fun copyMoveTo(isCopyOperation: Boolean) {
         val currPath = getCurrentPath()
         if (!isCopyOperation && currPath.startsWith(recycleBinPath)) {
-            toast(org.fossify.commons.R.string.moving_recycle_bin_items_disabled, Toast.LENGTH_LONG)
+            showInAppMessage(org.fossify.commons.R.string.moving_recycle_bin_items_disabled, Toast.LENGTH_LONG)
             return
         }
 
@@ -989,7 +997,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val degrees = getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0
         SaveAsDialog(this, currPath, false, localStorageOnly = false) { newPath ->
             withEditableMediaFile(currPath) { localSource ->
-                toast(org.fossify.commons.R.string.saving)
+                showInAppMessage(org.fossify.commons.R.string.saving)
                 MediaStorage.of(this, newPath).writeInto(this, newPath, { target, wrote ->
                     ensureBackgroundThread {
                         saveRotatedImageToFile(localSource, target, degrees, true) {
@@ -1008,7 +1016,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     // refreshMenuItems() posts to the main thread itself, so this is safe to call from the
     // thread a write finished on
     private fun rotationSaved() {
-        toast(org.fossify.commons.R.string.file_saved)
+        showInAppMessage(org.fossify.commons.R.string.file_saved)
         getCurrentPhotoFragment()?.mCurrentRotationDegrees = 0
         refreshMenuItems()
     }
@@ -1095,44 +1103,44 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val isInRemoteBin = storage?.let { it.isRemote && it.isInRecycleBin(currentMedium.path) } == true
         val hasFile = !isInRemoteBin
         binding.bottomActions.bottomFavorite.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE != 0 && currentMedium?.getIsInRecycleBin() == false)
-        binding.bottomActions.bottomFavorite.setOnLongClickListener { toast(R.string.toggle_favorite); true }
+        binding.bottomActions.bottomFavorite.setOnLongClickListener { showInAppMessage(R.string.toggle_favorite); true }
         binding.bottomActions.bottomFavorite.setOnClickListener {
             toggleFavorite()
         }
 
         binding.bottomActions.bottomEdit.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_EDIT != 0 && currentMedium?.isSVG() == false)
-        binding.bottomActions.bottomEdit.setOnLongClickListener { toast(R.string.edit); true }
+        binding.bottomActions.bottomEdit.setOnLongClickListener { showInAppMessage(R.string.edit); true }
         binding.bottomActions.bottomEdit.setOnClickListener {
             editCurrentMedium()
         }
 
         binding.bottomActions.bottomShare.beVisibleIf(hasFile && storage?.canShare != false && visibleBottomActions and BOTTOM_ACTION_SHARE != 0)
-        binding.bottomActions.bottomShare.setOnLongClickListener { toast(org.fossify.commons.R.string.share); true }
+        binding.bottomActions.bottomShare.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.share); true }
         binding.bottomActions.bottomShare.setOnClickListener {
             shareMediumPath(getCurrentPath())
         }
 
         binding.bottomActions.bottomDelete.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_DELETE != 0)
-        binding.bottomActions.bottomDelete.setOnLongClickListener { toast(org.fossify.commons.R.string.delete); true }
+        binding.bottomActions.bottomDelete.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.delete); true }
         binding.bottomActions.bottomDelete.setOnClickListener {
             checkDeleteConfirmation()
         }
 
         binding.bottomActions.bottomRotate.beVisibleIf(hasFile && config.visibleBottomActions and BOTTOM_ACTION_ROTATE != 0 && getCurrentMedium()?.isImage() == true)
-        binding.bottomActions.bottomRotate.setOnLongClickListener { toast(R.string.rotate); true }
+        binding.bottomActions.bottomRotate.setOnLongClickListener { showInAppMessage(R.string.rotate); true }
         binding.bottomActions.bottomRotate.setOnClickListener {
             rotateImage(90)
         }
 
         binding.bottomActions.bottomProperties.applyColorFilter(Color.WHITE)
         binding.bottomActions.bottomProperties.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_PROPERTIES != 0)
-        binding.bottomActions.bottomProperties.setOnLongClickListener { toast(org.fossify.commons.R.string.properties); true }
+        binding.bottomActions.bottomProperties.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.properties); true }
         binding.bottomActions.bottomProperties.setOnClickListener {
             showProperties()
         }
 
         binding.bottomActions.bottomChangeOrientation.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION != 0)
-        binding.bottomActions.bottomChangeOrientation.setOnLongClickListener { toast(R.string.change_orientation); true }
+        binding.bottomActions.bottomChangeOrientation.setOnLongClickListener { showInAppMessage(R.string.change_orientation); true }
         binding.bottomActions.bottomChangeOrientation.setOnClickListener {
             requestedOrientation = when (requestedOrientation) {
                 SCREEN_ORIENTATION_PORTRAIT -> SCREEN_ORIENTATION_LANDSCAPE
@@ -1145,20 +1153,20 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         binding.bottomActions.bottomSlideshow.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_SLIDESHOW != 0)
-        binding.bottomActions.bottomSlideshow.setOnLongClickListener { toast(R.string.slideshow); true }
+        binding.bottomActions.bottomSlideshow.setOnLongClickListener { showInAppMessage(R.string.slideshow); true }
         binding.bottomActions.bottomSlideshow.setOnClickListener {
             initSlideshow()
         }
 
         binding.bottomActions.bottomShowOnMap.beVisibleIf(hasFile && visibleBottomActions and BOTTOM_ACTION_SHOW_ON_MAP != 0)
-        binding.bottomActions.bottomShowOnMap.setOnLongClickListener { toast(R.string.show_on_map); true }
+        binding.bottomActions.bottomShowOnMap.setOnLongClickListener { showInAppMessage(R.string.show_on_map); true }
         binding.bottomActions.bottomShowOnMap.setOnClickListener {
             showCurrentOnMap()
         }
 
         binding.bottomActions.bottomToggleFileVisibility.beVisibleIf(storage?.canHide != false && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY != 0)
         binding.bottomActions.bottomToggleFileVisibility.setOnLongClickListener {
-            toast(if (currentMedium?.isHidden() == true) org.fossify.commons.R.string.unhide else org.fossify.commons.R.string.hide); true
+            showInAppMessage(if (currentMedium?.isHidden() == true) org.fossify.commons.R.string.unhide else org.fossify.commons.R.string.hide); true
         }
 
         binding.bottomActions.bottomToggleFileVisibility.setOnClickListener {
@@ -1170,31 +1178,31 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
 
         binding.bottomActions.bottomRename.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_RENAME != 0 && currentMedium?.getIsInRecycleBin() == false)
-        binding.bottomActions.bottomRename.setOnLongClickListener { toast(org.fossify.commons.R.string.rename); true }
+        binding.bottomActions.bottomRename.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.rename); true }
         binding.bottomActions.bottomRename.setOnClickListener {
             checkMediaManagementAndRename()
         }
 
         binding.bottomActions.bottomSetAs.beVisibleIf(hasFile && storage?.canSetAs != false && visibleBottomActions and BOTTOM_ACTION_SET_AS != 0)
-        binding.bottomActions.bottomSetAs.setOnLongClickListener { toast(org.fossify.commons.R.string.set_as); true }
+        binding.bottomActions.bottomSetAs.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.set_as); true }
         binding.bottomActions.bottomSetAs.setOnClickListener {
             setCurrentAs()
         }
 
         binding.bottomActions.bottomCopy.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_COPY != 0)
-        binding.bottomActions.bottomCopy.setOnLongClickListener { toast(org.fossify.commons.R.string.copy); true }
+        binding.bottomActions.bottomCopy.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.copy); true }
         binding.bottomActions.bottomCopy.setOnClickListener {
             checkMediaManagementAndCopy(true)
         }
 
         binding.bottomActions.bottomMove.beVisibleIf(!isInRemoteBin && visibleBottomActions and BOTTOM_ACTION_MOVE != 0)
-        binding.bottomActions.bottomMove.setOnLongClickListener { toast(org.fossify.commons.R.string.move); true }
+        binding.bottomActions.bottomMove.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.move); true }
         binding.bottomActions.bottomMove.setOnClickListener {
             moveFileTo()
         }
 
         binding.bottomActions.bottomResize.beVisibleIf(hasFile && storage?.canResize != false && visibleBottomActions and BOTTOM_ACTION_RESIZE != 0 && currentMedium?.isImage() == true)
-        binding.bottomActions.bottomResize.setOnLongClickListener { toast(org.fossify.commons.R.string.resize); true }
+        binding.bottomActions.bottomResize.setOnLongClickListener { showInAppMessage(org.fossify.commons.R.string.resize); true }
         binding.bottomActions.bottomResize.setOnClickListener {
             resizeImage()
         }
@@ -1247,7 +1255,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         try {
             val resolution = path.getImageResolution(this)
             if (resolution == null) {
-                toast(org.fossify.commons.R.string.unknown_error_occurred)
+                showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                 return
             }
 
@@ -1272,7 +1280,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 .apply(options)
                 .listener(object : RequestListener<Bitmap> {
                     override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Bitmap>, isFirstResource: Boolean): Boolean {
-                        showErrorToast(e?.localizedMessage ?: "")
+                        showInAppError(e?.localizedMessage ?: "")
                         return false
                     }
 
@@ -1573,10 +1581,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     startActivityForResult(this, REQUEST_VIEW_VIDEO)
                 } catch (e: ActivityNotFoundException) {
                     if (!tryGenericMimeType(this, mimeType, newUri)) {
-                        toast(org.fossify.commons.R.string.no_app_found)
+                        showInAppMessage(org.fossify.commons.R.string.no_app_found)
                     }
                 } catch (e: Exception) {
-                    showErrorToast(e)
+                    showInAppError(e)
                 }
             }
         }

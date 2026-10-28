@@ -49,7 +49,7 @@ import org.fossify.commons.extensions.isSvg
 import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.isVisible
 import org.fossify.commons.extensions.rescanPaths
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.SHOW_ALL_TABS
 import org.fossify.commons.helpers.SORT_BY_CUSTOM
@@ -823,7 +823,7 @@ class DirectoryAdapter(
                         }
                     ) { destinationPath ->
                         if (fileDirItems.isEmpty()) {
-                            activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                            activity.showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                             return@PickDirectoryDialog
                         }
 
@@ -851,7 +851,7 @@ class DirectoryAdapter(
         placed.forEach { (source, transfer) ->
             getMediaFileDirItems(listOf(source)) { fileDirItems ->
                 if (fileDirItems.isEmpty()) {
-                    activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    activity.showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
                     return@getMediaFileDirItems
                 }
 
@@ -941,7 +941,7 @@ class DirectoryAdapter(
 
         val movedGroupIds = groupIds.filter { config.moveFolderGroup(it, destinationGroupId) }
         if (movedGroupIds.size < groupIds.size) {
-            activity.toast(R.string.cannot_move_group_into_itself)
+            activity.showInAppMessage(R.string.cannot_move_group_into_itself)
         }
 
         // the moved items show up at the end of the destination level instead of at some stale position
@@ -1150,9 +1150,9 @@ class DirectoryAdapter(
             val totalSize = wanted.sumByLong { it.size }
             activity.runOnUiThread {
                 when {
-                    videos.isEmpty() -> activity.toast(R.string.smb_download_videos_none_found)
+                    videos.isEmpty() -> activity.showInAppMessage(R.string.smb_download_videos_none_found)
                     wanted.isEmpty() -> {
-                        activity.toast(R.string.smb_download_videos_none)
+                        activity.showInAppMessage(R.string.smb_download_videos_none)
                         finishActMode()
                     }
 
@@ -1170,7 +1170,7 @@ class DirectoryAdapter(
             if (SmbDownloadService.start(activity, wanted.map { it.path }, playlist = videos.map { it.path })) {
                 finishActMode()
             } else {
-                activity.toast(R.string.smb_download_busy)
+                activity.showInAppMessage(R.string.smb_download_busy)
             }
         }
     }

@@ -40,8 +40,8 @@ import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
 import org.fossify.commons.extensions.otgPath
 import org.fossify.commons.extensions.sdCardPath
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppError
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.FileDirItem
 import org.fossify.gallery.R
@@ -341,7 +341,7 @@ class FolderPickerDialog(
                 if (activity.isInDownloadDir(currPath)) {
                     sendSuccessForDirectFile()
                 } else {
-                    activity.toast(org.fossify.commons.R.string.system_folder_restriction, Toast.LENGTH_LONG)
+                    binding.root.showInAppMessage(org.fossify.commons.R.string.system_folder_restriction, Toast.LENGTH_LONG)
                 }
             }
 
@@ -400,7 +400,7 @@ class FolderPickerDialog(
         return try {
             PCloudScanner(activity).listFolders(path).map { FileDirItem(it, it.getFilenameFromPath(), true, -1, 0, 0) }
         } catch (e: Exception) {
-            activity.showErrorToast(e)
+            binding.root.showInAppError(e)
             emptyList()
         }
     }
@@ -413,7 +413,7 @@ class FolderPickerDialog(
         return try {
             SmbScanner(activity).listFolders(path).map { FileDirItem(it, it.getFilenameFromPath(), true, -1, 0, 0) }
         } catch (e: Exception) {
-            activity.showErrorToast(e)
+            binding.root.showInAppError(e)
             emptyList()
         }
     }

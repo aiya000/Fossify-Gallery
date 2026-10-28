@@ -6,6 +6,7 @@ import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.extensions.*
 import org.fossify.gallery.R
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.gallery.databinding.DialogResizeImageBinding
 
 class ResizeDialog(val activity: BaseSimpleActivity, val size: Point, val callback: (newSize: Point) -> Unit) {
@@ -57,7 +58,7 @@ class ResizeDialog(val activity: BaseSimpleActivity, val size: Point, val callba
                         val width = getViewValue(widthView)
                         val height = getViewValue(heightView)
                         if (width <= 0 || height <= 0) {
-                            activity.toast(R.string.invalid_values)
+                            (if (width <= 0) binding.resizeImageWidthHint else binding.resizeImageHeightHint).showInputError(R.string.invalid_values)
                             return@setOnClickListener
                         }
 

@@ -41,7 +41,7 @@ import org.fossify.commons.extensions.isRestrictedWithSAFSdk30
 import org.fossify.commons.extensions.needsStupidWritePermissions
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.rescanPaths
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.SORT_BY_CUSTOM
 import org.fossify.commons.helpers.VIEW_TYPE_LIST
@@ -593,7 +593,7 @@ class MediaAdapter(
 
     private fun rotateLocalFiles(paths: List<String>, degrees: Int) {
         var fileCnt = paths.size
-        activity.toast(org.fossify.commons.R.string.saving)
+        activity.showInAppMessage(org.fossify.commons.R.string.saving)
         ensureBackgroundThread {
             paths.forEach {
                 activity.saveRotatedImageToFile(it, it, degrees, true) {
@@ -647,7 +647,7 @@ class MediaAdapter(
         }.toMutableList() as ArrayList
 
         if (!isCopyOperation && paths.any { it.startsWith(recycleBinPath) }) {
-            activity.toast(org.fossify.commons.R.string.moving_recycle_bin_items_disabled, Toast.LENGTH_LONG)
+            activity.showInAppMessage(org.fossify.commons.R.string.moving_recycle_bin_items_disabled, Toast.LENGTH_LONG)
         }
 
         if (fileDirItems.isEmpty()) {
@@ -742,7 +742,7 @@ class MediaAdapter(
     private fun downloadSelectedSmbVideos() {
         val videos = getSelectedItems().filter { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
         if (videos.isEmpty()) {
-            activity.toast(R.string.smb_download_videos_no_videos)
+            activity.showInAppMessage(R.string.smb_download_videos_no_videos)
             return
         }
 
@@ -754,7 +754,7 @@ class MediaAdapter(
             val totalSize = wanted.sumByLong { it.size }
             activity.runOnUiThread {
                 if (wanted.isEmpty()) {
-                    activity.toast(R.string.smb_download_videos_none)
+                    activity.showInAppMessage(R.string.smb_download_videos_none)
                     finishActMode()
                     return@runOnUiThread
                 }
@@ -766,7 +766,7 @@ class MediaAdapter(
                     if (SmbDownloadService.start(activity, wanted.map { it.path })) {
                         finishActMode()
                     } else {
-                        activity.toast(R.string.smb_download_busy)
+                        activity.showInAppMessage(R.string.smb_download_busy)
                     }
                 }
             }

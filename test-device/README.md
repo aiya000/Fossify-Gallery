@@ -299,6 +299,14 @@ at afterwards.
   shrunk one is three quarters as wide in pixels, read with `ffprobe`; nothing is left under the
   stash name, and the photo beside them is untouched. It brings its own two files and takes them
   away again
+- **`87-messages-are-the-apps-own.sh`** — #76: what the app has to say is said on its own
+  screen, not through an OS toast. A hold on one of the viewer's bottom actions has to say its
+  name in the app's own window, laid above the row of actions, and "Save as" with its name box
+  emptied has to keep the dialog up and complain under the box. The bar is up for seconds and a
+  dump takes seconds, so the witness for it is the line every message leaves in the log under
+  `InAppMessage`, which also says where the message went; the complaint under the box stays, so
+  the view tree is the witness there. A message a screen says as it closes is still a toast on
+  purpose, and is not driven
 - **`90-fetch-only-when-asked.sh`** — #87: the list is fetched again only when the settings say so,
   for both events that can ask and for both storages alike. Each case runs twice, once with its
   setting off and once on, because the "off" half would pass on an app that fetches nothing ever.

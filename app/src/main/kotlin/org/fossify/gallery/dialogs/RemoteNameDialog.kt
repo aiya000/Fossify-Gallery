@@ -5,7 +5,7 @@ import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.showKeyboard
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.databinding.DialogRemoteNameBinding
 
@@ -36,8 +36,8 @@ class RemoteNameDialog(
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val name = binding.remoteName.value.trim()
                         when {
-                            name.isEmpty() -> activity.toast(org.fossify.commons.R.string.empty_name)
-                            name.contains('/') -> activity.toast(org.fossify.commons.R.string.invalid_name)
+                            name.isEmpty() -> binding.remoteNameHint.showInputError(org.fossify.commons.R.string.empty_name)
+                            name.contains('/') -> binding.remoteNameHint.showInputError(org.fossify.commons.R.string.invalid_name)
                             name == initialName -> alertDialog.dismiss()
                             else -> {
                                 callback(name)

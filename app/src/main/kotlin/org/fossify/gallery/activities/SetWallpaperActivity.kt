@@ -9,6 +9,7 @@ import androidx.core.graphics.scale
 import com.canhub.cropper.CropImageView
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.checkAppSideloading
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -90,6 +91,7 @@ class SetWallpaperActivity : BaseCropActivity() {
     private fun handleImage(intent: Intent) {
         uri = intent.data!!
         if (uri.scheme != "file" && uri.scheme != "content") {
+            // a toast: this screen is closing, and would take a bar of its own with it
             toast(R.string.unknown_file_location)
             finish()
             return
@@ -148,10 +150,11 @@ class SetWallpaperActivity : BaseCropActivity() {
     override fun onImageCropped(bitmap: Bitmap?, error: Exception?) {
         if (isFinishing || isDestroyed) return
         if (error != null || bitmap == null) {
-            toast("${getString(R.string.image_editing_failed)}: ${error?.message}")
+            showInAppMessage("${getString(R.string.image_editing_failed)}: ${error?.message}")
             return
         }
 
+        // a toast: the screen closes once the wallpaper is set, and would take a bar of its own with it
         toast(R.string.setting_wallpaper)
         ensureBackgroundThread {
             val wantedHeight = wallpaperManager.desiredMinimumHeight
@@ -162,6 +165,7 @@ class SetWallpaperActivity : BaseCropActivity() {
                 wallpaperManager.setBitmap(scaledBitmap, null, true, wallpaperFlag)
                 setResult(RESULT_OK)
             } catch (ignored: OutOfMemoryError) {
+                // a toast, for the same reason
                 toast(org.fossify.commons.R.string.out_of_memory_error)
                 setResult(RESULT_CANCELED)
             }

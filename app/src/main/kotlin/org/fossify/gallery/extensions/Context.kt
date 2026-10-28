@@ -63,8 +63,6 @@ import org.fossify.commons.extensions.normalizeString
 import org.fossify.commons.extensions.otgPath
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
-import org.fossify.commons.extensions.showErrorToast
-import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.AlphanumericComparator
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.NOMEDIA
@@ -1001,7 +999,7 @@ fun Context.rebuildDirectoryRow(path: String) {
 // the thread it was decided on
 fun Context.writeToShare(write: SmbWriter.() -> Unit, onDone: (success: Boolean) -> Unit = {}) {
     if (!config.isSmbConfigured) {
-        toast(R.string.smb_not_configured)
+        showInAppMessage(R.string.smb_not_configured)
         onDone(false)
         return
     }
@@ -1018,15 +1016,15 @@ fun Context.writeToShare(write: SmbWriter.() -> Unit, onDone: (success: Boolean)
             // what a rename runs into, the user chose that name a second ago, and the protocol's
             // own words for it are "STATUS_OBJECT_NAME_COLLISION", which says nothing to anybody
             if (e.status == NtStatus.STATUS_OBJECT_NAME_COLLISION) {
-                toast(R.string.smb_already_exists)
+                showInAppMessage(R.string.smb_already_exists)
             } else {
-                showErrorToast(e)
+                showInAppError(e)
             }
             false
         } catch (e: Exception) {
             Log.w("SmbWrite", "A write to the share failed", e)
             // SmbWriter has already logged which path it was; this is what the user is told
-            showErrorToast(e)
+            showInAppError(e)
             false
         }
 
@@ -1042,7 +1040,7 @@ fun Context.writeToShare(write: SmbWriter.() -> Unit, onDone: (success: Boolean)
 // went through, on whatever thread that was decided on
 fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() -> Unit, onDone: (success: Boolean) -> Unit = {}) {
     if (!config.isPCloudLoggedIn) {
-        toast(R.string.pcloud_log_in_required)
+        showInAppMessage(R.string.pcloud_log_in_required)
         onDone(false)
         return
     }
@@ -1058,16 +1056,16 @@ fun Context.writeToPCloud(foldersToRescan: List<String>, write: PCloudWriter.() 
             when {
                 e.requiresLogIn -> {
                     config.clearPCloudAccount()
-                    toast(R.string.pcloud_log_in_required)
+                    showInAppMessage(R.string.pcloud_log_in_required)
                 }
 
-                e.result == PCLOUD_RESULT_ALREADY_EXISTS -> toast(R.string.pcloud_already_exists)
-                else -> showErrorToast(e)
+                e.result == PCLOUD_RESULT_ALREADY_EXISTS -> showInAppMessage(R.string.pcloud_already_exists)
+                else -> showInAppError(e)
             }
             false
         } catch (e: Exception) {
             Log.w("PCloudTransfer", "A write to pCloud failed", e)
-            showErrorToast(e)
+            showInAppError(e)
             false
         }
 
@@ -1546,7 +1544,7 @@ fun Context.updateFavorite(path: String, isFavorite: Boolean) {
             mediaDB.updateFavorite(path, isFavorite)
         }
     } catch (e: Exception) {
-        toast(org.fossify.commons.R.string.unknown_error_occurred)
+        showInAppMessage(org.fossify.commons.R.string.unknown_error_occurred)
     }
 }
 
@@ -1887,7 +1885,7 @@ fun Context.resolveUriScheme(
     uri: Uri,
     onPath: (String) -> Unit,
     onContentUri: (Uri) -> Unit,
-    onUnknown: () -> Unit = { toast(R.string.unknown_file_location) }
+    onUnknown: () -> Unit = { showInAppMessage(R.string.unknown_file_location) }
 ) {
     when (uri.scheme) {
         "file" -> onPath(uri.path!!)

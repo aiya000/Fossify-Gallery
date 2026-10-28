@@ -6,7 +6,7 @@ import org.fossify.commons.databinding.DialogMessageBinding
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.internalStoragePath
 import org.fossify.commons.extensions.setupDialogStuff
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInAppMessage
 import org.fossify.gallery.R
 import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCLOUD_PATH_SCHEME
@@ -76,7 +76,7 @@ class RestoreFromBinDialog(
             val smbBin = "${smbRootOfPath(picked)}/$RECYCLE_BIN_FOLDER_NAME"
             val isABin = picked == PCLOUD_RECYCLE_BIN || (picked.isSmbPath() && picked == smbBin) || storage.isInRecycleBin(picked)
             if (!storage.holds(picked) || isABin) {
-                activity.toast(R.string.restore_pick_same_storage_folder)
+                activity.showInAppMessage(R.string.restore_pick_same_storage_folder)
                 return@FolderPickerDialog
             }
 

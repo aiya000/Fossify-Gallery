@@ -110,12 +110,10 @@ check_properties_dialog() {
         pass "and it does not show the raw pseudo path"
     fi
 
-    # the toast this issue is about. It is a window of its own, so it is in the tree while it is up
-    if python3 "$DRIVE_DIR/ui.py" "$dump" --text "does not exist" > /dev/null; then
-        fail "the app still says the source file does not exist"
-    else
-        pass "and nothing says the source file does not exist"
-    fi
+    # the message this issue is about. Since #76 it would be said on the app's own screen, and a
+    # bar is gone before a dump catches it as surely as a toast was, so the line every message
+    # leaves in the log is read instead (agents/tests/a-toast-is-gone-before-the-dump.md)
+    refute_log 'InAppMessage.*does not exist' "and nothing says the source file does not exist"
 }
 
 step "the properties of a medium of the share, from the fullscreen viewer"

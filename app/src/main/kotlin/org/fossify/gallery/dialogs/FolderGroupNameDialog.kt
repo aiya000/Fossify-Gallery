@@ -5,7 +5,7 @@ import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.showKeyboard
-import org.fossify.commons.extensions.toast
+import org.fossify.gallery.extensions.showInputError
 import org.fossify.commons.extensions.value
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.DialogFolderGroupNameBinding
@@ -32,7 +32,7 @@ class FolderGroupNameDialog(
                     alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val name = binding.folderGroupName.value.trim()
                         if (name.isEmpty()) {
-                            activity.toast(R.string.group_name_empty)
+                            binding.folderGroupNameHint.showInputError(R.string.group_name_empty)
                             return@setOnClickListener
                         }
 
