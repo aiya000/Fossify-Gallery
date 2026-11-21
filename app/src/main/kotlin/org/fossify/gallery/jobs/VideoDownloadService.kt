@@ -20,28 +20,45 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isQPlus
 import org.fossify.gallery.R
 import org.fossify.gallery.activities.ViewPagerActivity
+import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.isPCloudPath
+import org.fossify.gallery.extensions.isSmbPath
+import org.fossify.gallery.extensions.mediaDB
+import org.fossify.gallery.extensions.pCloudItemsDB
 import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.PCloudApi
+import org.fossify.gallery.helpers.PCloudException
 import org.fossify.gallery.helpers.QUEUE_PATHS
 import org.fossify.gallery.helpers.SmbClient
-import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.RemoteVideoCache
+import java.io.Closeable
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 
-// Fetches one video off the share in full, so that it can be watched from the device instead of
-// being read as it plays. Streaming is still what a video does by default -- it starts at once
-// and costs only what is watched -- but a share that cannot keep up stalls part way through, and
-// then having the whole file in hand first is the only thing that helps.
+// Fetches one video off a remote storage -- the share or pCloud -- in full, so that it can be
+// watched from the device instead of being read as it plays. Streaming is still what a video
+// does by default -- it starts at once and costs only what is watched -- but a network that
+// cannot keep up stalls part way through, and then having the whole file in hand first is the
+// only thing that helps.
 //
 // A foreground service for the same reason RemoteScanService and SmbDurationService are: the system
-// takes the network away from a process nobody is looking at, and a gigabyte over a slow share
+// takes the network away from a process nobody is looking at, and a gigabyte over a slow network
 // is minutes of work that the user will not sit and watch. The notification carries the progress
 // and the stop action, so the download survives leaving the app
-class SmbDownloadService : Service() {
+class VideoDownloadService : Service() {
+    // one remote video, opened for reading from the start. What the download loop needs and
+    // nothing else, so that it does not care which storage the bytes come from
+    private class RemoteRead(val size: Long, val input: InputStream, private val onClose: () -> Unit) : Closeable {
+        override fun close() = onClose()
+    }
+
     companion object {
-        private const val TAG = "SmbVideo"
-        private const val CHANNEL_ID = "smb_downloads"
+        private const val TAG = "RemoteVideo"
+        private const val CHANNEL_ID = "video_downloads"
         private const val PROGRESS_NOTIFICATION_ID = 7007
         private const val RESULT_NOTIFICATION_ID = 7008
         private const val EXTRA_PATHS = "paths"
@@ -51,7 +68,7 @@ class SmbDownloadService : Service() {
         private const val EXTRA_PLAYLIST = "playlist"
 
         // the notification's stop action comes back in as this
-        private const val ACTION_ABORT = "org.fossify.gallery.ABORT_SMB_DOWNLOAD"
+        private const val ACTION_ABORT = "org.fossify.gallery.ABORT_VIDEO_DOWNLOAD"
 
         private const val PROGRESS_INTERVAL_MILLIS = 500L
         private const val BUFFER_BYTES = 256 * 1024
@@ -71,7 +88,7 @@ class SmbDownloadService : Service() {
         private var queueSize = 0
 
         // One run at a time, and one video at a time inside it: a second read over the same
-        // share would compete with the one already going, which is the very thing the user is
+        // network would compete with the one already going, which is the very thing the user is
         // here to avoid. Returns false when a run is already going, so the caller can say so.
         //
         // The order of the list is the order they are fetched in, and the caller decides it --
@@ -81,7 +98,7 @@ class SmbDownloadService : Service() {
                 return false
             }
 
-            val intent = Intent(context, SmbDownloadService::class.java)
+            val intent = Intent(context, VideoDownloadService::class.java)
                 .putStringArrayListExtra(EXTRA_PATHS, ArrayList(paths))
                 .putStringArrayListExtra(EXTRA_PLAYLIST, ArrayList(playlist))
             ContextCompat.startForegroundService(context, intent)
@@ -104,10 +121,10 @@ class SmbDownloadService : Service() {
     // what the viewer watches to draw the progress over the video it is showing. Both are called
     // on the main thread
     interface Listener {
-        fun onSmbDownloadProgress(path: String, done: Long, total: Long)
+        fun onVideoDownloadProgress(path: String, done: Long, total: Long)
 
         // file is null when the download failed or was called off
-        fun onSmbDownloadFinished(path: String, file: File?)
+        fun onVideoDownloadFinished(path: String, file: File?)
     }
 
     private var lastProgressAt = 0L
@@ -123,7 +140,7 @@ class SmbDownloadService : Service() {
 
         // a service started with startForegroundService() has to show its notification before
         // this returns, whatever it then decides to do
-        showProgress(buildNotification(getString(R.string.smb_download_preparing), null))
+        showProgress(buildNotification(getString(R.string.video_download_preparing), null))
 
         val paths = intent?.getStringArrayListExtra(EXTRA_PATHS).orEmpty()
         if (paths.isEmpty()) {
@@ -146,7 +163,7 @@ class SmbDownloadService : Service() {
     }
 
     private fun work(paths: List<String>) {
-        val cache = SmbVideoCache(this)
+        val cache = RemoteVideoCache(this)
         var done = 0
         var failed = 0
         try {
@@ -160,7 +177,7 @@ class SmbDownloadService : Service() {
                 queuePosition = index
                 queueSize = paths.size
                 // each video is finished and reported before the next one starts, so a run that
-                // is called off, or that loses the share halfway, keeps everything it has got
+                // is called off, or that loses the network halfway, keeps everything it has got
                 val file = downloadOne(cache, path)
                 finished(path, file)
                 when {
@@ -182,7 +199,7 @@ class SmbDownloadService : Service() {
     }
 
     // null when the video could not be fetched, or when the run was called off part way
-    private fun downloadOne(cache: SmbVideoCache, path: String): File? {
+    private fun downloadOne(cache: RemoteVideoCache, path: String): File? {
         return try {
             val target = cache.targetOf(path)
             when {
@@ -196,39 +213,50 @@ class SmbDownloadService : Service() {
                 target.isFile && target.length() > 0 -> target
                 else -> download(path, target)
             }
+        } catch (e: PCloudException) {
+            Log.w(TAG, "pCloud refused the download of $path", e)
+            // the same as a write to pCloud does: a token pCloud stopped accepting will not start
+            // working for the next video either, and the account is what the user has to fix
+            if (e.requiresLogIn) {
+                config.clearPCloudAccount()
+                isAborted.set(true)
+            }
+            null
         } catch (e: Exception) {
-            Log.w(TAG, "Could not download $path from the share", e)
-            // the usual failure is a session the server has given up on; dropping the connection
-            // means the next video opens a fresh one instead of failing the same way
-            SmbClient.disconnect(path)
+            Log.w(TAG, "Could not download $path", e)
+            // the usual failure on the share is a session the server has given up on; dropping
+            // the connection means the next video opens a fresh one instead of failing the same way
+            if (path.isSmbPath()) {
+                SmbClient.disconnect(path)
+            }
             null
         }
     }
 
     private fun resultText(done: Int, failed: Int, paths: List<String>): String = when {
-        done == 0 -> getString(R.string.smb_download_failed)
+        done == 0 -> getString(R.string.video_download_failed)
         // a run started from a folder or a group has somewhere to go afterwards, and the
         // notification is what takes the user there
-        playlist.isNotEmpty() && failed > 0 -> getString(R.string.smb_download_done_with_failed_play, done, failed)
-        playlist.isNotEmpty() -> getString(R.string.smb_download_done_play, done)
+        playlist.isNotEmpty() && failed > 0 -> getString(R.string.video_download_done_with_failed_play, done, failed)
+        playlist.isNotEmpty() -> getString(R.string.video_download_done_play, done)
         // the single video the viewer's menu asks for is worth naming; a selection is not
-        done == 1 && paths.size == 1 -> getString(R.string.smb_download_done, paths.first().substringAfterLast('/'))
-        failed > 0 -> getString(R.string.smb_download_done_with_failed, done, failed)
-        else -> getString(R.string.smb_download_done_many, done)
+        done == 1 && paths.size == 1 -> getString(R.string.video_download_done, paths.first().substringAfterLast('/'))
+        failed > 0 -> getString(R.string.video_download_done_with_failed, done, failed)
+        else -> getString(R.string.video_download_done_many, done)
     }
 
     // returns the finished copy, or null when the download was called off part way
     private fun download(path: String, target: File): File? {
-        val cache = SmbVideoCache(this)
-        val partial = File(cache.ensureDir(), "${target.name}${SmbVideoCache.PARTIAL_SUFFIX}")
+        val cache = RemoteVideoCache(this)
+        val partial = File(cache.ensureDir(), "${target.name}${RemoteVideoCache.PARTIAL_SUFFIX}")
         var completed = false
         try {
-            SmbClient.open(this, path).use { open ->
+            openRemote(path).use { open ->
                 val total = open.size
                 var done = 0L
                 partial.outputStream().use { out ->
                     val buffer = ByteArray(BUFFER_BYTES)
-                    val input = open.inputStream()
+                    val input = open.input
                     while (true) {
                         if (isAborted.get()) {
                             Log.i(TAG, "The download of $path was called off after $done of $total bytes")
@@ -248,9 +276,9 @@ class SmbDownloadService : Service() {
 
                 // a connection that drops part way through just ends the stream. Renaming a
                 // short read into place would leave a torn video under a name that only changes
-                // when the file on the share does, so it would be played from then on
+                // when the file on the storage does, so it would be played from then on
                 if (done != total) {
-                    throw IOException("The share sent $done bytes of $total for $path")
+                    throw IOException("Got $done bytes of $total for $path")
                 }
             }
 
@@ -260,7 +288,7 @@ class SmbDownloadService : Service() {
 
             completed = true
             Log.i(TAG, "Downloaded $path to ${target.name}")
-            showResult(getString(R.string.smb_download_done, path.substringAfterLast('/')))
+            showResult(getString(R.string.video_download_done, path.substringAfterLast('/')))
             return target
         } finally {
             if (!completed) {
@@ -269,9 +297,44 @@ class SmbDownloadService : Service() {
         }
     }
 
+    // The share hands out the file itself; pCloud hands out a link to it, which carries its own
+    // authorisation and is good for one download. Either way what comes back is read from the
+    // start to the end, and the size is the storage's own word for how long the file is
+    private fun openRemote(path: String): RemoteRead {
+        if (path.isSmbPath()) {
+            val open = SmbClient.open(this, path)
+            return RemoteRead(open.size, open.inputStream()) { open.close() }
+        }
+
+        if (!path.isPCloudPath()) {
+            throw IllegalArgumentException("$path is on neither the share nor pCloud")
+        }
+
+        if (!config.isPCloudLoggedIn) {
+            throw IllegalStateException("No pCloud account is signed in")
+        }
+
+        val item = pCloudItemsDB.getItem(path) ?: throw FileNotFoundException(path)
+        val url = PCloudApi.getFileLink(config.pCloudApiHost, config.pCloudAccessToken, item.itemId)
+        val response = PCloudApi.download(url).execute()
+        val input = try {
+            PCloudApi.contentOf(response)
+        } catch (e: Exception) {
+            response.close()
+            throw e
+        }
+
+        // the length of the answer is what pCloud is about to send; without one, the size the
+        // scan saw is the next best thing to hold the download to
+        val size = response.body.contentLength().takeIf { it >= 0 }
+            ?: mediaDB.getMediumByPath(path)?.size
+            ?: throw IOException("pCloud did not say how long $path is")
+        return RemoteRead(size, input) { response.close() }
+    }
+
     private fun finished(path: String, file: File?) {
         Handler(Looper.getMainLooper()).post {
-            listeners.forEach { it.onSmbDownloadFinished(path, file) }
+            listeners.forEach { it.onVideoDownloadFinished(path, file) }
         }
     }
 
@@ -291,18 +354,18 @@ class SmbDownloadService : Service() {
         }
 
         lastProgressAt = now
-        val bytes = getString(R.string.smb_download_progress, done.formatSize(), total.formatSize())
+        val bytes = getString(R.string.video_download_progress, done.formatSize(), total.formatSize())
         // one video says how far through the file it is; a selection says which video as well,
         // since that is what the user is waiting on
         val text = if (queueSize > 1) {
-            getString(R.string.smb_download_progress_queue, queuePosition + 1, queueSize, done.formatSize(), total.formatSize())
+            getString(R.string.video_download_progress_queue, queuePosition + 1, queueSize, done.formatSize(), total.formatSize())
         } else {
             bytes
         }
 
         showProgress(buildNotification(text, path.substringAfterLast('/'), done, total))
         Handler(Looper.getMainLooper()).post {
-            listeners.forEach { it.onSmbDownloadProgress(path, done, total) }
+            listeners.forEach { it.onVideoDownloadProgress(path, done, total) }
         }
     }
 
@@ -354,7 +417,7 @@ class SmbDownloadService : Service() {
         val abort = PendingIntent.getService(
             this,
             0,
-            Intent(this, SmbDownloadService::class.java).setAction(ACTION_ABORT),
+            Intent(this, VideoDownloadService::class.java).setAction(ACTION_ABORT),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -380,7 +443,7 @@ class SmbDownloadService : Service() {
     private fun ensureChannel(): String {
         val manager = getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
-            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.smb_download_channel), NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, getString(R.string.video_download_channel), NotificationManager.IMPORTANCE_LOW)
             manager.createNotificationChannel(channel)
         }
 

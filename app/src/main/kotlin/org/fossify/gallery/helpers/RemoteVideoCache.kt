@@ -6,7 +6,9 @@ import org.fossify.gallery.extensions.mediaDB
 import java.io.File
 
 // The videos the user asked to have on the device before watching them, because reading one off
-// the share as it plays stalls when the network cannot keep up.
+// a remote storage -- the share or pCloud -- as it plays stalls when the network cannot keep up.
+// One set of copies for both: a copy is named by the medium's path, size and modification time,
+// which every scanned row holds whichever storage it came from.
 //
 // Deliberately not SmbFileCache. That one holds whatever needed a real file -- photos, GIFs, the
 // editor's input -- under one 512MB budget, oldest out first. A single video here can be several
@@ -17,9 +19,9 @@ import java.io.File
 // was last watched, like a bin that empties itself. Nothing schedules that sweep -- it runs when
 // the app starts and when a download finishes, which is as close to "a day later" as an app that
 // the system is free to kill can get. The user can also empty it by hand from the settings
-class SmbVideoCache(private val context: Context) {
+class RemoteVideoCache(private val context: Context) {
     companion object {
-        private const val TAG = "SmbVideo"
+        private const val TAG = "RemoteVideo"
 
         // how long a copy outlives the last time it was watched
         const val MAX_AGE_MILLIS = 24L * 60 * 60 * 1000
@@ -29,7 +31,7 @@ class SmbVideoCache(private val context: Context) {
         const val PARTIAL_SUFFIX = ".part"
     }
 
-    private val dir = File(context.cacheDir, SMB_VIDEO_CACHE_DIR)
+    private val dir = File(context.cacheDir, REMOTE_VIDEO_CACHE_DIR)
 
     // the copy that is already there, or null. Never touches the network. The size and the
     // modification time are what name it, and a screen showing the video already holds both, so

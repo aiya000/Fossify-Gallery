@@ -353,7 +353,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_open_with).isVisible = hasFile && storage.canOpenWith
                 // a video that is read as it plays can be had in hand first. It stays offered
                 // for one already downloaded, which then says so
-                findItem(R.id.menu_smb_download_video).isVisible = storage.streamsVideos && currentMedium.isVideo()
+                findItem(R.id.menu_video_download_video).isVisible = storage.streamsVideos && currentMedium.isVideo()
                 findItem(R.id.menu_hide).isVisible =
                     storage.canHide && (!isRPlus() || isExternalStorageManager()) && !currentMedium.isHidden() && visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 && !currentMedium.getIsInRecycleBin()
 
@@ -489,7 +489,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_resize -> resizeImage()
                 R.id.menu_settings -> launchSettings()
                 R.id.menu_copy_to_clipboard -> copyImageToClipboard()
-                R.id.menu_smb_download_video -> downloadCurrentSmbVideo()
+                R.id.menu_video_download_video -> downloadCurrentVideo()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
@@ -1053,7 +1053,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     // "download first, then play". The fragment owns the player, so it is the one that swaps the
     // stream for the downloaded file once it is there
-    private fun downloadCurrentSmbVideo() {
+    private fun downloadCurrentVideo() {
         (getCurrentFragment() as? VideoFragment)?.downloadAndPlay()
     }
 

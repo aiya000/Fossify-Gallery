@@ -162,9 +162,9 @@ class MediaStorageTest {
     }
 
     @Test
-    fun `only the share streams its videos`() {
+    fun `the remote storages stream their videos, the device does not`() {
         assertTrue(smb.streamsVideos)
+        assertTrue(pCloud.streamsVideos)
         assertFalse(device.streamsVideos)
-        assertFalse(pCloud.streamsVideos)
     }
 }

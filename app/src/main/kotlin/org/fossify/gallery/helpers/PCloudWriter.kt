@@ -62,6 +62,9 @@ class PCloudWriter(private val context: Context) {
                 }
             }
 
+            // a downloaded copy of a video that is gone is gigabytes of nothing; the row is
+            // what names it, so it goes while the row is still there
+            dropDownloadedVideo(path)
             GalleryDatabase.getInstance(context).runInTransaction {
                 context.mediaDB.deleteMediumPath(path)
                 context.favoritesDB.deleteFavoritePath(path)
@@ -257,6 +260,7 @@ class PCloudWriter(private val context: Context) {
     fun renameFile(path: String, newName: String): String {
         val newPath = "${path.getParentPath()}/$newName"
         PCloudApi.renameFile(apiHost, accessToken, path.toPCloudRemotePath(), newName)
+        carryDownloadedVideo(path, newPath)
         GalleryDatabase.getInstance(context).runInTransaction {
             context.updateDBMediaPath(path, newPath)
             context.pCloudItemsDB.updatePaths(path, newPath)
@@ -316,6 +320,7 @@ class PCloudWriter(private val context: Context) {
     fun moveFileTo(path: String, destinationFolder: String): String {
         val newPath = "$destinationFolder/${path.substringAfterLast('/')}"
         PCloudApi.moveFileTo(apiHost, accessToken, path.toPCloudRemotePath(), folderIdOf(destinationFolder))
+        carryDownloadedVideo(path, newPath)
         GalleryDatabase.getInstance(context).runInTransaction {
             context.updateDBMediaPath(path, newPath)
             context.pCloudItemsDB.updatePaths(path, newPath)
@@ -348,6 +353,9 @@ class PCloudWriter(private val context: Context) {
         }
 
         PCloudApi.deleteFileById(apiHost, accessToken, item.itemId)
+        // the row keeps its size and time until the folder is rescanned, and those are what name
+        // a downloaded copy -- so a copy left here would be played in place of the new content
+        dropDownloadedVideo(path)
         if (uploaded != null) {
             // the id and hash name the cached copy and the thumbnail, so the new content is
             // shown instead of the old one from here on
@@ -409,4 +417,18 @@ class PCloudWriter(private val context: Context) {
     // rebuilds a folder's row from the media rows left in it, the way the scanner builds it,
     // or drops the row when nothing is left. The folder's own pcloud_items row stays
     private fun refreshDirectory(path: String) = context.rebuildDirectoryRow(path)
+
+    // A video downloaded for watching is named by its path, size and time, the same as on the
+    // share. A rename or a move is the same bytes, so the copy follows the file rather than
+    // being left to be swept and downloaded again; the size and time are read off the row
+    // before it moves
+    private fun carryDownloadedVideo(oldPath: String, newPath: String) {
+        val medium = context.mediaDB.getMediumByPath(oldPath) ?: return
+        RemoteVideoCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
+    }
+
+    private fun dropDownloadedVideo(path: String) {
+        val medium = context.mediaDB.getMediumByPath(path) ?: return
+        RemoteVideoCache(context).deleteCopy(path, medium.size, medium.modified)
+    }
 }

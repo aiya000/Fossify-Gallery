@@ -412,7 +412,7 @@
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".jobs.SmbDownloadService"
+            android:name=".jobs.VideoDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

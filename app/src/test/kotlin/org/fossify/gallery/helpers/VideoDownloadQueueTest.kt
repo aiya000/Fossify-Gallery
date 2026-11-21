@@ -12,7 +12,7 @@ import org.junit.Test
 // the subgroup's folders come where the subgroup sits in the list or after all the plain folders.
 // It takes a share, a download and the patience to watch the notification through. The rule
 // itself is just a walk, so here it is walked over a made-up structure instead.
-class SmbDownloadQueueTest {
+class VideoDownloadQueueTest {
     private fun folder(path: String) = directoryAt(path)
 
     private fun group(id: Long) = groupDirectoryOf(id)
@@ -20,7 +20,7 @@ class SmbDownloadQueueTest {
     // what each folder holds, standing in for its videos: the folder's own path, so that what
     // comes out reads as the order the folders were visited in
     private fun walk(selected: List<Directory>, children: Map<Long, List<Directory>>) =
-        SmbDownloadQueue.flatten(
+        VideoDownloadQueue.flatten(
             selected = selected,
             childrenOf = { children[it] ?: emptyList() },
             videosOfFolder = { listOf(it) },

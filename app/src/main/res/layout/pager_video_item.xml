@@ -64,7 +64,7 @@
         android:src="@drawable/ic_play_outline_vector" />
 
     <TextView
-        android:id="@+id/smb_download_pill"
+        android:id="@+id/video_download_pill"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_centerInParent="true"

@@ -89,14 +89,14 @@ import org.fossify.gallery.helpers.ROUNDED_CORNERS_BIG
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
-import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.RemoteVideoCache
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_FAVORITES
 import org.fossify.gallery.helpers.SHOW_RECYCLE_BIN
 import org.fossify.gallery.helpers.TYPE_GIFS
 import org.fossify.gallery.helpers.TYPE_RAWS
 import org.fossify.gallery.interfaces.MediaOperationsListener
-import org.fossify.gallery.jobs.SmbDownloadService
+import org.fossify.gallery.jobs.VideoDownloadService
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
@@ -245,7 +245,7 @@ class MediaAdapter(
             // offered whenever the selection holds a video that can be had in hand first,
             // whatever else is in it: the run takes those out of the selection and says how many
             // that was
-            findItem(R.id.cab_smb_download_videos).isVisible = selectedItems.any { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
+            findItem(R.id.cab_video_download_videos).isVisible = selectedItems.any { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
             findItem(R.id.cab_resize).isVisible =
                 storage != null && storage.canResize && (storage.canResizeSeveral || isOneItemSelected) && canResize(selectedItems)
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
@@ -292,7 +292,7 @@ class MediaAdapter(
             R.id.cab_remove_from_favorites -> toggleFavorites(false)
             R.id.cab_restore_recycle_bin_files -> restoreFiles()
             R.id.cab_share -> shareMedia()
-            R.id.cab_smb_download_videos -> downloadSelectedSmbVideos()
+            R.id.cab_video_download_videos -> downloadSelectedVideos()
             R.id.cab_rotate_right -> rotateSelection(90)
             R.id.cab_rotate_left -> rotateSelection(270)
             R.id.cab_rotate_one_eighty -> rotateSelection(180)
@@ -736,37 +736,37 @@ class MediaAdapter(
     }
 
     // "Download the selected videos": the same fetch the viewer's menu does for one video, over
-    // as many as were picked. The share is read one video at a time, so the order they go in
+    // as many as were picked. A remote storage is read one video at a time, so the order they go in
     // matters, and it is the order they were tapped in -- selectedKeys is a LinkedHashSet, so
     // the selection keeps it, and picking one again moves it to the end
-    private fun downloadSelectedSmbVideos() {
+    private fun downloadSelectedVideos() {
         val videos = getSelectedItems().filter { it.isVideo() && MediaStorage.of(activity, it.path).streamsVideos }
         if (videos.isEmpty()) {
-            activity.showInAppMessage(R.string.smb_download_videos_no_videos)
+            activity.showInAppMessage(R.string.video_download_videos_no_videos)
             return
         }
 
         ensureBackgroundThread {
             // asking the file system whether each copy is already there, which a selection of
             // hundreds makes worth keeping off the main thread
-            val cache = SmbVideoCache(activity)
+            val cache = RemoteVideoCache(activity)
             val wanted = videos.filter { cache.peek(it.path, it.size, it.modified) == null }
             val totalSize = wanted.sumByLong { it.size }
             activity.runOnUiThread {
                 if (wanted.isEmpty()) {
-                    activity.showInAppMessage(R.string.smb_download_videos_none)
+                    activity.showInAppMessage(R.string.video_download_videos_none)
                     finishActMode()
                     return@runOnUiThread
                 }
 
                 // a selection can run to tens of gigabytes, so the size is named as well as the
                 // count -- the count alone does not say what is about to be pulled over the network
-                val question = activity.getString(R.string.smb_download_videos_confirmation, wanted.size, totalSize.formatSize())
+                val question = activity.getString(R.string.video_download_videos_confirmation, wanted.size, totalSize.formatSize())
                 ConfirmationDialog(activity, question) {
-                    if (SmbDownloadService.start(activity, wanted.map { it.path })) {
+                    if (VideoDownloadService.start(activity, wanted.map { it.path })) {
                         finishActMode()
                     } else {
-                        activity.showInAppMessage(R.string.smb_download_busy)
+                        activity.showInAppMessage(R.string.video_download_busy)
                     }
                 }
             }

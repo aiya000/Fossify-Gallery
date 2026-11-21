@@ -98,9 +98,9 @@
         android:title="@string/set_as"
         app:showAsAction="never" />
     <item
-        android:id="@+id/cab_smb_download_videos"
+        android:id="@+id/cab_video_download_videos"
         android:showAsAction="never"
-        android:title="@string/smb_download_videos"
+        android:title="@string/video_download_videos"
         app:showAsAction="never" />
     <item
         android:id="@+id/cab_resize"

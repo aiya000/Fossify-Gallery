@@ -91,12 +91,13 @@ import org.fossify.gallery.helpers.EXOPLAYER_MAX_BUFFER_MS
 import org.fossify.gallery.helpers.EXOPLAYER_MIN_BUFFER_MS
 import org.fossify.gallery.helpers.FAST_FORWARD_VIDEO_MS
 import org.fossify.gallery.helpers.MEDIUM
+import org.fossify.gallery.helpers.MediaStorage
 import org.fossify.gallery.helpers.PCloudApi
 import org.fossify.gallery.helpers.SHOULD_INIT_FRAGMENT
 import org.fossify.gallery.helpers.SmbDataSource
-import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.RemoteVideoCache
 import org.fossify.gallery.helpers.SmbVideoDuration
-import org.fossify.gallery.jobs.SmbDownloadService
+import org.fossify.gallery.jobs.VideoDownloadService
 import org.fossify.gallery.interfaces.PlaybackSpeedListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.views.MediaSideScroll
@@ -147,22 +148,22 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
     private var mPCloudStreamUrl: String? = null
     private var mIsFetchingPCloudStreamUrl = false
 
-    // whether the player is reading the downloaded copy rather than the share, so that a
+    // whether the player is reading the downloaded copy rather than the network, so that a
     // download that finished while this screen was away can be noticed on the way back
-    private var mIsPlayingSmbCopy = false
+    private var mIsPlayingDownloadedCopy = false
 
     // "download first, then play" runs in a service, so that leaving the app does not kill it.
     // This is how the screen the user came from hears about it while it is still there
-    private val mSmbDownloadListener = object : SmbDownloadService.Listener {
-        override fun onSmbDownloadProgress(path: String, done: Long, total: Long) {
+    private val mVideoDownloadListener = object : VideoDownloadService.Listener {
+        override fun onVideoDownloadProgress(path: String, done: Long, total: Long) {
             if (!isAdded || path != mMedium.path) {
                 return
             }
 
-            showDownloadProgress(getString(R.string.smb_download_progress, done.formatSize(), total.formatSize()))
+            showDownloadProgress(getString(R.string.video_download_progress, done.formatSize(), total.formatSize()))
         }
 
-        override fun onSmbDownloadFinished(path: String, file: File?) {
+        override fun onVideoDownloadFinished(path: String, file: File?) {
             if (!isAdded || path != mMedium.path) {
                 return
             }
@@ -175,7 +176,7 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
                 return
             }
 
-            // a fresh player, so that it reads the copy on the device rather than the share.
+            // a fresh player, so that it reads the copy on the device rather than the network.
             // pauseVideo() kept the position when the download started, and videoPrepared()
             // seeks back to it
             releaseExoPlayer()
@@ -437,13 +438,13 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
         checkExtendedDetails()
         initTimeHolder()
         storeStateVariables()
-        SmbDownloadService.addListener(mSmbDownloadListener)
+        VideoDownloadService.addListener(mVideoDownloadListener)
         syncDownloadProgress()
     }
 
     override fun onPause() {
         super.onPause()
-        SmbDownloadService.removeListener(mSmbDownloadListener)
+        VideoDownloadService.removeListener(mVideoDownloadListener)
         storeStateVariables()
         pauseVideo()
         if (mStoredRememberLastVideoPosition && mIsFragmentVisible && mWasVideoStarted) {
@@ -612,8 +613,13 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
 
     // A pCloud video is streamed from the link getfilelink hands out, nothing is downloaded
     // first. The link is fetched off the main thread the first time round and initExoPlayer()
-    // is run again once it is in; null comes back meanwhile
+    // is run again once it is in; null comes back meanwhile.
+    //
+    // The exception is the same as on the share: a video the user asked to have in hand is
+    // played from the copy on the device, and no link is asked for at all
     private fun createPCloudMediaSource(): MediaSource? {
+        createDownloadedCopyMediaSource()?.let { return it }
+
         val url = mPCloudStreamUrl
         if (url == null) {
             fetchPCloudStreamUrl()
@@ -632,75 +638,81 @@ class VideoFragment : ViewPagerFragment(), TextureView.SurfaceTextureListener,
     // having asked. That also holds for the next time the video is opened, until the copy is
     // swept for having gone a day unwatched
     private fun createSmbMediaSource(): MediaSource {
-        val context = requireContext().applicationContext
-        val cache = SmbVideoCache(context)
-        val cached = cache.peek(mMedium.path, mMedium.size, mMedium.modified)
-        mIsPlayingSmbCopy = cached != null
-        if (cached != null) {
-            cache.touch(mMedium.path, mMedium.size, mMedium.modified)
-            val factory = DataSource.Factory { FileDataSource() }
-            return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(Uri.fromFile(cached)))
-        }
+        createDownloadedCopyMediaSource()?.let { return it }
 
-        val factory = SmbDataSource.Factory(context)
+        val factory = SmbDataSource.Factory(requireContext().applicationContext)
         return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(SmbDataSource.toMediaUri(mMedium.path)))
     }
 
+    // the copy "download first, then play" left on the device, or null to stream as usual
+    private fun createDownloadedCopyMediaSource(): MediaSource? {
+        val cache = RemoteVideoCache(requireContext().applicationContext)
+        val cached = cache.peek(mMedium.path, mMedium.size, mMedium.modified)
+        mIsPlayingDownloadedCopy = cached != null
+        if (cached == null) {
+            return null
+        }
+
+        cache.touch(mMedium.path, mMedium.size, mMedium.modified)
+        val factory = DataSource.Factory { FileDataSource() }
+        return ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(Uri.fromFile(cached)))
+    }
+
     // "Download first, then play", off the viewer's menu. Streaming stops while the download
-    // runs: reading the same video twice over the one share would only make the download the
+    // runs: reading the same video twice over the one network would only make the download the
     // user is waiting for slower. The position is kept, so playback picks up where it stopped
     fun downloadAndPlay() {
         val context = context ?: return
-        val cache = SmbVideoCache(context.applicationContext)
+        val cache = RemoteVideoCache(context.applicationContext)
         if (cache.peek(mMedium.path, mMedium.size, mMedium.modified) != null) {
-            context.showInAppMessage(R.string.smb_download_already)
+            context.showInAppMessage(R.string.video_download_already)
             return
         }
 
-        if (SmbDownloadService.downloadingPath() == mMedium.path) {
+        if (VideoDownloadService.downloadingPath() == mMedium.path) {
             // already running for this very video, and the progress is on screen
             return
         }
 
-        if (!SmbDownloadService.start(context, listOf(mMedium.path))) {
-            context.showInAppMessage(R.string.smb_download_busy)
+        if (!VideoDownloadService.start(context, listOf(mMedium.path))) {
+            context.showInAppMessage(R.string.video_download_busy)
             return
         }
 
         pauseVideo()
         releaseExoPlayer()
         binding.videoPlayOutline.beGone()
-        showDownloadProgress(getString(R.string.smb_download_preparing))
+        showDownloadProgress(getString(R.string.video_download_preparing))
     }
 
     private fun showDownloadProgress(text: String) {
-        binding.smbDownloadPill.text = text
-        binding.smbDownloadPill.beVisible()
+        binding.videoDownloadPill.text = text
+        binding.videoDownloadPill.beVisible()
     }
 
     private fun hideDownloadProgress() {
-        binding.smbDownloadPill.beGone()
+        binding.videoDownloadPill.beGone()
     }
 
     // a download outlives this screen on purpose -- it is a foreground service so that leaving
     // the app does not kill it -- so coming back has to pick up whatever state it is in
     private fun syncDownloadProgress() {
-        if (!mMedium.path.isSmbPath()) {
+        if (!MediaStorage.of(requireContext(), mMedium.path).streamsVideos) {
             return
         }
 
-        if (SmbDownloadService.downloadingPath() == mMedium.path) {
+        if (VideoDownloadService.downloadingPath() == mMedium.path) {
             binding.videoPlayOutline.beGone()
-            showDownloadProgress(getString(R.string.smb_download_preparing))
+            showDownloadProgress(getString(R.string.video_download_preparing))
             return
         }
 
         hideDownloadProgress()
         // the download ran to the end while this screen was away, so the player it left behind
-        // is still reading the share. Build it again over the copy that is now on the device
+        // is still reading the network. Build it again over the copy that is now on the device
         val finishedWhileAway = mExoPlayer != null &&
-            !mIsPlayingSmbCopy &&
-            SmbVideoCache(requireContext().applicationContext).peek(mMedium.path, mMedium.size, mMedium.modified) != null
+            !mIsPlayingDownloadedCopy &&
+            RemoteVideoCache(requireContext().applicationContext).peek(mMedium.path, mMedium.size, mMedium.modified) != null
         if (finishedWhileAway) {
             pauseVideo()
             releaseExoPlayer()
