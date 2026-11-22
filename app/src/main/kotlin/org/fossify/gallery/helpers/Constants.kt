@@ -245,8 +245,8 @@ const val REMOTE_SAVE_DIR = "remote-save"
 
 // under the cache directory as well, but kept apart from SMB_CACHE_DIR: the videos the user
 // asked to have in hand before watching them. Those are far bigger than anything else cached
-// here, so they are swept by age rather than held to a size. See SmbVideoCache
-const val SMB_VIDEO_CACHE_DIR = "smb-videos"
+// here, so they are swept by age rather than held to a size. See RemoteVideoCache
+const val REMOTE_VIDEO_CACHE_DIR = "smb-videos"
 
 // A share is reached with these; the password is kept in the app's private prefs like the
 // pCloud token is. An empty user name means a guest connection.

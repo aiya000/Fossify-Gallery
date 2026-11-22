@@ -167,7 +167,7 @@ import org.fossify.gallery.helpers.STORAGE_FILTER_ALL
 import org.fossify.gallery.helpers.STORAGE_FILTER_LOCAL
 import org.fossify.gallery.helpers.STORAGE_FILTER_PCLOUD
 import org.fossify.gallery.helpers.SmbSyncPolicy
-import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.RemoteVideoCache
 import org.fossify.gallery.helpers.TYPE_SVGS
 import org.fossify.gallery.helpers.getDefaultFileFilter
 import org.fossify.gallery.helpers.getPermissionToRequest
@@ -1437,7 +1437,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // "a day later", and again whenever a download finishes
     private fun sweepDownloadedSmbVideos() {
         ensureBackgroundThread {
-            SmbVideoCache(this).sweepExpired()
+            RemoteVideoCache(this).sweepExpired()
         }
     }
 

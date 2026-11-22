@@ -38,7 +38,7 @@ import org.fossify.gallery.helpers.PCloudWriter
 import org.fossify.gallery.helpers.RemoteScanScheduler
 import org.fossify.gallery.helpers.SmbClient
 import org.fossify.gallery.helpers.SmbFileCache
-import org.fossify.gallery.helpers.SmbVideoCache
+import org.fossify.gallery.helpers.RemoteVideoCache
 import org.fossify.gallery.helpers.SmbWriter
 import org.fossify.gallery.helpers.availableName
 import org.fossify.gallery.helpers.smbConnectionIdOf
@@ -494,7 +494,7 @@ class SmbTransferService : Service() {
     // otherwise. A short read is refused rather than written out as a whole file: the share
     // ends the stream the same way whether it is done or the connection dropped
     private fun readShareFile(path: String, write: (InputStream) -> Unit) {
-        val cached = SmbFileCache(this).peek(path) ?: SmbVideoCache(this).peek(path)
+        val cached = SmbFileCache(this).peek(path) ?: RemoteVideoCache(this).peek(path)
         if (cached != null) {
             cached.inputStream().use(write)
             return

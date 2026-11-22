@@ -4,7 +4,6 @@ import android.content.Context
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.directoryDB
 import org.fossify.gallery.extensions.getSortedGroupChildren
-import org.fossify.gallery.extensions.isSmbPath
 import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.models.Directory
 import org.fossify.gallery.models.Medium
@@ -22,7 +21,7 @@ import org.fossify.gallery.models.toFolderGroupId
 // media directly in it, and "the videos in this folder" means the same thing here.
 //
 // Blocks on the database, so call it off the main thread
-object SmbDownloadQueue {
+object VideoDownloadQueue {
     fun videosOf(context: Context, selected: List<Directory>): List<Medium> {
         if (selected.isEmpty()) {
             return emptyList()
@@ -63,11 +62,11 @@ object SmbDownloadQueue {
         }
     }
 
-    // the folder's own videos on the share, in the order that folder is sorted by. A folder on
-    // the device or on pCloud answers with nothing: the menu item is offered everywhere, so that
-    // nobody has to work out why it is missing from this one
+    // the folder's own videos on a storage that streams them -- the share or pCloud -- in the
+    // order that folder is sorted by. A folder on the device answers with nothing: the menu item
+    // is offered everywhere, so that nobody has to work out why it is missing from this one
     private fun videosOfFolder(context: Context, path: String): List<Medium> {
-        val videos = context.mediaDB.getMediaFromPath(path).filter { it.path.isSmbPath() && it.isVideo() }
+        val videos = context.mediaDB.getMediaFromPath(path).filter { it.isVideo() && MediaStorage.of(context, it.path).streamsVideos }
         if (videos.isEmpty()) {
             return emptyList()
         }

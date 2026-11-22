@@ -143,7 +143,7 @@ app_restart_screen() {
 # The app's own log, from this moment on.
 #
 # Everything is taken by the app's pid rather than by a list of tags: the tags move (the scan
-# service logs as RemoteScan, the walk as SmbScan, the fetching of videos as SmbVideo) and a
+# service logs as RemoteScan, the walk as SmbScan, the fetching of videos as RemoteVideo, the reading of their lengths as SmbVideo) and a
 # missing tag would read as "the app never said it", which is how a passing test hides a failure.
 logcat_reset() { "${ADB[@]}" logcat -c; }
 
@@ -156,7 +156,7 @@ app_log() {
         "${ADB[@]}" logcat -d --pid="$pid" | tr -d '\r'
     else
         # the app is gone -- after a crash, say -- so fall back to what it logged under its tags
-        "${ADB[@]}" logcat -d -s RemoteScan:* SmbScan:* SmbVideo:* PCloudTransfer:* AndroidRuntime:E | tr -d '\r'
+        "${ADB[@]}" logcat -d -s RemoteScan:* SmbScan:* SmbVideo:* RemoteVideo:* PCloudTransfer:* AndroidRuntime:E | tr -d '\r'
     fi
 }
 

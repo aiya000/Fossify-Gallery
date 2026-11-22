@@ -372,7 +372,7 @@ class SettingsActivity : SimpleActivity() {
         }
 
         setupSmbRescanPolicy()
-        setupSmbVideoCache()
+        setupRemoteVideoCache()
     }
 
     private fun addSmbShare() {
@@ -396,30 +396,31 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
-    // The videos fetched by "download first, then play". They empty themselves a day after they
-    // were last watched, so this row is not something the user has to remember -- it is here for
+    // The videos fetched by "download first, then play", off the share and off pCloud alike --
+    // one set of copies for both, so the row sits under Storage > Other rather than in either
+    // storage's tab. They empty themselves a day after they were last watched, so this row is not something the user has to remember -- it is here for
     // when a few gigabytes are wanted back before that day is up. The general "clear cache" row
     // wipes these too, along with everything else cached; this one takes only the videos
-    private fun setupSmbVideoCache() {
-        binding.settingsSmbVideoCacheHolder.beVisibleIf(config.isSmbConfigured)
-        refreshSmbVideoCacheSize()
+    private fun setupRemoteVideoCache() {
+        binding.settingsRemoteVideoCacheHolder.beVisibleIf(config.isSmbConfigured || config.isPCloudLoggedIn)
+        refreshRemoteVideoCacheSize()
 
-        binding.settingsSmbVideoCacheHolder.setOnClickListener {
+        binding.settingsRemoteVideoCacheHolder.setOnClickListener {
             ensureBackgroundThread {
-                SmbVideoCache(this).clear()
+                RemoteVideoCache(this).clear()
                 runOnUiThread {
-                    showInAppMessage(R.string.smb_video_cache_cleared)
-                    refreshSmbVideoCacheSize()
+                    showInAppMessage(R.string.remote_video_cache_cleared)
+                    refreshRemoteVideoCacheSize()
                 }
             }
         }
     }
 
-    private fun refreshSmbVideoCacheSize() {
+    private fun refreshRemoteVideoCacheSize() {
         ensureBackgroundThread {
-            val size = SmbVideoCache(this).size().formatSize()
+            val size = RemoteVideoCache(this).size().formatSize()
             runOnUiThread {
-                binding.settingsSmbVideoCacheSize.text = size
+                binding.settingsRemoteVideoCacheSize.text = size
             }
         }
     }

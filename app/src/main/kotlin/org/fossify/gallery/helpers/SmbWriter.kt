@@ -212,7 +212,7 @@ class SmbWriter(private val context: Context) {
             context.mediaDB.deleteMediumPath(binPath)
             medium?.let {
                 SmbFileCache(context).deleteCopy(binPath, it.size, it.modified)
-                SmbVideoCache(context).deleteCopy(binPath, it.size, it.modified)
+                RemoteVideoCache(context).deleteCopy(binPath, it.size, it.modified)
             }
 
             done++
@@ -388,7 +388,7 @@ class SmbWriter(private val context: Context) {
             // The row then moves on to the new pair, which is what stops the old copy being
             // served for the new content
             SmbFileCache(context).deleteCopy(path, it.size, it.modified)
-            SmbVideoCache(context).deleteCopy(path, it.size, it.modified)
+            RemoteVideoCache(context).deleteCopy(path, it.size, it.modified)
             context.mediaDB.updateSizeAndModified(path = path, size = local.length(), modified = local.lastModified())
         }
 
@@ -401,6 +401,6 @@ class SmbWriter(private val context: Context) {
     // carried over to the new name rather than left to be swept and fetched again
     private fun renameCachedCopies(oldPath: String, newPath: String, medium: Medium) {
         SmbFileCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
-        SmbVideoCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
+        RemoteVideoCache(context).renameCopy(oldPath, newPath, medium.size, medium.modified)
     }
 }

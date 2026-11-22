@@ -128,7 +128,9 @@ sealed class MediaStorage(protected val context: Context) {
     abstract val canHide: Boolean
 
     // a video is read as it plays rather than fetched whole first, so it can be had in hand
-    // beforehand -- that is what the "download videos" actions are for
+    // beforehand -- that is what the "download videos" actions are for. Both remote storages:
+    // the share is read where the player asks, and a pCloud video is streamed off the link
+    // getfilelink hands out. Either stalls when the network cannot keep up with the video
     abstract val streamsVideos: Boolean
 
     // --- a folder of it, in the folder list's selection
@@ -1086,7 +1088,7 @@ sealed class MediaStorage(protected val context: Context) {
         override val canResizeSeveral = true
         override val canCreateShortcut = false
         override val canHide = false
-        override val streamsVideos = false
+        override val streamsVideos = true
 
         override val canRenameSeveralFolders = false
         override val canShowFolderProperties = false

@@ -81,9 +81,9 @@
         android:title="@string/open_with"
         app:showAsAction="never" />
     <item
-        android:id="@+id/menu_smb_download_video"
+        android:id="@+id/menu_video_download_video"
         android:showAsAction="never"
-        android:title="@string/smb_download_video"
+        android:title="@string/video_download_video"
         app:showAsAction="never" />
     <item
         android:id="@+id/menu_set_as"
